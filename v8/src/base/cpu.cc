@@ -12,7 +12,7 @@
 #include <intrin.h>  // __cpuid()
 #endif
 #if V8_OS_LINUX
-#include <linux/auxvec.h>  // AT_HWCAP
+#include "auxvec_using_in_building_v8.h"  // AT_HWCAP
 #endif
 #if V8_GLIBC_PREREQ(2, 16)
 #include <sys/auxv.h>  // getauxval()

@@ -1,30 +1,10 @@
-cmake_minimum_required(VERSION 3.4)
-set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/MSVC.cmake")
-set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
-project(V8 LANGUAGES CXX C ASM)
+cmake_minimum_required(VERSION 3.10)
 
 option(V8CMAKE_FIND_PYTHON "Enable finding python" ON)
 
-if(MSVC)
-  enable_language(ASM_MASM)
-  set_property(
-    SOURCE ${PROJECT_BINARY_DIR}/embedded.S
-           v8/src/heap/base/asm/arm64/push_registers_masm.S
-           v8/src/heap/base/asm/ia32/push_registers_masm.S
-           v8/src/heap/base/asm/x64/push_registers_masm.S
-    PROPERTY LANGUAGE ASM_MASM)
-
-endif()
-
 add_definitions("-DV8_ENABLE_WEBASSEMBLY -DV8_ADVANCED_BIGINT_ALGORITHMS")
-if(WIN32)
-  add_definitions("-DNOMINMAX -DV8_ENABLE_SYSTEM_INSTRUMENTATION")
-  # todo: for zlib, need to extract zlib when refactor
-  add_definitions("-DX86_WINDOWS")
-  add_definitions("-D_WIN32_WINNT=0x0602")
-endif()
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 if (V8CMAKE_FIND_PYTHON)
@@ -101,7 +81,7 @@ set(
 set(disable-exceptions
   $<$<CXX_COMPILER_ID:MSVC>:/EHs-c->
   $<$<CXX_COMPILER_ID:AppleClang>:-fno-exceptions>
-  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions>
+  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-undef -Wno-unused-parameter -Wno-covered-switch-default -Wno-poison-system-directories -Wno-gnu-statement-expression -Wno-comma -Wno-format-nonliteral -Wno-format-pedantic -Wno-missing-noreturn -Wno-conditional-uninitialized -Wno-extra-semi-stmt -Wno-unused-parameter -Wno-non-virtual-dtor -Wno-undef -Wno-shadow-field-in-constructor -Wno-shadow-field-in-constructor -Wno-documentation -Wno-reserved-identifier -Wno-shadow-field-in-constructor -Wno-newline-eof -Wno-undefined-reinterpret-cast >
   $<$<CXX_COMPILER_ID:GNU>:-fno-exceptions>
 )
 
@@ -112,42 +92,8 @@ set(enable-exceptions
   $<$<CXX_COMPILER_ID:GNU>:-fexceptions>
 )
 
-#
-# d8
-#
-
-add_executable(
-  d8
-  $<${is-posix}:v8/src/d8/d8-posix.cc>
-  $<${is-win}:v8/src/d8/d8-windows.cc>
-  v8/src/d8/async-hooks-wrapper.cc
-  v8/src/d8/d8-console.cc
-  v8/src/d8/d8-js.cc
-  v8/src/d8/d8-test.cc
-  v8/src/d8/d8-platforms.cc
-  v8/src/d8/d8.cc
-)
-
-target_compile_definitions(d8 PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(d8 PRIVATE ${disable-exceptions})
-
-target_include_directories(d8
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/v8/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  PRIVATE
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/v8>
-)
-
-target_link_libraries(d8
-  PRIVATE
-    v8_base_without_compiler
-    v8_compiler
-    v8_snapshot
-    v8_inspector
-    v8_libplatform
-)
-
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/generated)
+add_library(v8-bytecodes-builtin-list STATIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/builtins-generated/bytecodes-builtins-list.h)
 # more granular library support
 add_library(v8-i18n-support OBJECT)
 set_property(TARGET v8-i18n-support PROPERTY EXCLUDE_FROM_ALL ON)
@@ -178,42 +124,42 @@ target_link_libraries(v8-i18n-support PRIVATE v8_torque_generated)
 
 target_include_directories(v8-i18n-support
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/v8
-    ${PROJECT_SOURCE_DIR}/v8/src/objects
-    ${PROJECT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
 
-file(GLOB api-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/api/*.cc)
-file(GLOB asmjs-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/asmjs/*.cc)
-file(GLOB ast-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/ast/*.cc)
-file(GLOB builtin-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/builtins/*.cc)
-file(GLOB baseline-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/baseline/*.cc)
-file(GLOB bigint-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/bigint/*.cc)
-file(GLOB codegen-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/codegen/*.cc)
-file(GLOB debug-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/debug/*.cc)
-file(GLOB deoptimizer-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/deoptimizer/*.cc)
-file(GLOB diagnostic-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/diagnostics/*.cc)
-file(GLOB execution-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/execution/*.cc)
-file(GLOB extensions-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/extensions/*.cc)
-file(GLOB handles-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/handles/*.cc)
-file(GLOB interpreter-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/interpreter/*.cc)
-file(GLOB json-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/json/*.cc)
-file(GLOB logging-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/logging/*.cc)
-file(GLOB numbers-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/base/numbers/*.cc v8/src/numbers/*.cc)
-file(GLOB object-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/objects/*.cc)
-file(GLOB parsing-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/parsing/*.cc)
-file(GLOB profiler-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/profiler/*.cc)
-file(GLOB regexp-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/regexp/*.cc v8/src/regexp/experimental/*.cc)
-file(GLOB runtime-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/runtime/*.cc)
-file(GLOB snapshot-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/snapshot/*.cc)
-file(GLOB strings-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/strings/*.cc)
-file(GLOB utils-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/utils/*.cc)
-file(GLOB wasm-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/*.cc)
-file(GLOB wasm-baseline-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/baseline/*.cc)
-file(GLOB zone-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/zone/*.cc)
-file(GLOB zlib-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS v8/third_party/zlib/*.c v8/third_party/zlib/google/compression_utils_portable.cc)
+file(GLOB api-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/api/*.cc)
+file(GLOB asmjs-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/asmjs/*.cc)
+file(GLOB ast-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/ast/*.cc)
+file(GLOB builtin-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/builtins/*.cc)
+file(GLOB baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/baseline/*.cc)
+file(GLOB bigint-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/bigint/*.cc)
+file(GLOB codegen-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/codegen/*.cc)
+file(GLOB debug-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/debug/*.cc)
+file(GLOB deoptimizer-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/deoptimizer/*.cc)
+file(GLOB diagnostic-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/diagnostics/*.cc)
+file(GLOB execution-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/execution/*.cc)
+file(GLOB extensions-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/extensions/*.cc)
+file(GLOB handles-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/handles/*.cc)
+file(GLOB interpreter-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/interpreter/*.cc)
+file(GLOB json-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/json/*.cc)
+file(GLOB logging-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/logging/*.cc)
+file(GLOB numbers-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/base/numbers/*.cc v8/src/numbers/*.cc)
+file(GLOB object-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/objects/*.cc)
+file(GLOB parsing-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/parsing/*.cc)
+file(GLOB profiler-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/profiler/*.cc)
+file(GLOB regexp-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/regexp/*.cc v8/src/regexp/experimental/*.cc)
+file(GLOB runtime-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/runtime/*.cc)
+file(GLOB snapshot-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/snapshot/*.cc)
+file(GLOB strings-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/strings/*.cc)
+file(GLOB utils-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/utils/*.cc)
+file(GLOB wasm-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/*.cc)
+file(GLOB wasm-baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/baseline/*.cc)
+file(GLOB zone-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/zone/*.cc)
+file(GLOB zlib-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/third_party/zlib/*.c v8/third_party/zlib/google/compression_utils_portable.cc)
 
-file(GLOB heap-sources RELATIVE ${PROJECT_SOURCE_DIR} CONFIGURE_DEPENDS
+file(GLOB heap-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS
   v8/src/heap/*.cc
   v8/src/heap/base/*.cc
   v8/src/heap/cppgc-js/*.cc
@@ -228,24 +174,16 @@ list(REMOVE_ITEM heap-sources
   v8/src/heap/cppgc/caged-heap.cc
 )
 
-if(WIN32)
-  list(APPEND heap-sources
-    $<${is-arm64}:v8/src/heap/base/asm/arm64/push_registers_masm.S>
-    $<${is-ia32}:v8/src/heap/base/asm/ia32/push_registers_masm.S>
-    $<${is-x64}:v8/src/heap/base/asm/x64/push_registers_masm.S>
-  )
-else()
-  list(APPEND heap-sources
-    $<${is-arm64}:v8/src/heap/base/asm/arm64/push_registers_asm.cc>
-    $<${is-arm}:v8/src/heap/base/asm/arm/push_registers_asm.cc>
-    $<${is-ia32}:v8/src/heap/base/asm/ia32/push_registers_asm.cc>
-    $<${is-mips64}:v8/src/heap/base/asm/mips64/push_registers_asm.cc>
-    $<${is-mips}:v8/src/heap/base/asm/mips/push_registers_asm.cc>
-    $<${is-ppc}:v8/src/heap/base/asm/ppc/push_registers_asm.cc>
-    $<${is-s390}:v8/src/heap/base/asm/s390/push_registers_asm.cc>
-    $<${is-x64}:v8/src/heap/base/asm/x64/push_registers_asm.cc>
-  )
-endif()
+list(APPEND heap-sources
+  $<${is-arm64}:v8/src/heap/base/asm/arm64/push_registers_asm.cc>
+  $<${is-arm}:v8/src/heap/base/asm/arm/push_registers_asm.cc>
+  $<${is-ia32}:v8/src/heap/base/asm/ia32/push_registers_asm.cc>
+  $<${is-mips64}:v8/src/heap/base/asm/mips64/push_registers_asm.cc>
+  $<${is-mips}:v8/src/heap/base/asm/mips/push_registers_asm.cc>
+  $<${is-ppc}:v8/src/heap/base/asm/ppc/push_registers_asm.cc>
+  $<${is-s390}:v8/src/heap/base/asm/s390/push_registers_asm.cc>
+  $<${is-x64}:v8/src/heap/base/asm/x64/push_registers_asm.cc>
+)
 
 list(REMOVE_ITEM builtin-sources
   v8/src/builtins/builtins-intl-gen.cc
@@ -369,37 +307,16 @@ add_library(v8_base_without_compiler STATIC
   $<TARGET_OBJECTS:v8-adler32>
 )
 
-if (WIN32)
-  if (CMAKE_SYSTEM_VERSION VERSION_GREATER 10) # Windows 10
-    set(windows-version 0x0A00)
-  elseif (CMAKE_SYSTEM_VERSION VERSION_GREATER 6.3) # Windows 8.1
-    set(windows-version 0x0603)
-  elseif (CMAKE_SYSTEM_VERSION VERSION_GREATER 6.2) # Windows 8
-    set(windows-version 0x0602)
-  elseif (CMAKE_SYSTEM_VERSION VERSION_GREATER 6.1) # Windows 7
-    set(windows-version 0x0601)
-  elseif (CMAKE_SYSTEM_VERSION VERSION_GREATER 6.0) # Windows Vista
-    set(windows-version 0x0600)
-  endif()
-endif()
-
-set_property(SOURCE v8/src/diagnostics/unwinding-info-win64.cc
-  APPEND PROPERTY
-    COMPILE_DEFINITIONS
-      UNICODE
-      _WIN32_WINNT=${windows-version}
-)
-
 target_compile_definitions(v8_base_without_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_base_without_compiler PRIVATE ${disable-exceptions})
+target_compile_options(v8_base_without_compiler PRIVATE ${disable-exceptions} -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast)
 
 target_include_directories(v8_base_without_compiler
   PRIVATE
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/v8/include>
-    $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
-    ${PROJECT_SOURCE_DIR}/v8
-    ${PROJECT_SOURCE_DIR}/v8/third_party/zlib
-    ${PROJECT_BINARY_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(
@@ -416,7 +333,7 @@ target_link_libraries(
 # v8_compiler
 #
 file(GLOB_RECURSE compiler-sources
-  RELATIVE ${PROJECT_SOURCE_DIR}
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   CONFIGURE_DEPENDS v8/src/compiler/*.cc
 )
 list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
@@ -424,15 +341,15 @@ list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
 add_library(v8_compiler STATIC)
 target_sources(v8_compiler PRIVATE ${compiler-sources})
 target_compile_definitions(v8_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_compiler PRIVATE ${disable-exceptions})
+target_compile_options(v8_compiler PRIVATE ${disable-exceptions} -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments)
 
 target_include_directories(v8_compiler
   PUBLIC
-    ${PROJECT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
   PRIVATE
-    ${PROJECT_BINARY_DIR}
-    ${PROJECT_SOURCE_DIR}/v8
-    $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
 )
 
 target_link_libraries(v8_compiler
@@ -502,12 +419,12 @@ add_library(
 )
 
 target_compile_definitions(v8_initializers PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_initializers PRIVATE ${disable-exceptions})
+target_compile_options(v8_initializers PRIVATE ${disable-exceptions} -Wno-shadow  -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum)
 
 target_include_directories(v8_initializers
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/v8
-    ${PROJECT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(v8_initializers PRIVATE v8_torque_generated v8-bytecodes-builtin-list)
@@ -520,14 +437,14 @@ target_link_libraries(v8_initializers PRIVATE v8_torque_generated v8-bytecodes-b
 # Note: v8_use_multi_snapshots not currently supported.
 add_library(
   v8_snapshot STATIC
-  ${PROJECT_BINARY_DIR}/embedded.S
-  ${PROJECT_BINARY_DIR}/snapshot.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
+  ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
   v8/src/init/setup-isolate-deserialize.cc
 )
 
 target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_snapshot PRIVATE ${disable-exceptions})
-target_include_directories(v8_snapshot PRIVATE ${PROJECT_SOURCE_DIR}/v8)
+target_compile_options(v8_snapshot PRIVATE ${disable-exceptions} -Wno-old-style-cast)
+target_include_directories(v8_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 
 target_link_libraries(v8_snapshot
   PRIVATE
@@ -538,9 +455,9 @@ target_link_libraries(v8_snapshot
 # Note: allow passing in v8_random_seed
 add_custom_command(
   COMMAND
-    mksnapshot
-    --embedded_src ${PROJECT_BINARY_DIR}/embedded.S
-    --startup_src ${PROJECT_BINARY_DIR}/snapshot.cc
+    ./mksnapshot
+    --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
+    --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
     $<${is-x64}:--target_arch=x64>
     $<$<PLATFORM_ID:Darwin>:--target_os=mac>
     $<$<PLATFORM_ID:Linux>:--target_os=linux>
@@ -549,8 +466,8 @@ add_custom_command(
   DEPENDS
     mksnapshot
   OUTPUT
-    ${PROJECT_BINARY_DIR}/embedded.S
-    ${PROJECT_BINARY_DIR}/snapshot.cc
+    ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
+    ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
 )
 
 #
@@ -561,24 +478,24 @@ add_custom_command(
 # The GN files are conceptually structured the same but they don't
 # build it as a separate library. We do because it's easier that way.
 set(inspector_files
-  ${PROJECT_BINARY_DIR}/inspector/include/inspector/Debugger.h
-  ${PROJECT_BINARY_DIR}/inspector/include/inspector/Runtime.h
-  ${PROJECT_BINARY_DIR}/inspector/include/inspector/Schema.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Console.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Console.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Debugger.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Debugger.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Forward.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/HeapProfiler.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/HeapProfiler.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Profiler.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Profiler.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Protocol.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Protocol.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Runtime.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Runtime.h
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Schema.cpp
-  ${PROJECT_BINARY_DIR}/inspector/src/inspector/protocol/Schema.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/include/inspector/Debugger.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/include/inspector/Runtime.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/include/inspector/Schema.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Console.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Console.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Debugger.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Debugger.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Forward.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/HeapProfiler.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/HeapProfiler.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Profiler.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Profiler.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Protocol.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Protocol.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Runtime.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Runtime.h
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Schema.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector/protocol/Schema.h
 )
 
 foreach(filename IN LISTS inspector_files)
@@ -588,12 +505,12 @@ endforeach()
 list(REMOVE_DUPLICATES inspector_dirs)
 
 file(GLOB inspector-sources
-  RELATIVE ${PROJECT_SOURCE_DIR}
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   CONFIGURE_DEPENDS v8/src/inspector/*.cc
 )
 
 file(GLOB inspector-protocol-sources
-  RELATIVE ${PROJECT_SOURCE_DIR}
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   CONFIGURE_DEPENDS v8/third_party/inspector_protocol/crdtp/*.cc
 )
 
@@ -607,22 +524,22 @@ add_library(v8_inspector STATIC
 )
 
 target_compile_features(v8_inspector PUBLIC cxx_std_17)
-target_compile_options(v8_inspector PRIVATE ${disable-exceptions})
+target_compile_options(v8_inspector PRIVATE ${disable-exceptions} -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
 target_compile_definitions(v8_inspector PUBLIC $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 
 target_include_directories(v8_inspector
   PRIVATE
-    ${PROJECT_BINARY_DIR}/inspector
-    ${PROJECT_SOURCE_DIR}/v8
-    ${PROJECT_SOURCE_DIR}/v8/include
-    ${PROJECT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
-    ${PROJECT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
+    ${CMAKE_CURRENT_BINARY_DIR}/inspector
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
 )
 
 target_link_libraries(v8_inspector PRIVATE v8_torque_generated)
 
 file(GLOB inspector-templates
-  RELATIVE ${PROJECT_SOURCE_DIR}
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   CONFIGURE_DEPENDS
     v8/third_party/inspector_protocol/lib/*.template
     v8/third_party/inspector_protocol/templates/*.template
@@ -640,10 +557,10 @@ add_custom_command(
     --config v8/src/inspector/inspector_protocol_config.json
     --config_value protocol.path=v8/include/js_protocol.pdl
     --jinja_dir v8/third_party
-    --output_base ${PROJECT_BINARY_DIR}/inspector/src/inspector
+    --output_base ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector
     --inspector_protocol_dir third_party/inspector_protocol
   WORKING_DIRECTORY
-    ${PROJECT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS
     v8/third_party/inspector_protocol/code_generator.py
     v8/src/inspector/inspector_protocol_config.json
@@ -676,12 +593,12 @@ target_sources(v8_libplatform
 )
 
 target_compile_definitions(v8_libplatform PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libplatform PRIVATE ${disable-exceptions})
+target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} -Wno-unused-parameter -Wno-non-virtual-dtor)
 target_include_directories(v8_libplatform
   PUBLIC
-    ${PROJECT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
 target_link_libraries(v8_libplatform PRIVATE v8_libbase)
@@ -694,13 +611,13 @@ add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
 
 target_include_directories(v8_libsampler
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/v8
-    ${PROJECT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
 
 target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
-target_include_directories(v8_libsampler PRIVATE ${PROJECT_SOURCE_DIR}/v8)
+target_include_directories(v8_libsampler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(v8_libsampler PRIVATE v8_libbase)
 
 #
@@ -748,7 +665,7 @@ set_property(SOURCE v8/src/base/utils/random-number-generator.cc
 
 target_compile_definitions(v8_libbase PRIVATE $<${is-win}:UNICODE> $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libbase PRIVATE ${disable-exceptions})
-target_include_directories(v8_libbase PRIVATE ${PROJECT_SOURCE_DIR}/v8)
+target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
@@ -761,12 +678,6 @@ target_link_libraries(v8_libbase
 #
 # bytecode_builtins_list_generator
 #
-v8_generate_builtins_list(${PROJECT_BINARY_DIR}/generated)
-
-target_include_directories(v8-bytecodes-builtin-list
-  INTERFACE
-    ${PROJECT_BINARY_DIR}/generated
-)
 
 add_executable(
   bytecode_builtins_list_generator
@@ -777,23 +688,24 @@ add_executable(
 
 target_include_directories(bytecode_builtins_list_generator
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
 target_link_libraries(bytecode_builtins_list_generator v8_libbase)
 
+target_compile_options(bytecode_builtins_list_generator PRIVATE -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
 #
 # v8_torque_generated
 #
 
 # Note: torque does not like absolute paths.
 file(GLOB_RECURSE torque-builtins
-  RELATIVE ${PROJECT_SOURCE_DIR}/v8
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/v8
   CONFIGURE_DEPENDS v8/src/builtins/*.tq
 )
 
 file(GLOB_RECURSE torque-objects
-  RELATIVE ${PROJECT_SOURCE_DIR}/v8
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/v8
   CONFIGURE_DEPENDS v8/src/objects/*.tq
 )
 
@@ -831,24 +743,24 @@ list(TRANSFORM torque_files PREPEND v8/ OUTPUT_VARIABLE torque_files_abs)
 # Note: target v8_compiler depends on ${torque_outputs}. Maybe this should be
 # a source-only dependency.
 set(torque_outputs
-  ${PROJECT_BINARY_DIR}/torque-generated/class-debug-readers-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/class-debug-readers.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/class-definitions-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/class-definitions.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/class-verifiers-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/class-verifiers.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/exported-macros-assembler-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/exported-macros-assembler.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/factory-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/factory-tq.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/factory.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/factory.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/interface-descriptors-tq.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/interface-descriptors.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/objects-body-descriptors-inl.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/objects-body-descriptors-tq-inl.inc
-  ${PROJECT_BINARY_DIR}/torque-generated/objects-printer-tq.cc
-  ${PROJECT_BINARY_DIR}/torque-generated/objects-printer.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-debug-readers-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-debug-readers.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-definitions-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-definitions.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-verifiers-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/class-verifiers.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/exported-macros-assembler-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/exported-macros-assembler.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/factory-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/factory-tq.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/factory.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/factory.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/interface-descriptors-tq.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/interface-descriptors.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/objects-body-descriptors-inl.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/objects-body-descriptors-tq-inl.inc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/objects-printer-tq.cc
+  ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/objects-printer.cc
 )
 
 list(TRANSFORM torque_files
@@ -862,11 +774,11 @@ list(TRANSFORM torque-outputs
 )
 
 list(APPEND torque-outputs ${torque-headers})
-list(TRANSFORM torque-outputs PREPEND "${PROJECT_BINARY_DIR}/torque-generated/")
+list(TRANSFORM torque-outputs PREPEND "${CMAKE_CURRENT_BINARY_DIR}/torque-generated/")
 
 foreach(filename IN LISTS torque_files)
   get_filename_component(directory ${filename} DIRECTORY)
-  list(APPEND torque_dirs ${PROJECT_BINARY_DIR}/torque-generated/${directory})
+  list(APPEND torque_dirs ${CMAKE_CURRENT_BINARY_DIR}/torque-generated/${directory})
 endforeach()
 
 list(REMOVE_DUPLICATES torque_dirs)
@@ -878,21 +790,21 @@ add_library(
 )
 
 target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions})
+target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
 target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
 
 target_include_directories(v8_torque_generated
   PUBLIC
-    ${PROJECT_BINARY_DIR}
-    ${PROJECT_SOURCE_DIR}/v8/include
-    ${PROJECT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
 add_custom_command(
   COMMAND
-    torque
-    -o ${PROJECT_BINARY_DIR}/torque-generated
-    -v8-root ${PROJECT_SOURCE_DIR}/v8
+    ./torque
+    -o ${CMAKE_CURRENT_BINARY_DIR}/torque-generated
+    -v8-root ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${torque_files}
   COMMAND
     ${CMAKE_COMMAND} -E touch ${torque-outputs} ${torque_outputs}
@@ -916,14 +828,14 @@ add_custom_command(
 # torque
 #
 file(GLOB torque-program-sources
-  RELATIVE ${PROJECT_SOURCE_DIR}
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   CONFIGURE_DEPENDS v8/src/torque/*.cc
 )
 
 add_executable(torque)
 target_sources(torque PRIVATE ${torque-program-sources})
-target_compile_options(torque PRIVATE ${enable-exceptions})
-target_include_directories(torque PRIVATE ${PROJECT_SOURCE_DIR}/v8)
+target_compile_options(torque PRIVATE ${enable-exceptions} -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
+target_include_directories(torque PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(torque PRIVATE v8_libbase)
 
 #
@@ -944,8 +856,8 @@ add_executable(mksnapshot
 )
 
 target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(mksnapshot PRIVATE ${disable-exceptions})
-target_include_directories(mksnapshot PRIVATE ${PROJECT_SOURCE_DIR}/v8)
+target_compile_options(mksnapshot PRIVATE ${disable-exceptions} -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
+target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(mksnapshot
   PRIVATE
     v8_libbase
@@ -960,5 +872,17 @@ target_link_libraries(mksnapshot
 add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
 target_include_directories(v8-adler32
   PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/v8/third_party/zlib>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
 )
+
+target_compile_options(v8-adler32 PRIVATE -Wno-extra-semi-stmt)
+
+add_library(ch_contrib::v8_base_without_compiler ALIAS v8_base_without_compiler)
+add_library(ch_contrib::v8_compiler              ALIAS v8_compiler             )
+add_library(ch_contrib::v8_snapshot              ALIAS v8_snapshot             )
+add_library(ch_contrib::v8_inspector             ALIAS v8_inspector            )
+add_library(ch_contrib::v8_libplatform           ALIAS v8_libplatform          )
+add_library(ch_contrib::v8_libbase               ALIAS v8_libbase              )
+add_library(ch_contrib::v8_libsampler            ALIAS v8_libsampler           )
+add_library(ch_contrib::v8_initializers          ALIAS v8_initializers         )
+add_library(ch_contrib::v8_torque_generated      ALIAS v8_torque_generated     )
