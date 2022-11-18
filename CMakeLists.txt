@@ -123,7 +123,7 @@ target_compile_options(v8-i18n-support PRIVATE ${disable-exceptions})
 target_link_libraries(v8-i18n-support PRIVATE v8_torque_generated)
 
 target_include_directories(v8-i18n-support
-  PRIVATE
+  PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
@@ -308,13 +308,17 @@ add_library(v8_base_without_compiler STATIC
 )
 
 target_compile_definitions(v8_base_without_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_base_without_compiler PRIVATE ${disable-exceptions} -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast)
+target_compile_options(v8_base_without_compiler 
+  PRIVATE ${disable-exceptions} 
+  PUBLIC -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast
+)
 
 target_include_directories(v8_base_without_compiler
-  PRIVATE
+  PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
    # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -341,14 +345,16 @@ list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
 add_library(v8_compiler STATIC)
 target_sources(v8_compiler PRIVATE ${compiler-sources})
 target_compile_definitions(v8_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_compiler PRIVATE ${disable-exceptions} -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments)
+target_compile_options(v8_compiler
+  PRIVATE ${disable-exceptions} 
+  PUBLIC -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments
+)
 
 target_include_directories(v8_compiler
   PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
-  PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
    # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
 )
 
@@ -419,10 +425,14 @@ add_library(
 )
 
 target_compile_definitions(v8_initializers PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_initializers PRIVATE ${disable-exceptions} -Wno-shadow  -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum)
+target_compile_options(v8_initializers 
+  PRIVATE ${disable-exceptions} 
+  PUBLIC -Wno-shadow -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum
+)
 
 target_include_directories(v8_initializers
-  PRIVATE
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -443,8 +453,15 @@ add_library(
 )
 
 target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_snapshot PRIVATE ${disable-exceptions} -Wno-old-style-cast)
-target_include_directories(v8_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_compile_options(v8_snapshot 
+  PRIVATE ${disable-exceptions} 
+  PUBLIC -Wno-old-style-cast
+)
+target_include_directories(v8_snapshot 
+  PUBLIC 
+  ${CMAKE_CURRENT_SOURCE_DIR}/v8
+  ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+)
 
 target_link_libraries(v8_snapshot
   PRIVATE
@@ -524,11 +541,13 @@ add_library(v8_inspector STATIC
 )
 
 target_compile_features(v8_inspector PUBLIC cxx_std_17)
-target_compile_options(v8_inspector PRIVATE ${disable-exceptions} -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
+target_compile_options(v8_inspector 
+  PRIVATE ${disable-exceptions} 
+  PUBLIC -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
 target_compile_definitions(v8_inspector PUBLIC $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 
 target_include_directories(v8_inspector
-  PRIVATE
+  PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/inspector
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
@@ -593,11 +612,10 @@ target_sources(v8_libplatform
 )
 
 target_compile_definitions(v8_libplatform PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} -Wno-unused-parameter -Wno-non-virtual-dtor)
+target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} PUBLIC -Wno-unused-parameter -Wno-non-virtual-dtor)
 target_include_directories(v8_libplatform
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
@@ -610,14 +628,14 @@ target_link_libraries(v8_libplatform PRIVATE v8_libbase)
 add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
 
 target_include_directories(v8_libsampler
-  PRIVATE
+  PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
 
 target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
-target_include_directories(v8_libsampler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_include_directories(v8_libsampler PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(v8_libsampler PRIVATE v8_libbase)
 
 #
@@ -665,7 +683,11 @@ set_property(SOURCE v8/src/base/utils/random-number-generator.cc
 
 target_compile_definitions(v8_libbase PRIVATE $<${is-win}:UNICODE> $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libbase PRIVATE ${disable-exceptions})
-target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_include_directories(v8_libbase 
+  PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
@@ -687,13 +709,13 @@ add_executable(
 )
 
 target_include_directories(bytecode_builtins_list_generator
-  PRIVATE
+  PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
 target_link_libraries(bytecode_builtins_list_generator v8_libbase)
 
-target_compile_options(bytecode_builtins_list_generator PRIVATE -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
+target_compile_options(bytecode_builtins_list_generator PUBLIC -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
 #
 # v8_torque_generated
 #
@@ -790,7 +812,7 @@ add_library(
 )
 
 target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
+target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} PUBLIC -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
 target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
 
 target_include_directories(v8_torque_generated
@@ -834,8 +856,8 @@ file(GLOB torque-program-sources
 
 add_executable(torque)
 target_sources(torque PRIVATE ${torque-program-sources})
-target_compile_options(torque PRIVATE ${enable-exceptions} -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
-target_include_directories(torque PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_compile_options(torque PRIVATE ${enable-exceptions} PUBLIC -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
+target_include_directories(torque PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
 target_link_libraries(torque PRIVATE v8_libbase)
 
 #
@@ -856,8 +878,8 @@ add_executable(mksnapshot
 )
 
 target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(mksnapshot PRIVATE ${disable-exceptions} -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
-target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_compile_options(mksnapshot PRIVATE ${disable-exceptions} PUBLIC -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
+target_include_directories(mksnapshot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
 target_link_libraries(mksnapshot
   PRIVATE
     v8_libbase
@@ -873,6 +895,8 @@ add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
 target_include_directories(v8-adler32
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8 
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
 
 target_compile_options(v8-adler32 PRIVATE -Wno-extra-semi-stmt)
