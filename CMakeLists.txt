@@ -551,8 +551,8 @@ target_include_directories(v8_inspector
     ${CMAKE_CURRENT_BINARY_DIR}/inspector
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
+    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
+    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
 )
 
 target_link_libraries(v8_inspector PRIVATE v8_torque_generated)
