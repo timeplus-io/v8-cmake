@@ -45,7 +45,8 @@ set(is-msvc $<CXX_COMPILER_ID:MSVC>)
 # FIXME obviously
 set(is-arm 0)
 set(is-arm64 0)
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64")
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
   set(is-arm64 1)
 endif ()
 set(is-ia32 0)
