@@ -2,6 +2,35 @@ cmake_minimum_required(VERSION 3.10)
 
 option(V8CMAKE_FIND_PYTHON "Enable finding python" ON)
 
+if (USE_PREBUILD_LIBRARIES)
+    set(V8_CMAKE_DIR ${PREBUILD_PATH}/lib/cmake/v8)
+    list(APPEND CMAKE_PREFIX_PATH ${V8_CMAKE_DIR})
+
+    find_package(v8)
+    
+    set_target_properties(v8-bytecodes-builtin-list PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_base_without_compiler PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_compiler              PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_snapshot              PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_inspector             PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_libplatform           PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_libbase               PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_libsampler            PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_initializers          PROPERTIES IMPORTED_GLOBAL TRUE)
+    set_target_properties(v8_torque_generated      PROPERTIES IMPORTED_GLOBAL TRUE)
+
+    target_include_directories(v8-bytecodes-builtin-list SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_base_without_compiler SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_compiler              SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_snapshot              SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_inspector             SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_libplatform           SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_libbase               SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_libsampler            SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_initializers          SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)
+    target_include_directories(v8_torque_generated      SYSTEM BEFORE INTERFACE ${PREBUILD_PATH}/include/v8)    
+endif ()
+
 add_definitions("-DV8_ENABLE_WEBASSEMBLY -DV8_ADVANCED_BIGINT_ALGORITHMS")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -94,10 +123,10 @@ set(enable-exceptions
 )
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/generated)
-add_library(v8-bytecodes-builtin-list STATIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/builtins-generated/bytecodes-builtins-list.h)
-# more granular library support
-add_library(v8-i18n-support OBJECT)
-set_property(TARGET v8-i18n-support PROPERTY EXCLUDE_FROM_ALL ON)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8-bytecodes-builtin-list STATIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/builtins-generated/bytecodes-builtins-list.h)
+endif ()
+
 
 list(APPEND i18n-sources
   v8/src/builtins/builtins-intl.cc
@@ -118,17 +147,24 @@ list(APPEND i18n-sources
   v8/src/strings/char-predicates.cc
 )
 
-target_sources(v8-i18n-support PRIVATE ${i18n-sources})
-target_compile_definitions(v8-i18n-support PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8-i18n-support PRIVATE ${disable-exceptions})
-target_link_libraries(v8-i18n-support PRIVATE v8_torque_generated)
+# more granular library support
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8-i18n-support OBJECT)
+  set_property(TARGET v8-i18n-support PROPERTY EXCLUDE_FROM_ALL ON)
 
-target_include_directories(v8-i18n-support
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
+  target_sources(v8-i18n-support PRIVATE ${i18n-sources})
+  target_compile_definitions(v8-i18n-support PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8-i18n-support PRIVATE ${disable-exceptions})
+  target_link_libraries(v8-i18n-support PRIVATE v8_torque_generated)
+
+  target_include_directories(v8-i18n-support
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+endif ()
 
 file(GLOB api-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/api/*.cc)
 file(GLOB asmjs-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/asmjs/*.cc)
@@ -206,133 +242,135 @@ list(REMOVE_ITEM strings-sources v8/src/strings/char-predicates.cc)
 list(APPEND snapshot-sources v8/src/snapshot/embedded/embedded-data.cc)
 list(APPEND wasm-sources ${wasm-baseline-sources})
 
-add_library(v8_base_without_compiler STATIC
-  $<${is-posix}:v8/src/trap-handler/handler-inside-posix.cc>
-  $<${is-posix}:v8/src/trap-handler/handler-outside-posix.cc>
-  $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/unwinding-info-win64.cc>
-  $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/system-jit-win.cc>
-  $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-inside-win.cc>
-  $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-outside-win.cc>
-  $<${is-x64}:v8/src/codegen/x64/assembler-x64.cc>
-  $<${is-x64}:v8/src/codegen/x64/cpu-x64.cc>
-  $<${is-x64}:v8/src/codegen/x64/macro-assembler-x64.cc>
-  $<${is-x64}:v8/src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc>
-  $<${is-x64}:v8/src/compiler/backend/x64/code-generator-x64.cc>
-  $<${is-x64}:v8/src/compiler/backend/x64/instruction-scheduler-x64.cc>
-  $<${is-x64}:v8/src/compiler/backend/x64/instruction-selector-x64.cc>
-  $<${is-x64}:v8/src/compiler/backend/x64/unwinding-info-writer-x64.cc>
-  $<${is-x64}:v8/src/deoptimizer/x64/deoptimizer-x64.cc>
-  $<${is-x64}:v8/src/diagnostics/x64/disasm-x64.cc>
-  $<${is-x64}:v8/src/diagnostics/x64/eh-frame-x64.cc>
-  $<${is-x64}:v8/src/execution/x64/frame-constants-x64.cc>
-  $<${is-x64}:v8/src/regexp/x64/regexp-macro-assembler-x64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/assembler-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/cpu-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/decoder-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/macro-assembler-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/instructions-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/instructions-arm64-constants.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/register-arm64.cc>
-  $<${is-arm64}:v8/src/codegen/arm64/utils-arm64.cc>
-  $<${is-arm64}:v8/src/compiler/backend/arm64/code-generator-arm64.cc>
-  $<${is-arm64}:v8/src/compiler/backend/arm64/instruction-scheduler-arm64.cc>
-  $<${is-arm64}:v8/src/compiler/backend/arm64/instruction-selector-arm64.cc>
-  $<${is-arm64}:v8/src/compiler/backend/arm64/unwinding-info-writer-arm64.cc>
-  $<${is-arm64}:v8/src/deoptimizer/arm64/deoptimizer-arm64.cc>
-  $<${is-arm64}:v8/src/diagnostics/arm64/disasm-arm64.cc>
-  $<${is-arm64}:v8/src/diagnostics/arm64/eh-frame-arm64.cc>
-  $<${is-arm64}:v8/src/execution/arm64/frame-constants-arm64.cc>
-  $<${is-arm64}:v8/src/regexp/arm64/regexp-macro-assembler-arm64.cc>
-  $<$<BOOL:${V8_ENABLE_I18N}>:$<TARGET_OBJECTS:v8-i18n-support>>
-  ${api-sources}
-  ${asmjs-sources}
-  ${ast-sources}
-  ${builtin-sources}
-  ${baseline-sources}
-  ${bigint-sources}
-  ${codegen-sources}
-  v8/src/common/assert-scope.cc
-  v8/src/compiler-dispatcher/lazy-compile-dispatcher.cc
-  v8/src/compiler-dispatcher/optimizing-compile-dispatcher.cc
-  v8/src/date/date.cc
-  v8/src/date/dateparser.cc
-  ${debug-sources}
-  ${deoptimizer-sources}
-  ${diagnostic-sources}
-  ${execution-sources}
-  ${extensions-sources}
-  v8/src/flags/flags.cc
-  v8/src/handles/global-handles.cc
-  v8/src/handles/handles.cc
-  ${heap-sources}
-  v8/src/ic/call-optimization.cc
-  v8/src/ic/handler-configuration.cc
-  v8/src/ic/ic-stats.cc
-  v8/src/ic/ic.cc
-  v8/src/ic/stub-cache.cc
-  v8/src/init/bootstrapper.cc
-  v8/src/init/icu_util.cc
-  v8/src/init/isolate-allocator.cc
-  v8/src/init/startup-data-util.cc
-  v8/src/init/v8.cc
-  ${handles-sources}
-  ${interpreter-sources}
-  ${json-sources}
-  ${logging-sources}
-  ${numbers-sources}
-  ${object-sources}
-  ${parsing-sources}
-  ${profiler-sources}
-  ${regexp-sources}
-  v8/src/roots/roots.cc
-  ${runtime-sources}
-  v8/src/base/sanitizer/lsan-page-allocator.cc
-  ${snapshot-sources}
-  ${strings-sources}
-  v8/src/tasks/cancelable-task.cc
-  v8/src/tasks/operations-barrier.cc
-  v8/src/tasks/task-utils.cc
-  v8/src/third_party/siphash/halfsiphash.cc
-  v8/src/tracing/trace-event.cc
-  v8/src/tracing/traced-value.cc
-  v8/src/web-snapshot/web-snapshot.cc
-  v8/src/tracing/tracing-category-observer.cc
-  v8/src/trap-handler/handler-inside.cc
-  v8/src/trap-handler/handler-outside.cc
-  v8/src/trap-handler/handler-shared.cc
-  v8/src/temporal/temporal-parser.cc
-  ${utils-sources}
-  ${wasm-sources}
-  ${zone-sources}
-  ${zlib-sources}
-  $<TARGET_OBJECTS:v8-adler32>
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_base_without_compiler STATIC
+    $<${is-posix}:v8/src/trap-handler/handler-inside-posix.cc>
+    $<${is-posix}:v8/src/trap-handler/handler-outside-posix.cc>
+    $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/unwinding-info-win64.cc>
+    $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/system-jit-win.cc>
+    $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-inside-win.cc>
+    $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-outside-win.cc>
+    $<${is-x64}:v8/src/codegen/x64/assembler-x64.cc>
+    $<${is-x64}:v8/src/codegen/x64/cpu-x64.cc>
+    $<${is-x64}:v8/src/codegen/x64/macro-assembler-x64.cc>
+    $<${is-x64}:v8/src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc>
+    $<${is-x64}:v8/src/compiler/backend/x64/code-generator-x64.cc>
+    $<${is-x64}:v8/src/compiler/backend/x64/instruction-scheduler-x64.cc>
+    $<${is-x64}:v8/src/compiler/backend/x64/instruction-selector-x64.cc>
+    $<${is-x64}:v8/src/compiler/backend/x64/unwinding-info-writer-x64.cc>
+    $<${is-x64}:v8/src/deoptimizer/x64/deoptimizer-x64.cc>
+    $<${is-x64}:v8/src/diagnostics/x64/disasm-x64.cc>
+    $<${is-x64}:v8/src/diagnostics/x64/eh-frame-x64.cc>
+    $<${is-x64}:v8/src/execution/x64/frame-constants-x64.cc>
+    $<${is-x64}:v8/src/regexp/x64/regexp-macro-assembler-x64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/assembler-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/cpu-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/decoder-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/macro-assembler-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/instructions-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/instructions-arm64-constants.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/register-arm64.cc>
+    $<${is-arm64}:v8/src/codegen/arm64/utils-arm64.cc>
+    $<${is-arm64}:v8/src/compiler/backend/arm64/code-generator-arm64.cc>
+    $<${is-arm64}:v8/src/compiler/backend/arm64/instruction-scheduler-arm64.cc>
+    $<${is-arm64}:v8/src/compiler/backend/arm64/instruction-selector-arm64.cc>
+    $<${is-arm64}:v8/src/compiler/backend/arm64/unwinding-info-writer-arm64.cc>
+    $<${is-arm64}:v8/src/deoptimizer/arm64/deoptimizer-arm64.cc>
+    $<${is-arm64}:v8/src/diagnostics/arm64/disasm-arm64.cc>
+    $<${is-arm64}:v8/src/diagnostics/arm64/eh-frame-arm64.cc>
+    $<${is-arm64}:v8/src/execution/arm64/frame-constants-arm64.cc>
+    $<${is-arm64}:v8/src/regexp/arm64/regexp-macro-assembler-arm64.cc>
+    $<$<BOOL:${V8_ENABLE_I18N}>:$<TARGET_OBJECTS:v8-i18n-support>>
+    ${api-sources}
+    ${asmjs-sources}
+    ${ast-sources}
+    ${builtin-sources}
+    ${baseline-sources}
+    ${bigint-sources}
+    ${codegen-sources}
+    v8/src/common/assert-scope.cc
+    v8/src/compiler-dispatcher/lazy-compile-dispatcher.cc
+    v8/src/compiler-dispatcher/optimizing-compile-dispatcher.cc
+    v8/src/date/date.cc
+    v8/src/date/dateparser.cc
+    ${debug-sources}
+    ${deoptimizer-sources}
+    ${diagnostic-sources}
+    ${execution-sources}
+    ${extensions-sources}
+    v8/src/flags/flags.cc
+    v8/src/handles/global-handles.cc
+    v8/src/handles/handles.cc
+    ${heap-sources}
+    v8/src/ic/call-optimization.cc
+    v8/src/ic/handler-configuration.cc
+    v8/src/ic/ic-stats.cc
+    v8/src/ic/ic.cc
+    v8/src/ic/stub-cache.cc
+    v8/src/init/bootstrapper.cc
+    v8/src/init/icu_util.cc
+    v8/src/init/isolate-allocator.cc
+    v8/src/init/startup-data-util.cc
+    v8/src/init/v8.cc
+    ${handles-sources}
+    ${interpreter-sources}
+    ${json-sources}
+    ${logging-sources}
+    ${numbers-sources}
+    ${object-sources}
+    ${parsing-sources}
+    ${profiler-sources}
+    ${regexp-sources}
+    v8/src/roots/roots.cc
+    ${runtime-sources}
+    v8/src/base/sanitizer/lsan-page-allocator.cc
+    ${snapshot-sources}
+    ${strings-sources}
+    v8/src/tasks/cancelable-task.cc
+    v8/src/tasks/operations-barrier.cc
+    v8/src/tasks/task-utils.cc
+    v8/src/third_party/siphash/halfsiphash.cc
+    v8/src/tracing/trace-event.cc
+    v8/src/tracing/traced-value.cc
+    v8/src/web-snapshot/web-snapshot.cc
+    v8/src/tracing/tracing-category-observer.cc
+    v8/src/trap-handler/handler-inside.cc
+    v8/src/trap-handler/handler-outside.cc
+    v8/src/trap-handler/handler-shared.cc
+    v8/src/temporal/temporal-parser.cc
+    ${utils-sources}
+    ${wasm-sources}
+    ${zone-sources}
+    ${zlib-sources}
+    $<TARGET_OBJECTS:v8-adler32>
+  )
 
-target_compile_definitions(v8_base_without_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_base_without_compiler 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast
-)
+  target_compile_definitions(v8_base_without_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_base_without_compiler 
+    PRIVATE ${disable-exceptions} 
+    PUBLIC -Wno-error -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast
+  )
 
-target_include_directories(v8_base_without_compiler
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
-   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
+  target_include_directories(v8_base_without_compiler
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
+    # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
 
-target_link_libraries(
-  v8_base_without_compiler
-  PRIVATE
-    v8_libbase
-    v8_libsampler
-    v8_torque_generated
-  PUBLIC
-    v8-bytecodes-builtin-list
-)
+  target_link_libraries(
+    v8_base_without_compiler
+    PRIVATE
+      v8_libbase
+      v8_libsampler
+      v8_torque_generated
+    PUBLIC
+      v8-bytecodes-builtin-list
+  )
+endif ()
 
 #
 # v8_compiler
@@ -343,151 +381,156 @@ file(GLOB_RECURSE compiler-sources
 )
 list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
 
-add_library(v8_compiler STATIC)
-target_sources(v8_compiler PRIVATE ${compiler-sources})
-target_compile_definitions(v8_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_compiler
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_compiler STATIC)
+  target_sources(v8_compiler PRIVATE ${compiler-sources})
+  target_compile_definitions(v8_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_compiler
+    PRIVATE ${disable-exceptions} 
+    PUBLIC -Wno-error -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments
+  )
 
-target_include_directories(v8_compiler
-  PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
-)
+  target_include_directories(v8_compiler
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
 
-target_link_libraries(v8_compiler
-  PRIVATE
-    v8_libbase
-    v8_base_without_compiler
-    v8_torque_generated
-  PUBLIC
-    v8-bytecodes-builtin-list
-)
+  target_link_libraries(v8_compiler
+    PRIVATE
+      v8_libbase
+      v8_base_without_compiler
+      v8_torque_generated
+    PUBLIC
+      v8-bytecodes-builtin-list
+  )
+endif ()
 
 #
 # v8_initializers
 #
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(
+    v8_initializers STATIC
+    $<${is-arm64}:v8/src/builtins/arm64/builtins-arm64.cc>
+    $<${is-arm}:v8/src/builtins/arm/builtins-arm.cc>
+    $<${is-ia32}:v8/src/builtins/ia32/builtins-ia32.cc>
+    $<${is-mips64}:v8/src/builtins/mips64/builtins-mips64.cc>
+    $<${is-mips}:v8/src/builtins/mips/builtins-mips.cc>
+    $<${is-ppc}:v8/src/builtins/ppc/builtins-ppc.cc>
+    $<${is-s390}:v8/src/builtins/s390/builtins-s390.cc>
+    $<${is-x64}:v8/src/builtins/x64/builtins-x64.cc>
+    $<$<BOOL:${V8_ENABLE_I18N}>:v8/src/builtins/builtins-intl-gen.cc>
+    v8/src/builtins/builtins-array-gen.cc
+    v8/src/builtins/builtins-async-function-gen.cc
+    v8/src/builtins/builtins-async-gen.cc
+    v8/src/builtins/builtins-async-generator-gen.cc
+    v8/src/builtins/builtins-async-iterator-gen.cc
+    v8/src/builtins/builtins-bigint-gen.cc
+    v8/src/builtins/builtins-call-gen.cc
+    v8/src/builtins/builtins-collections-gen.cc
+    v8/src/builtins/builtins-constructor-gen.cc
+    v8/src/builtins/builtins-conversion-gen.cc
+    v8/src/builtins/builtins-date-gen.cc
+    v8/src/builtins/builtins-generator-gen.cc
+    v8/src/builtins/builtins-global-gen.cc
+    v8/src/builtins/builtins-handler-gen.cc
+    v8/src/builtins/builtins-ic-gen.cc
+    v8/src/builtins/builtins-internal-gen.cc
+    v8/src/builtins/builtins-interpreter-gen.cc
+    v8/src/builtins/builtins-iterator-gen.cc
+    v8/src/builtins/builtins-lazy-gen.cc
+    v8/src/builtins/builtins-microtask-queue-gen.cc
+    v8/src/builtins/builtins-number-gen.cc
+    v8/src/builtins/builtins-object-gen.cc
+    v8/src/builtins/builtins-promise-gen.cc
+    v8/src/builtins/builtins-proxy-gen.cc
+    v8/src/builtins/builtins-regexp-gen.cc
+    v8/src/builtins/builtins-sharedarraybuffer-gen.cc
+    v8/src/builtins/builtins-string-gen.cc
+    v8/src/builtins/builtins-typed-array-gen.cc
+    v8/src/builtins/builtins-wasm-gen.cc
+    v8/src/builtins/growable-fixed-array-gen.cc
+    v8/src/builtins/setup-builtins-internal.cc
+    v8/src/codegen/code-stub-assembler.cc
+    v8/src/heap/setup-heap-internal.cc
+    v8/src/ic/accessor-assembler.cc
+    v8/src/ic/binary-op-assembler.cc
+    v8/src/ic/keyed-store-generic.cc
+    v8/src/ic/unary-op-assembler.cc
+    v8/src/interpreter/interpreter-assembler.cc
+    v8/src/interpreter/interpreter-generator.cc
+    v8/src/interpreter/interpreter-intrinsics-generator.cc
+  )
 
-add_library(
-  v8_initializers STATIC
-  $<${is-arm64}:v8/src/builtins/arm64/builtins-arm64.cc>
-  $<${is-arm}:v8/src/builtins/arm/builtins-arm.cc>
-  $<${is-ia32}:v8/src/builtins/ia32/builtins-ia32.cc>
-  $<${is-mips64}:v8/src/builtins/mips64/builtins-mips64.cc>
-  $<${is-mips}:v8/src/builtins/mips/builtins-mips.cc>
-  $<${is-ppc}:v8/src/builtins/ppc/builtins-ppc.cc>
-  $<${is-s390}:v8/src/builtins/s390/builtins-s390.cc>
-  $<${is-x64}:v8/src/builtins/x64/builtins-x64.cc>
-  $<$<BOOL:${V8_ENABLE_I18N}>:v8/src/builtins/builtins-intl-gen.cc>
-  v8/src/builtins/builtins-array-gen.cc
-  v8/src/builtins/builtins-async-function-gen.cc
-  v8/src/builtins/builtins-async-gen.cc
-  v8/src/builtins/builtins-async-generator-gen.cc
-  v8/src/builtins/builtins-async-iterator-gen.cc
-  v8/src/builtins/builtins-bigint-gen.cc
-  v8/src/builtins/builtins-call-gen.cc
-  v8/src/builtins/builtins-collections-gen.cc
-  v8/src/builtins/builtins-constructor-gen.cc
-  v8/src/builtins/builtins-conversion-gen.cc
-  v8/src/builtins/builtins-date-gen.cc
-  v8/src/builtins/builtins-generator-gen.cc
-  v8/src/builtins/builtins-global-gen.cc
-  v8/src/builtins/builtins-handler-gen.cc
-  v8/src/builtins/builtins-ic-gen.cc
-  v8/src/builtins/builtins-internal-gen.cc
-  v8/src/builtins/builtins-interpreter-gen.cc
-  v8/src/builtins/builtins-iterator-gen.cc
-  v8/src/builtins/builtins-lazy-gen.cc
-  v8/src/builtins/builtins-microtask-queue-gen.cc
-  v8/src/builtins/builtins-number-gen.cc
-  v8/src/builtins/builtins-object-gen.cc
-  v8/src/builtins/builtins-promise-gen.cc
-  v8/src/builtins/builtins-proxy-gen.cc
-  v8/src/builtins/builtins-regexp-gen.cc
-  v8/src/builtins/builtins-sharedarraybuffer-gen.cc
-  v8/src/builtins/builtins-string-gen.cc
-  v8/src/builtins/builtins-typed-array-gen.cc
-  v8/src/builtins/builtins-wasm-gen.cc
-  v8/src/builtins/growable-fixed-array-gen.cc
-  v8/src/builtins/setup-builtins-internal.cc
-  v8/src/codegen/code-stub-assembler.cc
-  v8/src/heap/setup-heap-internal.cc
-  v8/src/ic/accessor-assembler.cc
-  v8/src/ic/binary-op-assembler.cc
-  v8/src/ic/keyed-store-generic.cc
-  v8/src/ic/unary-op-assembler.cc
-  v8/src/interpreter/interpreter-assembler.cc
-  v8/src/interpreter/interpreter-generator.cc
-  v8/src/interpreter/interpreter-intrinsics-generator.cc
-)
+  target_compile_definitions(v8_initializers PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_initializers 
+    PRIVATE ${disable-exceptions} 
+    PUBLIC -Wno-error -Wno-shadow -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum
+  )
 
-target_compile_definitions(v8_initializers PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_initializers 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-shadow -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum
-)
+  target_include_directories(v8_initializers
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
 
-target_include_directories(v8_initializers
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-target_link_libraries(v8_initializers PRIVATE v8_torque_generated v8-bytecodes-builtin-list)
-
+  target_link_libraries(v8_initializers PRIVATE v8_torque_generated v8-bytecodes-builtin-list)
+endif ()
 #
 # v8_snapshot
 #
 
 # Note: v8_use_external_startup_data not currently supported.
 # Note: v8_use_multi_snapshots not currently supported.
-add_library(
-  v8_snapshot STATIC
-  ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
-  ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
-  v8/src/init/setup-isolate-deserialize.cc
-)
-
-target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_snapshot 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-old-style-cast
-)
-target_include_directories(v8_snapshot 
-  PUBLIC 
-  ${CMAKE_CURRENT_SOURCE_DIR}/v8
-  ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
-
-target_link_libraries(v8_snapshot
-  PRIVATE
-    v8_torque_generated
-    v8-bytecodes-builtin-list
-)
-
-# Note: allow passing in v8_random_seed
-add_custom_command(
-  COMMAND
-    ./mksnapshot
-    --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
-    --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
-    $<${is-x64}:--target_arch=x64>
-    $<$<PLATFORM_ID:Darwin>:--target_os=mac>
-    $<$<PLATFORM_ID:Linux>:--target_os=linux>
-    $<$<PLATFORM_ID:Windows>:--target_os=win>
-    --turbo_instruction_scheduling
-  DEPENDS
-    mksnapshot
-  OUTPUT
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(
+    v8_snapshot STATIC
     ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
-)
+    v8/src/init/setup-isolate-deserialize.cc
+  )
 
+  target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_snapshot 
+    PRIVATE ${disable-exceptions} 
+    PUBLIC -Wno-error -Wno-old-style-cast
+  )
+  target_include_directories(v8_snapshot 
+    PUBLIC 
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+
+  target_link_libraries(v8_snapshot
+    PRIVATE
+      v8_torque_generated
+      v8-bytecodes-builtin-list
+  )
+
+  # Note: allow passing in v8_random_seed
+  add_custom_command(
+    COMMAND
+      ./mksnapshot
+      --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
+      --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
+      $<${is-x64}:--target_arch=x64>
+      $<$<PLATFORM_ID:Darwin>:--target_os=mac>
+      $<$<PLATFORM_ID:Linux>:--target_os=linux>
+      $<$<PLATFORM_ID:Windows>:--target_os=win>
+      --turbo_instruction_scheduling
+    DEPENDS
+      mksnapshot
+    OUTPUT
+      ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
+      ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
+  )
+endif ()
 #
 # v8_inspector
 #
@@ -535,188 +578,199 @@ file(GLOB inspector-protocol-sources
 list(FILTER inspector-protocol-sources EXCLUDE REGEX "_test[.]cc$")
 list(FILTER inspector-protocol-sources EXCLUDE REGEX "crdtp/test_.*[.]cc$")
 
-add_library(v8_inspector STATIC
-  ${inspector-protocol-sources}
-  ${inspector-sources}
-  ${inspector_files}
-)
-
-target_compile_features(v8_inspector PUBLIC cxx_std_17)
-target_compile_options(v8_inspector 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
-target_compile_definitions(v8_inspector PUBLIC $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-
-target_include_directories(v8_inspector
-  PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}/inspector
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
-    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
-)
-
-target_link_libraries(v8_inspector PRIVATE v8_torque_generated)
-
-file(GLOB inspector-templates
-  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-  CONFIGURE_DEPENDS
-    v8/third_party/inspector_protocol/lib/*.template
-    v8/third_party/inspector_protocol/templates/*.template
-)
-
-add_custom_command(
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${inspector_dirs}
-  OUTPUT ${inspector_dirs}
-)
-
-add_custom_command(
-  COMMAND
-    Python::Interpreter
-    v8/third_party/inspector_protocol/code_generator.py
-    --config v8/src/inspector/inspector_protocol_config.json
-    --config_value protocol.path=v8/include/js_protocol.pdl
-    --jinja_dir v8/third_party
-    --output_base ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector
-    --inspector_protocol_dir third_party/inspector_protocol
-  WORKING_DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS
-    v8/third_party/inspector_protocol/code_generator.py
-    v8/src/inspector/inspector_protocol_config.json
-    ${inspector-templates}
-    ${inspector_dirs}
-  OUTPUT
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_inspector STATIC
+    ${inspector-protocol-sources}
+    ${inspector-sources}
     ${inspector_files}
-)
+  )
 
+  target_compile_features(v8_inspector PUBLIC cxx_std_17)
+  target_compile_options(v8_inspector 
+    PRIVATE ${disable-exceptions} 
+    PUBLIC -Wno-error -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
+  target_compile_definitions(v8_inspector PUBLIC $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+
+  target_include_directories(v8_inspector
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/inspector>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+
+  target_link_libraries(v8_inspector PRIVATE v8_torque_generated)
+
+  file(GLOB inspector-templates
+    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+    CONFIGURE_DEPENDS
+      v8/third_party/inspector_protocol/lib/*.template
+      v8/third_party/inspector_protocol/templates/*.template
+  )
+
+  add_custom_command(
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${inspector_dirs}
+    OUTPUT ${inspector_dirs}
+  )
+
+  add_custom_command(
+    COMMAND
+      Python::Interpreter
+      v8/third_party/inspector_protocol/code_generator.py
+      --config v8/src/inspector/inspector_protocol_config.json
+      --config_value protocol.path=v8/include/js_protocol.pdl
+      --jinja_dir v8/third_party
+      --output_base ${CMAKE_CURRENT_BINARY_DIR}/inspector/src/inspector
+      --inspector_protocol_dir third_party/inspector_protocol
+    WORKING_DIRECTORY
+      ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS
+      v8/third_party/inspector_protocol/code_generator.py
+      v8/src/inspector/inspector_protocol_config.json
+      ${inspector-templates}
+      ${inspector_dirs}
+    OUTPUT
+      ${inspector_files}
+  )
+endif ()
 #
 # v8_libplatform
 #
 
-add_library(v8_libplatform STATIC)
-target_sources(v8_libplatform
-  PRIVATE
-    $<${is-win}:v8/src/libplatform/tracing/recorder-win.cc>
-    v8/src/libplatform/default-foreground-task-runner.cc
-    v8/src/libplatform/default-job.cc
-    v8/src/libplatform/default-platform.cc
-    v8/src/libplatform/default-worker-threads-task-runner.cc
-    v8/src/libplatform/delayed-task-queue.cc
-    v8/src/libplatform/task-queue.cc
-    v8/src/libplatform/tracing/trace-buffer.cc
-    v8/src/libplatform/tracing/trace-config.cc
-    v8/src/libplatform/tracing/trace-object.cc
-    v8/src/libplatform/tracing/trace-writer.cc
-    v8/src/libplatform/tracing/tracing-controller.cc
-    v8/src/libplatform/worker-thread.cc
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_libplatform STATIC)
+  target_sources(v8_libplatform
+    PRIVATE
+      $<${is-win}:v8/src/libplatform/tracing/recorder-win.cc>
+      v8/src/libplatform/default-foreground-task-runner.cc
+      v8/src/libplatform/default-job.cc
+      v8/src/libplatform/default-platform.cc
+      v8/src/libplatform/default-worker-threads-task-runner.cc
+      v8/src/libplatform/delayed-task-queue.cc
+      v8/src/libplatform/task-queue.cc
+      v8/src/libplatform/tracing/trace-buffer.cc
+      v8/src/libplatform/tracing/trace-config.cc
+      v8/src/libplatform/tracing/trace-object.cc
+      v8/src/libplatform/tracing/trace-writer.cc
+      v8/src/libplatform/tracing/tracing-controller.cc
+      v8/src/libplatform/worker-thread.cc
+  )
 
-target_compile_definitions(v8_libplatform PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor)
-target_include_directories(v8_libplatform
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-)
+  target_compile_definitions(v8_libplatform PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor)
+  target_include_directories(v8_libplatform
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  )
 
-target_link_libraries(v8_libplatform PRIVATE v8_libbase)
+  target_link_libraries(v8_libplatform PRIVATE v8_libbase)
+endif ()
 
 #
 # v8_libsampler
 #
 
-add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
 
-target_include_directories(v8_libsampler
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
-
-target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
-target_include_directories(v8_libsampler PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8)
-target_link_libraries(v8_libsampler PRIVATE v8_libbase)
+  target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
+  target_include_directories(v8_libsampler
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+  target_link_libraries(v8_libsampler PRIVATE v8_libbase)
+endif ()
 
 #
 # v8_libbase
 #
 
-add_library(v8_libbase STATIC
-  v8/src/base/bits.cc
-  v8/src/base/bounded-page-allocator.cc
-  v8/src/base/cpu.cc
-  v8/src/base/debug/stack_trace.cc
-  v8/src/base/division-by-constant.cc
-  v8/src/base/file-utils.cc
-  v8/src/base/functional.cc
-  v8/src/base/ieee754.cc
-  v8/src/base/logging.cc
-  v8/src/base/once.cc
-  v8/src/base/page-allocator.cc
-  v8/src/base/platform/condition-variable.cc
-  v8/src/base/platform/mutex.cc
-  v8/src/base/platform/semaphore.cc
-  v8/src/base/platform/time.cc
-  v8/src/base/region-allocator.cc
-  v8/src/base/sys-info.cc
-  v8/src/base/strings.cc
-  v8/src/base/utils/random-number-generator.cc
-  v8/src/base/vlq-base64.cc
-  v8/src/base/virtual-address-space.cc
-  $<$<NOT:$<OR:${is-win},${is-aix}>>:v8/src/base/platform/platform-posix-time.cc>
-  $<${is-win}:v8/src/base/platform/platform-win32.cc>
-  $<${is-win}:v8/src/base/debug/stack_trace_win.cc>
-  $<${is-aix}:v8/src/base/debug/stack_trace_posix.cc>
-  $<${is-aix}:v8/src/base/platform/platform-aix.cc>
-  $<${is-darwin}:v8/src/base/debug/stack_trace_posix.cc>
-  $<${is-darwin}:v8/src/base/platform/platform-macos.cc>
-  $<${is-darwin}:v8/src/base/platform/platform-darwin.cc>
-  $<${is-linux}:v8/src/base/debug/stack_trace_posix.cc>
-  $<${is-linux}:v8/src/base/platform/platform-linux.cc>
-  $<${is-posix}:v8/src/base/platform/platform-posix.cc>
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8_libbase STATIC
+    v8/src/base/bits.cc
+    v8/src/base/bounded-page-allocator.cc
+    v8/src/base/cpu.cc
+    v8/src/base/debug/stack_trace.cc
+    v8/src/base/division-by-constant.cc
+    v8/src/base/file-utils.cc
+    v8/src/base/functional.cc
+    v8/src/base/ieee754.cc
+    v8/src/base/logging.cc
+    v8/src/base/once.cc
+    v8/src/base/page-allocator.cc
+    v8/src/base/platform/condition-variable.cc
+    v8/src/base/platform/mutex.cc
+    v8/src/base/platform/semaphore.cc
+    v8/src/base/platform/time.cc
+    v8/src/base/region-allocator.cc
+    v8/src/base/sys-info.cc
+    v8/src/base/strings.cc
+    v8/src/base/utils/random-number-generator.cc
+    v8/src/base/vlq-base64.cc
+    v8/src/base/virtual-address-space.cc
+    $<$<NOT:$<OR:${is-win},${is-aix}>>:v8/src/base/platform/platform-posix-time.cc>
+    $<${is-win}:v8/src/base/platform/platform-win32.cc>
+    $<${is-win}:v8/src/base/debug/stack_trace_win.cc>
+    $<${is-aix}:v8/src/base/debug/stack_trace_posix.cc>
+    $<${is-aix}:v8/src/base/platform/platform-aix.cc>
+    $<${is-darwin}:v8/src/base/debug/stack_trace_posix.cc>
+    $<${is-darwin}:v8/src/base/platform/platform-macos.cc>
+    $<${is-darwin}:v8/src/base/platform/platform-darwin.cc>
+    $<${is-linux}:v8/src/base/debug/stack_trace_posix.cc>
+    $<${is-linux}:v8/src/base/platform/platform-linux.cc>
+    $<${is-posix}:v8/src/base/platform/platform-posix.cc>
+  )
 
-set_property(SOURCE v8/src/base/utils/random-number-generator.cc
-  APPEND PROPERTY COMPILE_DEFINITIONS _CRT_RAND_S
-)
+  set_property(SOURCE v8/src/base/utils/random-number-generator.cc
+    APPEND PROPERTY COMPILE_DEFINITIONS _CRT_RAND_S
+  )
 
-target_compile_definitions(v8_libbase PRIVATE $<${is-win}:UNICODE> $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libbase PRIVATE ${disable-exceptions})
-target_include_directories(v8_libbase 
-  PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
-target_link_libraries(v8_libbase
-  PRIVATE
-    Threads::Threads
-    $<${is-linux}:${CMAKE_DL_LIBS}>
-    $<${is-linux}:rt>
-    $<${is-win}:winmm>
-    $<${is-win}:dbghelp>
-)
+  target_compile_definitions(v8_libbase PRIVATE $<${is-win}:UNICODE> $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_libbase PRIVATE ${disable-exceptions})
+  target_include_directories(v8_libbase 
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+  target_link_libraries(v8_libbase
+    PRIVATE
+      Threads::Threads
+      $<${is-linux}:${CMAKE_DL_LIBS}>
+      $<${is-linux}:rt>
+      $<${is-win}:winmm>
+      $<${is-win}:dbghelp>
+  )
+endif ()
 
 #
 # bytecode_builtins_list_generator
 #
 
-add_executable(
-  bytecode_builtins_list_generator
-  v8/src/builtins/generate-bytecodes-builtins-list.cc
-  v8/src/interpreter/bytecode-operands.cc
-  v8/src/interpreter/bytecodes.cc
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_executable(
+    bytecode_builtins_list_generator
+    v8/src/builtins/generate-bytecodes-builtins-list.cc
+    v8/src/interpreter/bytecode-operands.cc
+    v8/src/interpreter/bytecodes.cc
+  )
 
-target_include_directories(bytecode_builtins_list_generator
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-)
+  target_include_directories(bytecode_builtins_list_generator
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
 
-target_link_libraries(bytecode_builtins_list_generator v8_libbase)
+  target_link_libraries(bytecode_builtins_list_generator v8_libbase)
 
-target_compile_options(bytecode_builtins_list_generator PUBLIC -Wno-error -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
+  target_compile_options(bytecode_builtins_list_generator PUBLIC -Wno-error -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
+endif ()
+
 #
 # v8_torque_generated
 #
@@ -806,46 +860,49 @@ endforeach()
 
 list(REMOVE_DUPLICATES torque_dirs)
 
-add_library(
-  v8_torque_generated STATIC
-  ${torque-outputs}
-  ${torque_outputs}
-)
-
-target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
-target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
-
-target_include_directories(v8_torque_generated
-  PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-)
-
-add_custom_command(
-  COMMAND
-    ./torque
-    -o ${CMAKE_CURRENT_BINARY_DIR}/torque-generated
-    -v8-root ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${torque_files}
-  COMMAND
-    ${CMAKE_COMMAND} -E touch ${torque-outputs} ${torque_outputs}
-  DEPENDS
-    torque
-    ${torque_dirs}
-    ${torque_files_abs}
-  OUTPUT
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(
+    v8_torque_generated STATIC
     ${torque-outputs}
     ${torque_outputs}
-)
+  )
 
-add_custom_command(
-  COMMAND
-    ${CMAKE_COMMAND} -E make_directory ${torque_dirs}
-  OUTPUT
-    ${torque_dirs}
-)
+  target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
+  target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
+
+  target_include_directories(v8_torque_generated
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}> 
+  )
+
+  add_custom_command(
+    COMMAND
+      ./torque
+      -o ${CMAKE_CURRENT_BINARY_DIR}/torque-generated
+      -v8-root ${CMAKE_CURRENT_SOURCE_DIR}/v8
+      ${torque_files}
+    COMMAND
+      ${CMAKE_COMMAND} -E touch ${torque-outputs} ${torque_outputs}
+    DEPENDS
+      torque
+      ${torque_dirs}
+      ${torque_files_abs}
+    OUTPUT
+      ${torque-outputs}
+      ${torque_outputs}
+  )
+
+  add_custom_command(
+    COMMAND
+      ${CMAKE_COMMAND} -E make_directory ${torque_dirs}
+    OUTPUT
+      ${torque_dirs}
+  )
+endif ()
 
 #
 # torque
@@ -855,52 +912,140 @@ file(GLOB torque-program-sources
   CONFIGURE_DEPENDS v8/src/torque/*.cc
 )
 
-add_executable(torque)
-target_sources(torque PRIVATE ${torque-program-sources})
-target_compile_options(torque PRIVATE ${enable-exceptions} PUBLIC -Wno-error -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
-target_include_directories(torque PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
-target_link_libraries(torque PRIVATE v8_libbase)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_executable(torque)
+  target_sources(torque PRIVATE ${torque-program-sources})
+  target_compile_options(torque PRIVATE ${enable-exceptions} PUBLIC -Wno-error -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
+  target_include_directories(torque PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
+  target_link_libraries(torque PRIVATE v8_libbase)
+endif ()
 
 #
 # mksnapshot
 #
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_executable(mksnapshot
+    v8/src/init/setup-isolate-full.cc
+    v8/src/snapshot/embedded/embedded-empty.cc
+    v8/src/snapshot/embedded/embedded-file-writer.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-aix.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-mac.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-win.cc
+    v8/src/snapshot/mksnapshot.cc
+    v8/src/snapshot/snapshot-empty.cc
+  )
 
-add_executable(mksnapshot
-  v8/src/init/setup-isolate-full.cc
-  v8/src/snapshot/embedded/embedded-empty.cc
-  v8/src/snapshot/embedded/embedded-file-writer.cc
-  v8/src/snapshot/embedded/platform-embedded-file-writer-aix.cc
-  v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
-  v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
-  v8/src/snapshot/embedded/platform-embedded-file-writer-mac.cc
-  v8/src/snapshot/embedded/platform-embedded-file-writer-win.cc
-  v8/src/snapshot/mksnapshot.cc
-  v8/src/snapshot/snapshot-empty.cc
-)
+  target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_options(mksnapshot PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
+  target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
+  target_link_libraries(mksnapshot
+    PRIVATE
+      v8_libbase
+      v8_libplatform
+      v8_base_without_compiler
+      v8_compiler
+      v8_initializers
+      v8-bytecodes-builtin-list
+      v8_torque_generated
+  )
+endif ()
 
-target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(mksnapshot PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
-target_include_directories(mksnapshot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
-target_link_libraries(mksnapshot
-  PRIVATE
-    v8_libbase
-    v8_libplatform
-    v8_base_without_compiler
-    v8_compiler
-    v8_initializers
-    v8-bytecodes-builtin-list
-    v8_torque_generated
-)
+if (NOT USE_PREBUILD_LIBRARIES)
+  add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
+  target_include_directories(v8-adler32
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8 >
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/v8>
+  )
+  target_compile_options(v8-adler32 PRIVATE -Wno-extra-semi-stmt)
+endif ()
 
-add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
-target_include_directories(v8-adler32
-  PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8 
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
+if (ONLY_LIBRARIES)
+    install(TARGETS v8-bytecodes-builtin-list EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
 
-target_compile_options(v8-adler32 PRIVATE -Wno-extra-semi-stmt)
+    install(TARGETS v8_base_without_compiler EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_compiler EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_snapshot EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_inspector EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_libplatform EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_libbase EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_libsampler EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_initializers EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(TARGETS v8_torque_generated EXPORT v8Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    # install as a subdirectory only
+    install(EXPORT v8Targets
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/v8"
+    )
+
+    configure_package_config_file(
+        cmake/v8Config.cmake.in
+        "${PROJECT_BINARY_DIR}/v8Config.cmake"
+        INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/v8"
+    )
+    install(FILES "${PROJECT_BINARY_DIR}/v8Config.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/v8"
+    )
+
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/v8/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/v8
+    FILES_MATCHING
+      PATTERN "*.h"
+      PATTERN "*.json" EXCLUDE
+    )
+endif ()
 
 add_library(ch_contrib::v8_base_without_compiler ALIAS v8_base_without_compiler)
 add_library(ch_contrib::v8_compiler              ALIAS v8_compiler             )

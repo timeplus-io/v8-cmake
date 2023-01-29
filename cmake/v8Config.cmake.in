@@ -1,0 +1,5 @@
+# v8 CMake configuration file.
+
+@PACKAGE_INIT@
+
+include ("${CMAKE_CURRENT_LIST_DIR}/v8Targets.cmake")
