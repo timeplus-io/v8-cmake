@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
+project(V8 LANGUAGES CXX C ASM)
 
 option(V8CMAKE_FIND_PYTHON "Enable finding python" ON)
 
-add_definitions("-DV8_ENABLE_WEBASSEMBLY -DV8_ADVANCED_BIGINT_ALGORITHMS")
+add_definitions("-DV8_ENABLE_WEBASSEMBLY -DV8_ADVANCED_BIGINT_ALGORITHMS -DV8_ENABLE_WASM_SIMD256_REVEC")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -82,7 +83,7 @@ set(
 set(disable-exceptions
   $<$<CXX_COMPILER_ID:MSVC>:/EHs-c->
   $<$<CXX_COMPILER_ID:AppleClang>:-fno-exceptions>
-  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-undef -Wno-unused-parameter -Wno-covered-switch-default -Wno-poison-system-directories -Wno-gnu-statement-expression -Wno-comma -Wno-format-nonliteral -Wno-format-pedantic -Wno-missing-noreturn -Wno-conditional-uninitialized -Wno-extra-semi-stmt -Wno-unused-parameter -Wno-non-virtual-dtor -Wno-undef -Wno-shadow-field-in-constructor -Wno-shadow-field-in-constructor -Wno-documentation -Wno-reserved-identifier -Wno-shadow-field-in-constructor -Wno-newline-eof -Wno-undefined-reinterpret-cast >
+  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-invalid-offsetof>
   $<$<CXX_COMPILER_ID:GNU>:-fno-exceptions>
 )
 
@@ -93,8 +94,12 @@ set(enable-exceptions
   $<$<CXX_COMPILER_ID:GNU>:-fexceptions>
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/generated)
-add_library(v8-bytecodes-builtin-list STATIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/builtins-generated/bytecodes-builtins-list.h)
+set(enable-fpic
+  $<$<CXX_COMPILER_ID:AppleClang>:-fPIC>
+  $<$<CXX_COMPILER_ID:Clang>:-fPIC>
+  $<$<CXX_COMPILER_ID:GNU>:-fPIC>
+)
+
 # more granular library support
 add_library(v8-i18n-support OBJECT)
 set_property(TARGET v8-i18n-support PROPERTY EXCLUDE_FROM_ALL ON)
@@ -105,6 +110,7 @@ list(APPEND i18n-sources
   v8/src/objects/js-break-iterator.cc
   v8/src/objects/js-collator.cc
   v8/src/objects/js-date-time-format.cc
+  v8/src/objects/js-duration-format.cc
   v8/src/objects/js-display-names.cc
   v8/src/objects/js-list-format.cc
   v8/src/objects/js-locale.cc
@@ -124,7 +130,7 @@ target_compile_options(v8-i18n-support PRIVATE ${disable-exceptions})
 target_link_libraries(v8-i18n-support PRIVATE v8_torque_generated)
 
 target_include_directories(v8-i18n-support
-  PUBLIC
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
@@ -192,7 +198,8 @@ list(REMOVE_ITEM builtin-sources
 )
 
 list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/unwinding-info-win64.cc)
-list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/system-jit-win.cc)
+list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/etw-jit-win.cc)
+
 list(REMOVE_ITEM object-sources ${i18n-sources})
 list(REMOVE_ITEM regexp-sources v8/src/regexp/gen-regexp-special-case.cc)
 list(REMOVE_ITEM runtime-sources v8/src/runtime/runtime-intl.cc)
@@ -210,7 +217,6 @@ add_library(v8_base_without_compiler STATIC
   $<${is-posix}:v8/src/trap-handler/handler-inside-posix.cc>
   $<${is-posix}:v8/src/trap-handler/handler-outside-posix.cc>
   $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/unwinding-info-win64.cc>
-  $<$<AND:${is-x64},${is-win}>:v8/src/diagnostics/system-jit-win.cc>
   $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-inside-win.cc>
   $<$<AND:${is-x64},${is-win}>:v8/src/trap-handler/handler-outside-win.cc>
   $<${is-x64}:v8/src/codegen/x64/assembler-x64.cc>
@@ -252,6 +258,7 @@ add_library(v8_base_without_compiler STATIC
   ${bigint-sources}
   ${codegen-sources}
   v8/src/common/assert-scope.cc
+  v8/src/common/code-memory-access.cc
   v8/src/compiler-dispatcher/lazy-compile-dispatcher.cc
   v8/src/compiler-dispatcher/optimizing-compile-dispatcher.cc
   v8/src/date/date.cc
@@ -295,7 +302,6 @@ add_library(v8_base_without_compiler STATIC
   v8/src/third_party/siphash/halfsiphash.cc
   v8/src/tracing/trace-event.cc
   v8/src/tracing/traced-value.cc
-  v8/src/web-snapshot/web-snapshot.cc
   v8/src/tracing/tracing-category-observer.cc
   v8/src/trap-handler/handler-inside.cc
   v8/src/trap-handler/handler-outside.cc
@@ -308,18 +314,18 @@ add_library(v8_base_without_compiler STATIC
   $<TARGET_OBJECTS:v8-adler32>
 )
 
+
 target_compile_definitions(v8_base_without_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_base_without_compiler 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-implicit-fallthrough -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations -Wno-deprecated-pragma -Wno-redundant-parens -Wno-deprecated-anon-enum-enum-conversion -Wno-zero-as-null-pointer-constant -Wno-suggest-override -Wno-dtor-name -Wno-suggest-destructor-override -Wno-inconsistent-missing-destructor-override -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-volatile -Wno-cast-function-type -Wno-deprecated-copy-with-dtor -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-shadow -Wno-gnu-anonymous-struct -Wno-shadow-field -Wno-cast-qual -Wno-used-but-marked-unused -Wno-gnu-zero-variadic-macro-arguments -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast
-)
+target_compile_options(v8_base_without_compiler PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_base_without_compiler PRIVATE ${enable-fpic})
+endif()
 
 target_include_directories(v8_base_without_compiler
-  PUBLIC
+  PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
-   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+    $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -346,17 +352,18 @@ list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
 add_library(v8_compiler STATIC)
 target_sources(v8_compiler PRIVATE ${compiler-sources})
 target_compile_definitions(v8_compiler PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_compiler
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-shadow -Wno-shadow -Wno-tautological-type-limit-compare -Wno-deprecated-this-capture -Wno-unused-member-function -Wno-unused-macros -Wno-deprecated-copy-with-dtor -Wno-gnu-anonymous-struct -Wno-suggest-override -Wno-deprecated-copy-with-user-provided-dtor -Wno-deprecated-volatile -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-deprecated-volatile -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-zero-variadic-macro-arguments
-)
+target_compile_options(v8_compiler PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_compiler PRIVATE ${enable-fpic})
+endif()
 
 target_include_directories(v8_compiler
   PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
+  PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-   # $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+    $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
 )
 
 target_link_libraries(v8_compiler
@@ -426,14 +433,13 @@ add_library(
 )
 
 target_compile_definitions(v8_initializers PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_initializers 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-shadow -Wno-duplicate-enum -Wno-frame-larger-than -Wno-gnu-anonymous-struct -Wno-deprecated-this-capture -Wno-ambiguous-reversed-operator -Wno-shadow-field -Wno-shadow-uncaptured-local -Wno-ambiguous-reversed-operator -Wno-old-style-cast -Wno-deprecated-copy-with-dtor -Wno-unused-member-function -Wno-unused-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-cast-qual  -Wno-used-but-marked-unused -Wno-duplicate-enum
-)
+target_compile_options(v8_initializers PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_initializers PRIVATE ${enable-fpic})
+endif()
 
 target_include_directories(v8_initializers
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -454,15 +460,11 @@ add_library(
 )
 
 target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_snapshot 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-old-style-cast
-)
-target_include_directories(v8_snapshot 
-  PUBLIC 
-  ${CMAKE_CURRENT_SOURCE_DIR}/v8
-  ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
+target_compile_options(v8_snapshot PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_snapshot PRIVATE ${enable-fpic})
+endif()
+target_include_directories(v8_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 
 target_link_libraries(v8_snapshot
   PRIVATE
@@ -473,7 +475,7 @@ target_link_libraries(v8_snapshot
 # Note: allow passing in v8_random_seed
 add_custom_command(
   COMMAND
-    ./mksnapshot
+    mksnapshot
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
     $<${is-x64}:--target_arch=x64>
@@ -542,18 +544,19 @@ add_library(v8_inspector STATIC
 )
 
 target_compile_features(v8_inspector PUBLIC cxx_std_17)
-target_compile_options(v8_inspector 
-  PRIVATE ${disable-exceptions} 
-  PUBLIC -Wno-error -Wno-cast-function-type -Wno-shadow -Wno-suggest-destructor-override -Wno-shadow-uncaptured-local -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-inconsistent-missing-destructor-override -Wno-unused-member-function -Wno-unused-macros -Wno-used-but-marked-unused)
+target_compile_options(v8_inspector PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_inspector PRIVATE ${enable-fpic})
+endif()
 target_compile_definitions(v8_inspector PUBLIC $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 
 target_include_directories(v8_inspector
-  PUBLIC
+  PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/inspector
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
-    # ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googlemock/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/googletest/src/googletest/include
 )
 
 target_link_libraries(v8_inspector PRIVATE v8_torque_generated)
@@ -601,6 +604,7 @@ target_sources(v8_libplatform
     v8/src/libplatform/default-foreground-task-runner.cc
     v8/src/libplatform/default-job.cc
     v8/src/libplatform/default-platform.cc
+    v8/src/libplatform/default-thread-isolated-allocator.cc
     v8/src/libplatform/default-worker-threads-task-runner.cc
     v8/src/libplatform/delayed-task-queue.cc
     v8/src/libplatform/task-queue.cc
@@ -613,10 +617,15 @@ target_sources(v8_libplatform
 )
 
 target_compile_definitions(v8_libplatform PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_libplatform PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor)
+target_compile_options(v8_libplatform PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_libplatform PRIVATE ${enable-fpic})
+endif()
+
 target_include_directories(v8_libplatform
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
@@ -629,14 +638,17 @@ target_link_libraries(v8_libplatform PRIVATE v8_libbase)
 add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
 
 target_include_directories(v8_libsampler
-  PUBLIC
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
 
 target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
-target_include_directories(v8_libsampler PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+if(enable-fPIC)
+  target_compile_options(v8_libsampler PRIVATE ${enable-fpic})
+endif()
+target_include_directories(v8_libsampler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(v8_libsampler PRIVATE v8_libbase)
 
 #
@@ -650,13 +662,14 @@ add_library(v8_libbase STATIC
   v8/src/base/debug/stack_trace.cc
   v8/src/base/division-by-constant.cc
   v8/src/base/file-utils.cc
-  v8/src/base/functional.cc
   v8/src/base/ieee754.cc
   v8/src/base/logging.cc
   v8/src/base/once.cc
   v8/src/base/page-allocator.cc
   v8/src/base/platform/condition-variable.cc
+  v8/src/base/platform/memory-protection-key.cc
   v8/src/base/platform/mutex.cc
+  v8/src/base/platform/platform.cc
   v8/src/base/platform/semaphore.cc
   v8/src/base/platform/time.cc
   v8/src/base/region-allocator.cc
@@ -671,7 +684,6 @@ add_library(v8_libbase STATIC
   $<${is-aix}:v8/src/base/debug/stack_trace_posix.cc>
   $<${is-aix}:v8/src/base/platform/platform-aix.cc>
   $<${is-darwin}:v8/src/base/debug/stack_trace_posix.cc>
-  $<${is-darwin}:v8/src/base/platform/platform-macos.cc>
   $<${is-darwin}:v8/src/base/platform/platform-darwin.cc>
   $<${is-linux}:v8/src/base/debug/stack_trace_posix.cc>
   $<${is-linux}:v8/src/base/platform/platform-linux.cc>
@@ -684,11 +696,10 @@ set_property(SOURCE v8/src/base/utils/random-number-generator.cc
 
 target_compile_definitions(v8_libbase PRIVATE $<${is-win}:UNICODE> $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libbase PRIVATE ${disable-exceptions})
-target_include_directories(v8_libbase 
-  PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-)
+if(enable-fPIC)
+  target_compile_options(v8_libbase PRIVATE ${enable-fpic})
+endif()
+target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
@@ -701,6 +712,12 @@ target_link_libraries(v8_libbase
 #
 # bytecode_builtins_list_generator
 #
+v8_generate_builtins_list(${CMAKE_CURRENT_BINARY_DIR}/generated)
+
+target_include_directories(v8-bytecodes-builtin-list
+  INTERFACE
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
 
 add_executable(
   bytecode_builtins_list_generator
@@ -710,13 +727,12 @@ add_executable(
 )
 
 target_include_directories(bytecode_builtins_list_generator
-  PUBLIC
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
 )
 
 target_link_libraries(bytecode_builtins_list_generator v8_libbase)
 
-target_compile_options(bytecode_builtins_list_generator PUBLIC -Wno-error -Wno-unused-parameter -Wno-undef -Wno-shadow-field-in-constructor -Wno-duplicate-enum)
 #
 # v8_torque_generated
 #
@@ -749,6 +765,7 @@ if(NOT V8_ENABLE_I18N)
     src/objects/js-break-iterator.tq
     src/objects/js-collator.tq
     src/objects/js-date-time-format.tq
+    src/objects/js-duration-format.tq
     src/objects/js-display-names.tq
     src/objects/js-list-format.tq
     src/objects/js-locale.tq
@@ -813,7 +830,10 @@ add_library(
 )
 
 target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-deprecated-copy-with-dtor -Wno-ambiguous-reversed-operator -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-uncaptured-local -Wno-shadow-field -Wno-ambiguous-reversed-operator -Wno-duplicate-enum -Wno-old-style-cast -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct -Wno-gnu-zero-variadic-macro-arguments)
+target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions})
+if(enable-fPIC)
+  target_compile_options(v8_torque_generated PRIVATE ${enable-fpic})
+endif()
 target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
 
 target_include_directories(v8_torque_generated
@@ -825,7 +845,7 @@ target_include_directories(v8_torque_generated
 
 add_custom_command(
   COMMAND
-    ./torque
+    torque
     -o ${CMAKE_CURRENT_BINARY_DIR}/torque-generated
     -v8-root ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${torque_files}
@@ -857,8 +877,8 @@ file(GLOB torque-program-sources
 
 add_executable(torque)
 target_sources(torque PRIVATE ${torque-program-sources})
-target_compile_options(torque PRIVATE ${enable-exceptions} PUBLIC -Wno-error -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-gnu-zero-variadic-macro-arguments -Wno-old-style-cast -Wno-gnu-anonymous-struct -Wno-cast-qual -Wno-used-but-marked-unused -Wno-duplicate-enum -Wno-deprecated-this-capture -Wno-extra-semi-stmt -Wno-missing-noreturn -Wno-used-but-marked-unused -Wno-conditional-uninitialized -Wno-deprecated-copy-with-dtor -Wno-covered-switch-default -Wno-shadow-field -Wno-shadow-field-in-constructor -Wno-unused-parameter -Wno-undef -Wno-newline-eof -Wno-non-virtual-dtor -Wno-documentation)
-target_include_directories(torque PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
+target_compile_options(torque PRIVATE ${enable-exceptions})
+target_include_directories(torque PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(torque PRIVATE v8_libbase)
 
 #
@@ -879,8 +899,8 @@ add_executable(mksnapshot
 )
 
 target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
-target_compile_options(mksnapshot PRIVATE ${disable-exceptions} PUBLIC -Wno-error -Wno-old-style-cast -Wno-frame-larger-than -Wno-unused-macros -Wno-deprecated-copy-with-user-provided-dtor -Wno-shadow-field  -Wno-gnu-zero-variadic-macro-arguments -Wno-shadow-uncaptured-local -Wno-old-style-cast -Wno-duplicate-enum -Wno-ambiguous-reversed-operator -Wno-used-but-marked-unused -Wno-cast-qual -Wno-gnu-anonymous-struct)
-target_include_directories(mksnapshot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8 ${CMAKE_CURRENT_SOURCE_DIR}/v8/include)
+target_compile_options(mksnapshot PRIVATE ${disable-exceptions})
+target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_link_libraries(mksnapshot
   PRIVATE
     v8_libbase
@@ -896,11 +916,7 @@ add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
 target_include_directories(v8-adler32
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8 
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
-
-target_compile_options(v8-adler32 PRIVATE -Wno-extra-semi-stmt)
 
 add_library(ch_contrib::v8_base_without_compiler ALIAS v8_base_without_compiler)
 add_library(ch_contrib::v8_compiler              ALIAS v8_compiler             )
