@@ -1206,7 +1206,7 @@ class Platform {
    * required.
    */
   virtual int64_t CurrentClockTimeMilliseconds() {
-    return floor(CurrentClockTimeMillis());
+    return static_cast<int64_t>(floor(CurrentClockTimeMillis()));
   }
 
   /**

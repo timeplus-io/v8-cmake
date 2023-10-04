@@ -83,7 +83,7 @@ set(
 set(disable-exceptions
   $<$<CXX_COMPILER_ID:MSVC>:/EHs-c->
   $<$<CXX_COMPILER_ID:AppleClang>:-fno-exceptions>
-  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-invalid-offsetof>
+  $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-invalid-offsetof -Wno-deprecated-non-prototype>
   $<$<CXX_COMPILER_ID:GNU>:-fno-exceptions>
 )
 
@@ -475,7 +475,7 @@ target_link_libraries(v8_snapshot
 # Note: allow passing in v8_random_seed
 add_custom_command(
   COMMAND
-    mksnapshot
+    ${CMAKE_CURRENT_BINARY_DIR}/mksnapshot
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
     $<${is-x64}:--target_arch=x64>
@@ -845,7 +845,7 @@ target_include_directories(v8_torque_generated
 
 add_custom_command(
   COMMAND
-    torque
+    ${CMAKE_CURRENT_BINARY_DIR}/torque
     -o ${CMAKE_CURRENT_BINARY_DIR}/torque-generated
     -v8-root ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${torque_files}
@@ -913,6 +913,7 @@ target_link_libraries(mksnapshot
 )
 
 add_library(v8-adler32 OBJECT v8/third_party/zlib/adler32.c)
+target_compile_options(v8-adler32 PRIVATE ${disable-exceptions})
 target_include_directories(v8-adler32
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib>
