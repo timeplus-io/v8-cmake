@@ -136,7 +136,7 @@ bool TryHandleSignal(int signum, siginfo_t* info, void* context) {
 #if V8_HOST_ARCH_X64
     auto* context_ip = CONTEXT_REG(rip, RIP);
 #elif V8_HOST_ARCH_ARM64
-    auto* context_ip = &uc->uc_mcontext.pc;
+    auto* context_ip = CONTEXT_PC();
 #else
 #error "Unsupported architecture."
 #endif
