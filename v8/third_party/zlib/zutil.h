@@ -159,6 +159,11 @@ extern z_const char * const z_errmsg[10]; /* indexed by 2-zlib_error */
 #      include <unix.h> /* for fdopen */
 #    else
 #      ifndef fdopen
+#        if defined (__clang__)
+#          if __clang_major__ >= 18
+#            include <stdio.h>  // Ensure standard file operations are included first
+#          endif
+#        endif
 #        define fdopen(fd,mode) NULL /* No fdopen() */
 #      endif
 #    endif
