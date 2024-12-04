@@ -40,7 +40,7 @@ include(CheckPythonModuleExists)
 check_python_module_exists(PYTHON_HAVE_MARKUPSAFE markupsafe)
 
 if (NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 20)
 endif()
 
 if (NOT CMAKE_C_STANDARD)
@@ -490,13 +490,6 @@ target_link_libraries(v8_snapshot
     v8-bytecodes-builtin-list
 )
 
-
-if (NOT V8_CROSSCOMPILE)
-  message(STATUS "before build mksnapshot Building native @@@@")
-else()
-  message(STATUS "before build mksnapshot Cross compiling @@@@")
-endif()
-
 # Note: allow passing in v8_random_seed
 # we use mksnapshot here
 # timeplus@yokofly cross compile binary mksnapshot
@@ -506,6 +499,7 @@ add_custom_command(
     ${CMAKE_CURRENT_SOURCE_DIR}/mksnapshot
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
+    $<${is-arm64}:--target_arch=arm64>
     $<${is-x64}:--target_arch=x64>
     $<$<PLATFORM_ID:Darwin>:--target_os=mac>
     $<$<PLATFORM_ID:Linux>:--target_os=linux>
@@ -522,6 +516,7 @@ add_custom_command(
     ${CMAKE_CURRENT_BINARY_DIR}/mksnapshot
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
+    $<${is-arm64}:--target_arch=arm64>
     $<${is-x64}:--target_arch=x64>
     $<$<PLATFORM_ID:Darwin>:--target_os=mac>
     $<$<PLATFORM_ID:Linux>:--target_os=linux>
