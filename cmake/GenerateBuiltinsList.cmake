@@ -7,8 +7,8 @@ function(v8_generate_builtins_list target-dir)
     COMMENT "Generating ${directory}"
     VERBATIM)
   add_custom_command(
-    COMMAND bytecode_builtins_list_generator ${output}
-    DEPENDS ${directory}
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/bytecode_builtins_list_generator ${output}
+    DEPENDS ${directory} bytecode_builtins_list_generator
     OUTPUT ${output}
     COMMENT "Generating ${output}"
     VERBATIM)
