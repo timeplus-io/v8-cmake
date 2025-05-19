@@ -473,8 +473,10 @@ target_link_libraries(v8_snapshot
 )
 
 # Note: allow passing in v8_random_seed
+# proton: disable sanitizer
 add_custom_command(
   COMMAND
+    ASAN_OPTIONS=detect_container_overflow=0
     ${CMAKE_CURRENT_SOURCE_DIR}/mksnapshot
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
     --startup_src ${CMAKE_CURRENT_BINARY_DIR}/snapshot.cc
