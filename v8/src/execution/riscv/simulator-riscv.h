@@ -87,11 +87,6 @@ class StackVisitor;
 namespace v8 {
 namespace internal {
 
-struct VRegisterValue {
-  static const int kChunks = kSimulatorRvvVLEN / 64;
-  uint64_t chunks[kChunks];
-};
-
 // -----------------------------------------------------------------------------
 // Utility types and functions for RISCV
 #ifdef V8_TARGET_ARCH_32_BIT
@@ -455,8 +450,8 @@ class Simulator : public SimulatorBase {
 
 #ifdef CAN_USE_RVV_INSTRUCTIONS
   // RVV CSR
-  VRegisterValue get_vregister(int vreg) const;
-  inline uint64_t rvv_vlen() const { return kSimulatorRvvVLEN; }
+  __int128_t get_vregister(int vreg) const;
+  inline uint64_t rvv_vlen() const { return kRvvVLEN; }
   inline uint64_t rvv_vtype() const { return vtype_; }
   inline uint64_t rvv_vl() const { return vl_; }
   inline uint64_t rvv_vstart() const { return vstart_; }
@@ -884,51 +879,37 @@ class Simulator : public SimulatorBase {
   }
 
 #ifdef CAN_USE_RVV_INSTRUCTIONS
-  inline void printf_vreg(int vreg) {
-    PrintF("\t%s:0x", v8::internal::Registers::Name(static_cast<int>(vreg)));
-    VRegisterValue value = get_vregister(vreg);
-    for (int i = VRegisterValue::kChunks - 1; i >= 0; i--) {
-      const char* format =
-          i != VRegisterValue::kChunks - 1 ? "_%016" PRIx64 : "%016" PRIx64;
-      PrintF(format, value.chunks[i]);
-    }
-    PrintF("\n");
-  }
-
-  inline int snprintf_vreg(int vreg, int offset = 0) {
-    VRegisterValue value = get_vregister(vreg);
-    for (int i = VRegisterValue::kChunks - 1; i >= 0; i--) {
-      const char* format =
-          i != VRegisterValue::kChunks - 1 ? "_%016" PRIx64 : "%016" PRIx64;
-      int written = SNPrintF(trace_buf_.SubVector(offset, trace_buf_.length()),
-                             format, value.chunks[i]);
-      offset += written;
-    }
-    return offset;
-  }
-
   inline void rvv_trace_vd() {
     if (v8_flags.trace_sim) {
-      int offset = snprintf_vreg(rvv_vd_reg());
-      SNPrintF(trace_buf_.SubVector(offset, trace_buf_.length()),
-               " (%" PRId64 ")", icount_);
+      __int128_t value = Vregister_[rvv_vd_reg()];
+      SNPrintF(trace_buf_, "%016" PRIx64 "%016" PRIx64 " (%" PRId64 ")",
+               *(reinterpret_cast<int64_t*>(&value) + 1),
+               *reinterpret_cast<int64_t*>(&value), icount_);
     }
   }
 
   inline void rvv_trace_vs1() {
     if (v8_flags.trace_sim) {
-      printf_vreg(rvv_vs1_reg());
+      PrintF("\t%s:0x%016" PRIx64 "%016" PRIx64 "\n",
+             v8::internal::VRegisters::Name(static_cast<int>(rvv_vs1_reg())),
+             (uint64_t)(get_vregister(static_cast<int>(rvv_vs1_reg())) >> 64),
+             (uint64_t)get_vregister(static_cast<int>(rvv_vs1_reg())));
     }
   }
 
   inline void rvv_trace_vs2() {
     if (v8_flags.trace_sim) {
-      printf_vreg(rvv_vs2_reg());
+      PrintF("\t%s:0x%016" PRIx64 "%016" PRIx64 "\n",
+             v8::internal::VRegisters::Name(static_cast<int>(rvv_vs2_reg())),
+             (uint64_t)(get_vregister(static_cast<int>(rvv_vs2_reg())) >> 64),
+             (uint64_t)get_vregister(static_cast<int>(rvv_vs2_reg())));
     }
   }
   inline void rvv_trace_v0() {
     if (v8_flags.trace_sim) {
-      printf_vreg(v0);
+      PrintF("\t%s:0x%016" PRIx64 "%016" PRIx64 "\n",
+             v8::internal::VRegisters::Name(v0),
+             (uint64_t)(get_vregister(v0) >> 64), (uint64_t)get_vregister(v0));
     }
   }
 
@@ -947,7 +928,7 @@ class Simulator : public SimulatorBase {
         if (trace_buf_[i] == '\0') break;
       }
       SNPrintF(trace_buf_.SubVector(i, trace_buf_.length()),
-               "  sew:%s lmul:%s vstart:%" PRId64 " vl:%" PRId64, rvv_sew_s(),
+               "  sew:%s lmul:%s vstart:%" PRId64 "vl:%" PRId64, rvv_sew_s(),
                rvv_lmul_s(), rvv_vstart(), rvv_vl());
     }
   }
@@ -1191,9 +1172,8 @@ class Simulator : public SimulatorBase {
 
 #ifdef CAN_USE_RVV_INSTRUCTIONS
   // RVV registers
-  VRegisterValue Vregister_[kNumVRegisters];
-  static_assert(sizeof(VRegisterValue) == kSimulatorRvvVLEN / 8,
-                "unmatch vlen");
+  __int128_t Vregister_[kNumVRegisters];
+  static_assert(sizeof(__int128_t) == kRvvVLEN / 8, "unmatch vlen");
   uint64_t vstart_, vxsat_, vxrm_, vcsr_, vtype_, vl_, vlenb_;
   // For simplicity, we only track whether the vector unit was enabled or not.
   // The hardware's mstatus.VS status field can have 4 values: 'Off', 'Initial',

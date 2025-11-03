@@ -77,15 +77,6 @@ class JSFinalizationRegistry
   V8_EXPORT_PRIVATE void RemoveCellFromUnregisterTokenMap(
       Isolate* isolate, Tagged<WeakCell> weak_cell);
 
-  inline void set_next_dirty_unchecked(
-      Tagged<JSFinalizationRegistry> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline void set_active_cells_unchecked(
-      Tagged<Union<Undefined, WeakCell>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline void set_cleared_cells_unchecked(
-      Tagged<WeakCell> value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
   // Bitfields in flags.
   DEFINE_TORQUE_GENERATED_FINALIZATION_REGISTRY_FLAGS()
 
@@ -95,19 +86,25 @@ class JSFinalizationRegistry
 // Internal object for storing weak references in JSFinalizationRegistry.
 V8_OBJECT class WeakCell : public HeapObjectLayout {
  public:
-  inline Tagged<JSFinalizationRegistry> finalization_registry() const;
+  inline Tagged<UnionOf<JSFinalizationRegistry, Undefined>>
+  finalization_registry() const;
   inline void set_finalization_registry(
-      Tagged<JSFinalizationRegistry> value,
+      Tagged<UnionOf<JSFinalizationRegistry, Undefined>> value,
+      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline Tagged<UnionOf<Symbol, JSReceiver, Undefined>> target() const;
+  inline void set_target(Tagged<UnionOf<Symbol, JSReceiver, Undefined>> value,
+                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline Tagged<UnionOf<Symbol, JSReceiver, Undefined>> unregister_token()
+      const;
+  inline void set_unregister_token(
+      Tagged<UnionOf<Symbol, JSReceiver, Undefined>> value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Tagged<JSAny> holdings() const;
   inline void set_holdings(Tagged<JSAny> value,
                            WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Symbol, JSReceiver, Undefined>> target() const;
-
-  inline Tagged<UnionOf<Symbol, JSReceiver, Undefined>> unregister_token()
-      const;
 
   inline Tagged<UnionOf<WeakCell, Undefined>> prev() const;
   inline void set_prev(Tagged<UnionOf<WeakCell, Undefined>> value,
@@ -142,45 +139,51 @@ V8_OBJECT class WeakCell : public HeapObjectLayout {
   // slots via the gc_notify_updated_slot function. The normal write barrier is
   // not enough, since it's disabled before GC.
   template <typename GCNotifyUpdatedSlotCallback>
-  inline void GCSafeNullify(Isolate* isolate,
-                            GCNotifyUpdatedSlotCallback gc_notify_updated_slot);
+  inline void Nullify(Isolate* isolate,
+                      GCNotifyUpdatedSlotCallback gc_notify_updated_slot);
 
   inline void RemoveFromFinalizationRegistryCells(Isolate* isolate);
 
  private:
-  inline void set_target(Tagged<UnionOf<Symbol, JSReceiver, Undefined>> value);
-  inline void set_unregister_token(
-      Tagged<UnionOf<Symbol, JSReceiver, Undefined>> value);
-
-  TaggedMember<JSFinalizationRegistry> finalization_registry_;
-  TaggedMember<JSAny> holdings_;
-  TaggedMember<UnionOf<Symbol, JSReceiver, Undefined>> target_;
-  TaggedMember<UnionOf<Symbol, JSReceiver, Undefined>> unregister_token_;
-  TaggedMember<UnionOf<WeakCell, Undefined>> prev_;
-  TaggedMember<UnionOf<WeakCell, Undefined>> next_;
-  TaggedMember<UnionOf<WeakCell, Undefined>> key_list_prev_;
-  TaggedMember<UnionOf<WeakCell, Undefined>> key_list_next_;
-
   friend class JSFinalizationRegistry;
   friend class MarkCompactCollector;
   template <typename ConcreteVisitor>
   friend class MarkingVisitorBase;
-  // `Scavenger and `ScavengerCollector` for accessing `set_target` and
-  // `set_unregister_token` for updating references during GC.
-  friend class Scavenger;
-  friend class ScavengerCollector;
   friend class TorqueGeneratedWeakCellAsserts;
   friend class V8HeapExplorer;
+
+  TaggedMember<UnionOf<JSFinalizationRegistry, Undefined>>
+      finalization_registry_;
+  TaggedMember<UnionOf<Symbol, JSReceiver, Undefined>> target_;
+  TaggedMember<UnionOf<Symbol, JSReceiver, Undefined>> unregister_token_;
+  TaggedMember<JSAny> holdings_;
+  TaggedMember<UnionOf<WeakCell, Undefined>> prev_;
+  TaggedMember<UnionOf<WeakCell, Undefined>> next_;
+  TaggedMember<UnionOf<WeakCell, Undefined>> key_list_prev_;
+  TaggedMember<UnionOf<WeakCell, Undefined>> key_list_next_;
 } V8_OBJECT_END;
 
-class JSWeakRef : public TorqueGeneratedJSWeakRef<JSWeakRef, JSObject> {
+// TODO(42202654): Revise `JSWeakRef` to use `TaggedMember`s once `JSObject`
+// inherits from `HeapObjectLayout`.
+class JSWeakRef : public JSObject {
  public:
+  constexpr JSWeakRef() : JSObject() {}
+
+  static constexpr int kTargetOffset = JSObject::kHeaderSize;
+  static constexpr int kTargetOffsetEnd = kTargetOffset + kTaggedSize - 1;
+  static constexpr int kHeaderSize = kTargetOffsetEnd + 1;
+
+  DECL_ACCESSORS(target, Tagged<Union<JSReceiver, Symbol, Undefined>>)
   DECL_PRINTER(JSWeakRef)
   EXPORT_DECL_VERIFIER(JSWeakRef)
 
   class BodyDescriptor;
 
-  TQ_OBJECT_CONSTRUCTORS(JSWeakRef)
+ protected:
+  constexpr V8_INLINE JSWeakRef(Address ptr, SkipTypeCheckTag)
+      : JSObject(ptr, SkipTypeCheckTag()) {}
+
+  friend class Tagged<JSWeakRef>;
 };
 
 }  // namespace internal

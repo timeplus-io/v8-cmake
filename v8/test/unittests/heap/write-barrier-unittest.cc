@@ -16,6 +16,7 @@ using HeapWriteBarrierTest = TestWithIsolate;
 #if V8_VERIFY_WRITE_BARRIERS
 
 TEST_F(HeapWriteBarrierTest, NoSafepointInWriteBarrierModeScope) {
+  v8_flags.verify_write_barriers = true;
   LocalHeap* local_heap = isolate()->main_thread_local_heap();
   EXPECT_DEATH_IF_SUPPORTED(
       {
@@ -28,6 +29,7 @@ TEST_F(HeapWriteBarrierTest, NoSafepointInWriteBarrierModeScope) {
 }
 
 TEST_F(HeapWriteBarrierTest, NoAllocationInWriteBarrierModeScope) {
+  v8_flags.verify_write_barriers = true;
   HandleScope handle_scope(isolate());
   EXPECT_DEATH_IF_SUPPORTED(
       {
@@ -40,6 +42,8 @@ TEST_F(HeapWriteBarrierTest, NoAllocationInWriteBarrierModeScope) {
 }
 
 TEST_F(HeapWriteBarrierTest, NoSkipWriteBarrierOnOldObject) {
+  if (v8_flags.disable_write_barriers) return;
+  v8_flags.verify_write_barriers = true;
   HandleScope scope(isolate());
   DirectHandle<HeapNumber> number = i_isolate()->factory()->NewHeapNumber(10.0);
   DirectHandle<FixedArray> latest =
@@ -49,6 +53,8 @@ TEST_F(HeapWriteBarrierTest, NoSkipWriteBarrierOnOldObject) {
 }
 
 TEST_F(HeapWriteBarrierTest, NoSkipWriteBarrierOnPreviousYoungAllocation) {
+  if (v8_flags.disable_write_barriers) return;
+  v8_flags.verify_write_barriers = true;
   HandleScope scope(isolate());
   DirectHandle<HeapNumber> number = i_isolate()->factory()->NewHeapNumber(10.0);
   DirectHandle<FixedArray> previous =
@@ -62,6 +68,8 @@ TEST_F(HeapWriteBarrierTest, NoSkipWriteBarrierOnPreviousYoungAllocation) {
 
 TEST_F(HeapWriteBarrierTest,
        NoSkipWriteBarrierOnYoungAllocationAfterSafepoint) {
+  if (v8_flags.disable_write_barriers) return;
+  v8_flags.verify_write_barriers = true;
   HandleScope scope(isolate());
   DirectHandle<HeapNumber> number = i_isolate()->factory()->NewHeapNumber(10.0);
   DirectHandle<FixedArray> latest =

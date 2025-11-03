@@ -1790,7 +1790,7 @@ inline void MaglevAssembler::CompareSmiAndJumpIf(Register r1, Tagged<Smi> value,
                                                  Condition cond, Label* target,
                                                  Label::Distance distance) {
   AssertSmi(r1);
-  CompareTaggedAndBranch(target, cond, r1, Operand(value));
+  CompareTaggedAndBranch(target, cond, r1, Operand(value), distance);
 }
 
 inline void MaglevAssembler::CompareByteAndJumpIf(MemOperand left, int8_t right,
@@ -1799,7 +1799,7 @@ inline void MaglevAssembler::CompareByteAndJumpIf(MemOperand left, int8_t right,
                                                   Label* target,
                                                   Label::Distance distance) {
   LoadByte(scratch, left);
-  MacroAssembler::Branch(target, cond, scratch, Operand(right));
+  MacroAssembler::Branch(target, cond, scratch, Operand(right), distance);
 }
 
 inline void MaglevAssembler::CompareTaggedAndJumpIf(Register r1,
@@ -1807,7 +1807,7 @@ inline void MaglevAssembler::CompareTaggedAndJumpIf(Register r1,
                                                     Condition cond,
                                                     Label* target,
                                                     Label::Distance distance) {
-  CompareTaggedAndBranch(target, cond, r1, Operand(value));
+  CompareTaggedAndBranch(target, cond, r1, Operand(value), distance);
 }
 
 inline void MaglevAssembler::CompareTaggedAndJumpIf(Register r1,
@@ -1815,7 +1815,7 @@ inline void MaglevAssembler::CompareTaggedAndJumpIf(Register r1,
                                                     Condition cond,
                                                     Label* target,
                                                     Label::Distance distance) {
-  CompareTaggedAndBranch(target, cond, r1, Operand(obj));
+  CompareTaggedAndBranch(target, cond, r1, Operand(obj), distance);
 }
 
 inline void MaglevAssembler::CompareTaggedAndJumpIf(Register src1,
@@ -1823,7 +1823,7 @@ inline void MaglevAssembler::CompareTaggedAndJumpIf(Register src1,
                                                     Condition cond,
                                                     Label* target,
                                                     Label::Distance distance) {
-  CompareTaggedAndBranch(target, cond, src1, Operand(src2));
+  CompareTaggedAndBranch(target, cond, src1, Operand(src2), distance);
 }
 
 inline void MaglevAssembler::CompareDoubleAndJumpIfZeroOrNaN(

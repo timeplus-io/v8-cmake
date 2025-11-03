@@ -26,13 +26,6 @@ class StackCheckLoweringReducer : public Next {
   V<None> REDUCE(JSStackCheck)(V<Context> context,
                                OptionalV<FrameState> frame_state,
                                JSStackCheckOp::Kind kind) {
-    if (v8_flags.verify_write_barriers) {
-      // The stack check/safepoint might trigger GC, so write barriers cannot be
-      // eliminated across it.
-      __ StoreOffHeap(__ IsolateField(IsolateFieldId::kLastYoungAllocation),
-                      __ IntPtrConstant(0), MemoryRepresentation::UintPtr());
-    }
-
     switch (kind) {
       case JSStackCheckOp::Kind::kFunctionEntry: {
         // Loads of the stack limit should not be load-eliminated as it can be
@@ -115,9 +108,9 @@ class StackCheckLoweringReducer : public Next {
       V<WordPtr> builtin =
           __ RelocatableWasmBuiltinCallTarget(Builtin::kWasmStackGuard);
       // Pass custom effects to the `Call` node to mark it as non-writing.
-      // TODO(jkummerow): Distinguish loop stack checks here.
-      __ Call(builtin, {}, ts_call_descriptor,
-              OpEffects().CanReadMemory().CanThrowOrTrap());
+      __ Call(
+          builtin, {}, ts_call_descriptor,
+          OpEffects().CanReadMemory().RequiredWhenUnused().CanCreateIdentity());
     }
 
     return V<None>::Invalid();

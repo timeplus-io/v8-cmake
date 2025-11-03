@@ -14,9 +14,8 @@ namespace v8 {
 namespace internal {
 
 // static
-LargePageMetadata* LargePageMetadata::FromHeapObject(Isolate* i,
-                                                     Tagged<HeapObject> o) {
-  return cast(MutablePageMetadata::FromHeapObject(i, o));
+LargePageMetadata* LargePageMetadata::FromHeapObject(Tagged<HeapObject> o) {
+  return cast(MutablePageMetadata::FromHeapObject(o));
 }
 
 }  // namespace internal

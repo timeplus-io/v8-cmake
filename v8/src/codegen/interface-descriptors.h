@@ -150,7 +150,6 @@ namespace internal {
   V(UnaryOp_WithFeedback)                            \
   V(Void)                                            \
   IF_WASM(V, WasmAllocateShared)                     \
-  IF_WASM(V, WasmFXResume)                           \
   V(WasmDummy)                                       \
   V(WasmFloat32ToNumber)                             \
   V(WasmFloat64ToTagged)                             \
@@ -286,7 +285,7 @@ class V8_EXPORT_PRIVATE CallInterfaceDescriptorData {
   int return_count_ = kUninitializedCount;
   int param_count_ = kUninitializedCount;
   Flags flags_ = kNoFlags;
-  CodeEntrypointTag tag_ = kInvalidEntrypointTag;
+  CodeEntrypointTag tag_ = kDefaultCodeEntrypointTag;
   CodeSandboxingMode sandboxing_mode_ = CodeSandboxingMode::kSandboxed;
   StackArgumentOrder stack_order_ = StackArgumentOrder::kDefault;
 
@@ -834,7 +833,7 @@ class V8_EXPORT_PRIVATE JSEntryDescriptor
 // TODO(jgruber): Define real descriptors for C calling conventions.
 class CCallDescriptor : public StaticCallInterfaceDescriptor<CCallDescriptor> {
  public:
-  SANDBOX_EXPOSED_DESCRIPTOR(kInvalidEntrypointTag)
+  SANDBOX_EXPOSED_DESCRIPTOR(kDefaultCodeEntrypointTag)
   SANDBOXING_MODE(kSandboxed)
   DEFINE_PARAMETERS()
   DEFINE_PARAMETER_TYPES()
@@ -846,7 +845,7 @@ class CCallDescriptor : public StaticCallInterfaceDescriptor<CCallDescriptor> {
 class CEntryDummyDescriptor
     : public StaticCallInterfaceDescriptor<CEntryDummyDescriptor> {
  public:
-  SANDBOX_EXPOSED_DESCRIPTOR(kCEntryEntrypointTag)
+  SANDBOX_EXPOSED_DESCRIPTOR(kDefaultCodeEntrypointTag)
   SANDBOXING_MODE(kSandboxed)
   DEFINE_PARAMETERS()
   DEFINE_PARAMETER_TYPES()
@@ -904,19 +903,6 @@ class WasmAllocateSharedDescriptor
                                     MachineType::IntPtr(),  // kRequestedSize
                                     MachineType::TaggedSigned())  // kAlignment
   DECLARE_DESCRIPTOR(WasmAllocateSharedDescriptor)
-};
-
-class WasmFXResumeDescriptor final
-    : public StaticCallInterfaceDescriptor<WasmFXResumeDescriptor> {
- public:
-  INTERNAL_DESCRIPTOR()
-  SANDBOXING_MODE(kSandboxed)
-  DEFINE_RESULT_AND_PARAMETERS_NO_CONTEXT(0, kTargetStack)
-  DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::IntPtr())
-  DECLARE_DESCRIPTOR(WasmFXResumeDescriptor)
-
-  static constexpr int kMaxRegisterParams = 1;
-  static constexpr inline auto registers();
 };
 #endif
 
@@ -998,10 +984,6 @@ class NoContextDescriptor
 
   static constexpr auto registers();
 };
-
-#if V8_ENABLE_WEBASSEMBLY
-using WasmFXReturnDescriptor = NoContextDescriptor;
-#endif
 
 // LoadDescriptor is used by all stubs that implement Load ICs.
 class LoadDescriptor : public StaticCallInterfaceDescriptor<LoadDescriptor> {
@@ -2927,22 +2909,27 @@ class CheckTurboshaftFloat64TypeDescriptor
   DECLARE_DEFAULT_DESCRIPTOR(CheckTurboshaftFloat64TypeDescriptor)
 };
 
-#define DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR(Name, Type)                    \
-  class DebugPrint##Name##Descriptor                                         \
-      : public StaticCallInterfaceDescriptor<DebugPrint##Name##Descriptor> { \
-   public:                                                                   \
-    INTERNAL_DESCRIPTOR()                                                    \
-    SANDBOXING_MODE(kSandboxed)                                              \
-    DEFINE_RESULT_AND_PARAMETERS(1, kPrefix, kValue)                         \
-    DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::AnyTagged(),              \
-                                      MachineType::TaggedPointer(), Type())  \
-    DECLARE_DEFAULT_DESCRIPTOR(DebugPrint##Name##Descriptor)                 \
-  };
-DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR(Word32, MachineType::Uint32)
-DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR(Word64, MachineType::Uint64)
-DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR(Float32, MachineType::Float32)
-DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR(Float64, MachineType::Float64)
-#undef DEFINE_DEBUG_PRINT_BUILTIN_DESCRIPTOR
+class DebugPrintWordPtrDescriptor
+    : public StaticCallInterfaceDescriptor<DebugPrintWordPtrDescriptor> {
+ public:
+  INTERNAL_DESCRIPTOR()
+  SANDBOXING_MODE(kSandboxed)
+  DEFINE_RESULT_AND_PARAMETERS(1, kValue)
+  DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::TaggedPointer(),
+                                    MachineType::UintPtr())
+  DECLARE_DEFAULT_DESCRIPTOR(DebugPrintWordPtrDescriptor)
+};
+
+class DebugPrintFloat64Descriptor
+    : public StaticCallInterfaceDescriptor<DebugPrintFloat64Descriptor> {
+ public:
+  INTERNAL_DESCRIPTOR()
+  SANDBOXING_MODE(kSandboxed)
+  DEFINE_RESULT_AND_PARAMETERS(1, kValue)
+  DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::TaggedPointer(),
+                                    MachineType::Float64())
+  DECLARE_DEFAULT_DESCRIPTOR(DebugPrintFloat64Descriptor)
+};
 
 #define DEFINE_TFS_BUILTIN_DESCRIPTOR(Name, DoesNeedContext, ...)            \
   class Name##Descriptor                                                     \

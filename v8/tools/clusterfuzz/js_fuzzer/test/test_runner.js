@@ -27,13 +27,7 @@ describe('Load tests', () => {
     const archivePath = path.join(helpers.BASE_DIR, 'input_archive');
 
     // Create 2 test cases with a maximum of 2 inputs per test.
-    const settings = {
-      input_dir: archivePath,
-      diff_fuzz: false,
-      engine: 'v8',
-      no_of_files: 2,
-    };
-    const testRunner = new runner.RandomCorpusRunner(settings, 2);
+    const testRunner = new runner.RandomCorpusRunner(archivePath, 'v8', 2, 2);
     var inputs = Array.from(testRunner.enumerateInputs());
 
     // Check the enumeration counter separately.
@@ -77,13 +71,8 @@ describe('Load tests', () => {
     const archivePath = path.join(helpers.BASE_DIR, 'input_archive');
 
     // Create 2 test cases with a maximum of 2 inputs per test.
-    const settings = {
-      input_dir: archivePath,
-      diff_fuzz: false,
-      engine: 'v8',
-      no_of_files: 2,
-    };
-    const testRunner = new runner.RandomCorpusRunnerWithFuzzilli(settings, 2);
+    const testRunner = new runner.RandomCorpusRunnerWithFuzzilli(
+        archivePath, 'v8', 2, 2);
     var inputs = Array.from(testRunner.enumerateInputs());
 
     // Check the enumeration counter separately.
@@ -105,13 +94,8 @@ describe('Load tests', () => {
     const archivePath = path.join(helpers.BASE_DIR, 'input_archive');
 
     // Try to get 2 test cases, but there's only 1 viable in the test data.
-    const settings = {
-      input_dir: archivePath,
-      diff_fuzz: false,
-      engine: 'v8',
-      no_of_files: 2,
-    };
-    const testRunner = new runner.RandomFuzzilliNoCrashCorpusRunner(settings);
+    const testRunner = new runner.RandomFuzzilliNoCrashCorpusRunner(
+        archivePath, 'v8', 2);
     var inputs = Array.from(testRunner.enumerateInputs());
 
     assert.equal(1, inputs.length);
@@ -125,13 +109,8 @@ describe('Load tests', () => {
     const archivePath = path.join(helpers.BASE_DIR, 'input_archive');
 
     // Create 4 test cases with a maximum of 2 inputs per test.
-    const settings = {
-      input_dir: archivePath,
-      diff_fuzz: false,
-      engine: 'v8',
-      no_of_files: 4,
-    };
-    const testRunner = new runner.RandomWasmCorpusRunner(settings, 2);
+    const testRunner = new runner.RandomWasmCorpusRunner(
+        archivePath, 'v8', 4, 2);
     var inputs = Array.from(testRunner.enumerateInputs());
 
     // Check the enumeration counter separately.

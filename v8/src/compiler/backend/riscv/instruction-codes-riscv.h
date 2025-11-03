@@ -379,15 +379,9 @@ namespace compiler {
 #define TARGET_ARCH_OPCODE_LIST_ZBB_32(V)
 #endif
 
-#define TARGET_ARCH_OPCODE_LIST_ZBA(V) \
-  V(RiscvSh1add)                       \
-  V(RiscvSh2add)                       \
-  V(RiscvSh3add)
-
 #define TARGET_ARCH_OPCODE_LIST(V)   \
   TARGET_ARCH_OPCODE_LIST_COMMON(V)  \
   TARGET_ARCH_OPCODE_LIST_SPECIAL(V) \
-  TARGET_ARCH_OPCODE_LIST_ZBA(V)     \
   TARGET_ARCH_OPCODE_LIST_ZBB(V)     \
   TARGET_ARCH_OPCODE_LIST_ZBB_32(V)
 

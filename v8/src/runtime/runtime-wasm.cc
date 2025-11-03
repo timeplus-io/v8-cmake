@@ -122,6 +122,13 @@ Tagged<Object> ThrowWasmError(
                         isolate->factory()->true_value(), NONE);
   return isolate->Throw(*error_obj);
 }
+
+Tagged<Object> ThrowWasmSuspendError(Isolate* isolate,
+                                     MessageTemplate message) {
+  DirectHandle<JSObject> error_obj =
+      isolate->factory()->NewWasmSuspendError(message);
+  return isolate->Throw(*error_obj);
+}
 }  // namespace
 
 RUNTIME_FUNCTION(Runtime_WasmGenericWasmToJSObject) {
@@ -228,20 +235,19 @@ RUNTIME_FUNCTION(Runtime_TrapHandlerThrowWasmError) {
   if (op == wasm::kGCPrefix || op == wasm::kExprRefAsNonNull ||
       op == wasm::kExprCallRef || op == wasm::kExprReturnCallRef ||
       // Calling imported string function with null can trigger a signal.
-      op == wasm::kExprCallFunction || op == wasm::kExprReturnCall) {
+      op == wasm::kExprCallFunction || op == wasm::kExprReturnCall ||
+      // shared-everything atomic instructions.
+      (op == wasm::kAtomicPrefix && wire_bytes.at(pos + 1) >= 0x4F)) {
     message = MessageTemplate::kWasmTrapNullDereference;
-  } else if (op == wasm::kAtomicPrefix) {
-    op = wasm::Decoder{wire_bytes}
-             .read_prefixed_opcode<wasm::Decoder::NoValidationTag>(
-                 &wire_bytes.begin()[pos])
-             .first;
-    // shared-everything atomic instructions.
-    if (op >= 0xFE4F) {
-      message = MessageTemplate::kWasmTrapNullDereference;
+#if DEBUG
+  } else {
+    if (wasm::WasmOpcodes::IsPrefixOpcode(op)) {
+      op = wasm::Decoder{wire_bytes}
+               .read_prefixed_opcode<wasm::Decoder::NoValidationTag>(
+                   &wire_bytes.begin()[pos])
+               .first;
     }
-#define CASE(name, ...) || op == wasm::kExpr##name
-    DCHECK_EQ(op >= 0xFE4F, false FOREACH_ATOMIC_GC_OPCODE(CASE));
-#undef CASE
+#endif  // DEBUG
   }
   return ThrowWasmError(isolate, message);
 }
@@ -269,20 +275,11 @@ RUNTIME_FUNCTION(Runtime_WasmThrowJSTypeError) {
 
 RUNTIME_FUNCTION(Runtime_ThrowWasmSuspendError) {
   HandleScope scope(isolate);
-  DCHECK_EQ(0, args.length());
-  MessageTemplate message = MessageTemplate::kWasmSuspendJSFrames;
-  Tagged<WasmSuspenderObject> suspender =
-      isolate->isolate_data()->active_suspender();
-  if (IsUndefined(suspender->resume())) {
-    // We are not within a valid "WebAssembly.promising" scope. This is either a
-    // suspender created for a non-promising export call under the stress mode,
-    // or the sentinel suspender representing the initial stack.
-    // Throw with a more precise error message.
-    message = MessageTemplate::kWasmSuspendError;
-  }
-  DirectHandle<JSObject> error_obj =
-      isolate->factory()->NewWasmSuspendError(message);
-  return isolate->Throw(*error_obj);
+  DCHECK_EQ(1, args.length());
+
+  MessageTemplate message_id = MessageTemplateFromInt(args.smi_value_at(0));
+
+  return ThrowWasmSuspendError(isolate, message_id);
 }
 
 RUNTIME_FUNCTION(Runtime_WasmThrowRangeError) {
@@ -542,7 +539,7 @@ RUNTIME_FUNCTION(Runtime_TierUpJSToWasmWrapper) {
                                                               isolate};
     DirectHandle<Code> new_wrapper_code =
         wasm::JSToWasmWrapperCompilationUnit::CompileJSToWasmWrapper(
-            isolate, sig, receiver_is_first_param);
+            isolate, sig, sig_id, receiver_is_first_param);
 
     // Compilation must have installed the wrapper into the cache.
     DCHECK_EQ(new_wrapper_code->wrapper(),
@@ -620,20 +617,19 @@ RUNTIME_FUNCTION(Runtime_TierUpWasmToJSWrapper) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
-#ifdef DEBUG
   DirectHandle<WasmDispatchTable> dispatch_table =
       CheckedCast<WasmDispatchTable>(origin);
   int table_slot = import_data->table_slot();
-#endif  // DEBUG
-  // Check consistency of the signature index stored in the dispatch table.
-  DCHECK_EQ(sig->index(), dispatch_table->sig(table_slot));
+  wasm::CanonicalTypeIndex sig_index = dispatch_table->sig(table_slot);
+  DCHECK_EQ(sig,
+            wasm::GetTypeCanonicalizer()->LookupFunctionSignature(sig_index));
 
   // Compile a wrapper for the target callable.
   DirectHandle<JSReceiver> callable(Cast<JSReceiver>(import_data->callable()),
                                     isolate);
   wasm::Suspend suspend = import_data->suspend();
 
-  wasm::ResolvedWasmImport resolved({}, -1, callable, sig,
+  wasm::ResolvedWasmImport resolved({}, -1, callable, sig, sig_index,
                                     wasm::WellKnownImport::kUninstantiated);
   wasm::ImportCallKind kind = resolved.kind();
   callable = resolved.callable();  // Update to ultimate target.
@@ -645,14 +641,10 @@ RUNTIME_FUNCTION(Runtime_TierUpWasmToJSWrapper) {
                          ->internal_formal_parameter_count_without_receiver();
   }
 
-  // Lookup or compile a wrapper.
   wasm::WasmImportWrapperCache* cache = wasm::GetWasmImportWrapperCache();
   std::shared_ptr<wasm::WasmImportWrapperHandle> wrapper_handle =
       cache->GetCompiled(isolate, kind, expected_arity, suspend, sig);
 
-  // Check consistency of the dispatch table's target code pointer. The code
-  // pointer is owned by the import wrapper cache and was updated when compiling
-  // the wrapper.
   DCHECK_EQ(dispatch_table->target(table_slot), wrapper_handle->code_pointer());
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -1248,22 +1240,25 @@ RUNTIME_FUNCTION(Runtime_WasmArrayInitSegment) {
 RUNTIME_FUNCTION(Runtime_WasmAllocateSuspender) {
   HandleScope scope(isolate);
   DirectHandle<WasmSuspenderObject> suspender =
-      isolate->factory()->NewWasmSuspenderObjectInitialized();
+      isolate->factory()->NewWasmSuspenderObject();
 
   // Update the stack state.
+  wasm::StackMemory* active_stack = isolate->isolate_data()->active_stack();
   std::unique_ptr<wasm::StackMemory> target_stack =
       isolate->stack_pool().GetOrAllocate();
-  target_stack->jmpbuf()->parent = nullptr;
+  target_stack->jmpbuf()->parent = active_stack;
   target_stack->jmpbuf()->stack_limit = target_stack->jslimit();
   target_stack->jmpbuf()->sp = target_stack->base();
   target_stack->jmpbuf()->fp = kNullAddress;
   target_stack->jmpbuf()->state = wasm::JumpBuffer::Suspended;
-  target_stack->jmpbuf()->is_on_central_stack = false;
+  isolate->isolate_data()->set_active_stack(target_stack.get());
 
   // Update the suspender state.
-  suspender->set_parent(isolate->isolate_data()->active_suspender());
+  if (!isolate->isolate_data()->active_suspender().IsSmi()) {
+    suspender->set_parent(TrustedCast<WasmSuspenderObject>(
+        isolate->isolate_data()->active_suspender()));
+  }
   suspender->set_stack(isolate, target_stack.get());
-  // The active stack is updated in {Isolate::SwitchStacks}.
   isolate->isolate_data()->set_active_suspender(*suspender);
 
   target_stack->set_index(isolate->wasm_stacks().size());
@@ -1273,6 +1268,7 @@ RUNTIME_FUNCTION(Runtime_WasmAllocateSuspender) {
   }
 
   // Stack limit will be updated in WasmReturnPromiseOnSuspendAsm builtin.
+  DCHECK_EQ(active_stack->jmpbuf()->state, wasm::JumpBuffer::Active);
   return *suspender;
 }
 
@@ -1304,15 +1300,7 @@ class PrototypesSetup : public wasm::Decoder {
 
   PrototypesSetup(Isolate* isolate, const uint8_t* data_begin,
                   const uint8_t* data_end)
-      : Decoder(data_begin, data_end), isolate_(isolate) {
-    // kLength == 0 may look weird, but it's what you'd get for
-    // function wrapper(...args) { return wasm_func(this, ...args); }.
-    static constexpr int kLength = 0;
-    method_wrapper_ = isolate_->factory()->NewSharedFunctionInfoForBuiltin(
-        {}, Builtin::kWasmMethodWrapper, kLength, kDontAdapt);
-    method_wrapper_->set_native(true);
-    method_wrapper_->set_language_mode(LanguageMode::kStrict);
-  }
+      : Decoder(data_begin, data_end), isolate_(isolate) {}
 
   Tagged<Object> SetupPrototypes(DirectHandle<JSObject> constructors) {
     uint32_t num_prototypes = consume_u32v("number of prototypes");
@@ -1320,7 +1308,19 @@ class PrototypesSetup : public wasm::Decoder {
                           proto_index < num_prototypes && ok(), proto_index++) {
       DirectHandle<JSObject> prototype = NextPrototype();
       if (prototype.is_null()) return ReadOnlyRoots(isolate()).exception();
-
+      uint32_t num_methods = consume_u32v("number of methods");
+      if (!ok()) break;
+      ToDictionaryMode(prototype, num_methods);
+      for (uint32_t i = 0; i < num_methods; i++) {
+        Method method = NextMethod(false);
+        if (!ok()) break;
+        DirectHandle<WasmExportedFunction> function = NextFunction();
+        if (function.is_null() || !InstallMethod(prototype, method, function)) {
+          DCHECK(isolate()->has_exception());
+          return ReadOnlyRoots(isolate()).exception();
+        }
+      }
+      if (!ok()) break;
       uint32_t has_constructor = consume_u32v("constructor");
       if (!ok()) break;
 
@@ -1363,20 +1363,6 @@ class PrototypesSetup : public wasm::Decoder {
                pc_offset() - 1);
         break;
       }
-
-      uint32_t num_methods = consume_u32v("number of methods");
-      if (!ok()) break;
-      ToDictionaryMode(prototype, num_methods);
-      for (uint32_t i = 0; i < num_methods; i++) {
-        Method method = NextMethod(false);
-        if (!ok()) break;
-        DirectHandle<WasmExportedFunction> function = NextFunction();
-        if (function.is_null() || !InstallMethod(prototype, method, function)) {
-          DCHECK(isolate()->has_exception());
-          return ReadOnlyRoots(isolate()).exception();
-        }
-      }
-      if (!ok()) break;
 
       uint32_t parent_idx_offset = pc_offset();
       int32_t parent_idx = consume_i32v("parentidx");
@@ -1447,11 +1433,12 @@ class PrototypesSetup : public wasm::Decoder {
       ThrowWasmError(isolate_, MessageTemplate::kWasmTrapArrayOutOfBounds);
       return {};
     }
-    if (!IsJSObject(*maybe_proto)) {
+    if (!IsWasmDescriptorOptions(*maybe_proto)) {
       ThrowWasmError(isolate_, MessageTemplate::kWasmTrapIllegalCast);
       return {};
     }
-    return Cast<JSObject>(maybe_proto);
+    return Cast<JSObject>(direct_handle(
+        Cast<WasmDescriptorOptions>(maybe_proto)->prototype(), isolate_));
   }
 
   // Adding multiple properties is more efficient when the prototype
@@ -1465,19 +1452,9 @@ class PrototypesSetup : public wasm::Decoder {
   }
 
   bool InstallMethod(DirectHandle<JSReceiver> receiver, Method method,
-                     DirectHandle<JSFunction> function) {
+                     DirectHandle<WasmExportedFunction> function) {
     if (!method.is_static) {
-      DirectHandle<Context> context = isolate_->factory()->NewBuiltinContext(
-          isolate_->native_context(), wasm::kMethodWrapperContextLength);
-      context->SetNoCell(wasm::kMethodWrapperContextSlot, *function);
-      function =
-          Factory::JSFunctionBuilder{isolate_, method_wrapper(), context}
-              .set_map(isolate_->strict_function_with_readonly_prototype_map())
-              .Build();
-      // For nicer stack traces, we could call
-      //   JSFunction::SetName(..., function, name, ...);
-      // here, but that would have a significant performance cost, so for now
-      // we choose to hide the wrappers on stack traces instead.
+      WasmExportedFunction::MarkAsReceiverIsFirstParam(isolate_, function);
     }
     DirectHandle<String> name =
         isolate_->factory()->InternalizeUtf8String(method.name);
@@ -1521,6 +1498,7 @@ class PrototypesSetup : public wasm::Decoder {
     constructor->set_prototype_or_initial_map(*prototype, kReleaseStore);
     prototype->map()->SetConstructor(*constructor);
 
+    // TODO(403372470): Do we want a userspace ".constructor" property?
     PropertyDescriptor constructor_prop;
     constructor_prop.set_enumerable(false);
     constructor_prop.set_configurable(true);
@@ -1551,11 +1529,9 @@ class PrototypesSetup : public wasm::Decoder {
   virtual DirectHandle<Object> NextFunctionInternal() = 0;
   virtual DirectHandle<Object> NextPrototypeInternal() = 0;
   virtual DirectHandle<JSObject> PrototypeByIndex(uint32_t index) = 0;
-  DirectHandle<SharedFunctionInfo> method_wrapper() { return method_wrapper_; }
 
  private:
   Isolate* isolate_;
-  DirectHandle<SharedFunctionInfo> method_wrapper_;
 };
 
 class PrototypesSetup_Arrays : public PrototypesSetup {
@@ -1581,7 +1557,11 @@ class PrototypesSetup_Arrays : public PrototypesSetup {
 
   DirectHandle<JSObject> PrototypeByIndex(uint32_t index) override {
     DCHECK_LT(index, prototypes_->length());
-    return Cast<JSObject>(WasmArray::GetElement(isolate(), prototypes_, index));
+    return Cast<JSObject>(
+        direct_handle(Cast<WasmDescriptorOptions>(
+                          WasmArray::GetElement(isolate(), prototypes_, index))
+                          ->prototype(),
+                      isolate()));
   }
 
  private:
@@ -1621,7 +1601,9 @@ class PrototypesSetup_Sections : public PrototypesSetup {
   DirectHandle<JSObject> PrototypeByIndex(uint32_t index) override {
     index += prototype_start_index_;
     DCHECK_LT(index, prototypes_end_);
-    return Cast<JSObject>(direct_handle(prototypes_->get(index), isolate()));
+    return Cast<JSObject>(direct_handle(
+        Cast<WasmDescriptorOptions>(prototypes_->get(index))->prototype(),
+        isolate()));
   }
 
  private:
@@ -2397,7 +2379,6 @@ RUNTIME_FUNCTION(Runtime_WasmStringFromCodePoint) {
 
 RUNTIME_FUNCTION(Runtime_WasmStringHash) {
   DCHECK_EQ(1, args.length());
-  SealHandleScope seal_handle_scope(isolate);
   Tagged<String> string(Cast<String>(args[0]));
   uint32_t hash = string->EnsureHash();
   return Smi::FromInt(static_cast<int>(hash));

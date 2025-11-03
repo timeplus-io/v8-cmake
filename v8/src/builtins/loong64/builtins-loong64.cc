@@ -2119,84 +2119,6 @@ void Builtins::Generate_BaselineOnStackReplacement(MacroAssembler* masm) {
                      D::ExpectedParameterCountRegister());
 }
 
-static void GenerateCall(MacroAssembler* masm, Register argc, Register target,
-                         ConvertReceiverMode mode,
-                         std::optional<RootIndex> error_string_root) {
-  Register map = t1;
-  Register instance_type = t2;
-  Register scratch = t3;
-  DCHECK(!AreAliased(argc, target, map, instance_type, scratch));
-
-  Label non_callable, class_constructor;
-  __ JumpIfSmi(target, &non_callable);
-  __ LoadMap(map, target);
-  __ GetInstanceTypeRange(map, instance_type, FIRST_CALLABLE_JS_FUNCTION_TYPE,
-                          scratch);
-  __ TailCallBuiltin(Builtins::CallFunction(mode), ls, scratch,
-                     Operand(LAST_CALLABLE_JS_FUNCTION_TYPE -
-                             FIRST_CALLABLE_JS_FUNCTION_TYPE));
-  __ TailCallBuiltin(Builtin::kCallBoundFunction, eq, instance_type,
-                     Operand(JS_BOUND_FUNCTION_TYPE));
-
-  // Check if target has a [[Call]] internal method.
-  {
-    Register flags = t1;
-    DCHECK(!AreAliased(argc, target, flags));
-    __ Ld_bu(flags, FieldMemOperand(map, Map::kBitFieldOffset));
-    map = no_reg;
-    __ And(flags, flags, Operand(Map::Bits1::IsCallableBit::kMask));
-    __ Branch(&non_callable, eq, flags, Operand(zero_reg));
-  }
-
-  __ TailCallBuiltin(Builtin::kCallProxy, eq, instance_type,
-                     Operand(JS_PROXY_TYPE));
-
-  // Check if target is a wrapped function and call CallWrappedFunction external
-  // builtin
-  __ TailCallBuiltin(Builtin::kCallWrappedFunction, eq, instance_type,
-                     Operand(JS_WRAPPED_FUNCTION_TYPE));
-
-  // ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
-  // Check that the function is not a "classConstructor".
-  __ Branch(&class_constructor, eq, instance_type,
-            Operand(JS_CLASS_CONSTRUCTOR_TYPE));
-
-  // 2. Call to something else, which might have a [[Call]] internal method (if
-  // not we raise an exception).
-  // Overwrite the original receiver with the (original) target.
-  __ StoreReceiver(target);
-  // Let the "call_as_function_delegate" take care of the rest.
-  __ LoadNativeContextSlot(target, Context::CALL_AS_FUNCTION_DELEGATE_INDEX);
-  __ TailCallBuiltin(
-      Builtins::CallFunction(ConvertReceiverMode::kNotNullOrUndefined));
-
-  // 3. Call to something that is not callable.
-  __ bind(&non_callable);
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    if (!error_string_root.has_value()) {
-      // Use the simpler error for Generate_Call
-      __ Push(target);
-      __ CallRuntime(Runtime::kThrowCalledNonCallable);
-    } else {
-      // Use the more specific error for Function.prototype.call/apply
-      __ LoadRoot(t2, error_string_root.value());
-      __ Push(target, t2);
-      __ CallRuntime(Runtime::kThrowTargetNonFunction);
-      __ Trap();  // Unreachable.
-    }
-  }
-
-  // 4. The function is a "classConstructor", need to raise an exception.
-  __ bind(&class_constructor);
-  {
-    FrameScope frame(masm, StackFrame::INTERNAL);
-    __ Push(target);
-    __ CallRuntime(Runtime::kThrowConstructorNonCallableError);
-    __ Trap();  // Unreachable.
-  }
-}
-
 // static
 void Builtins::Generate_FunctionPrototypeApply(MacroAssembler* masm) {
   // ----------- S t a t e -------------
@@ -2257,10 +2179,7 @@ void Builtins::Generate_FunctionPrototypeApply(MacroAssembler* masm) {
   {
     __ li(a0, JSParameterCount(0));
     DCHECK(receiver == a1);
-
-    Register target = a1;
-    GenerateCall(masm, a0, target, ConvertReceiverMode::kAny,
-                 RootIndex::kFunction_prototype_apply_string);
+    __ TailCallBuiltin(Builtins::Call());
   }
 }
 
@@ -2283,9 +2202,7 @@ void Builtins::Generate_FunctionPrototypeCall(MacroAssembler* masm) {
   __ addi_d(a0, a0, -1);
 
   // 4. Call the callable.
-  Register target = a1;
-  GenerateCall(masm, a0, target, ConvertReceiverMode::kAny,
-               RootIndex::kFunction_prototype_call_string);
+  __ TailCallBuiltin(Builtins::Call());
 }
 
 void Builtins::Generate_ReflectApply(MacroAssembler* masm) {
@@ -2772,8 +2689,70 @@ void Builtins::Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode) {
   //  -- a0 : the number of arguments
   //  -- a1 : the target to call (can be any Object).
   // -----------------------------------
+
   Register target = a1;
-  GenerateCall(masm, a0, target, mode, std::nullopt);
+  Register map = t1;
+  Register instance_type = t2;
+  Register scratch = t3;
+  DCHECK(!AreAliased(a0, target, map, instance_type, scratch));
+
+  Label non_callable, class_constructor;
+  __ JumpIfSmi(target, &non_callable);
+  __ LoadMap(map, target);
+  __ GetInstanceTypeRange(map, instance_type, FIRST_CALLABLE_JS_FUNCTION_TYPE,
+                          scratch);
+  __ TailCallBuiltin(Builtins::CallFunction(mode), ls, scratch,
+                     Operand(LAST_CALLABLE_JS_FUNCTION_TYPE -
+                             FIRST_CALLABLE_JS_FUNCTION_TYPE));
+  __ TailCallBuiltin(Builtin::kCallBoundFunction, eq, instance_type,
+                     Operand(JS_BOUND_FUNCTION_TYPE));
+
+  // Check if target has a [[Call]] internal method.
+  {
+    Register flags = t1;
+    __ Ld_bu(flags, FieldMemOperand(map, Map::kBitFieldOffset));
+    map = no_reg;
+    __ And(flags, flags, Operand(Map::Bits1::IsCallableBit::kMask));
+    __ Branch(&non_callable, eq, flags, Operand(zero_reg));
+  }
+
+  __ TailCallBuiltin(Builtin::kCallProxy, eq, instance_type,
+                     Operand(JS_PROXY_TYPE));
+
+  // Check if target is a wrapped function and call CallWrappedFunction external
+  // builtin
+  __ TailCallBuiltin(Builtin::kCallWrappedFunction, eq, instance_type,
+                     Operand(JS_WRAPPED_FUNCTION_TYPE));
+
+  // ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
+  // Check that the function is not a "classConstructor".
+  __ Branch(&class_constructor, eq, instance_type,
+            Operand(JS_CLASS_CONSTRUCTOR_TYPE));
+
+  // 2. Call to something else, which might have a [[Call]] internal method (if
+  // not we raise an exception).
+  // Overwrite the original receiver with the (original) target.
+  __ StoreReceiver(target);
+  // Let the "call_as_function_delegate" take care of the rest.
+  __ LoadNativeContextSlot(target, Context::CALL_AS_FUNCTION_DELEGATE_INDEX);
+  __ TailCallBuiltin(
+      Builtins::CallFunction(ConvertReceiverMode::kNotNullOrUndefined));
+
+  // 3. Call to something that is not callable.
+  __ bind(&non_callable);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ Push(target);
+    __ CallRuntime(Runtime::kThrowCalledNonCallable);
+  }
+
+  // 4. The function is a "classConstructor", need to raise an exception.
+  __ bind(&class_constructor);
+  {
+    FrameScope frame(masm, StackFrame::INTERNAL);
+    __ Push(target);
+    __ CallRuntime(Runtime::kThrowConstructorNonCallableError);
+  }
 }
 
 void Builtins::Generate_ConstructFunction(MacroAssembler* masm) {
@@ -3111,7 +3090,7 @@ void SwitchStackPointer(MacroAssembler* masm, Register stack) {
 }
 
 void LoadJumpBuffer(MacroAssembler* masm, Register stack, bool load_pc,
-                    Register tmp) {
+                    Register tmp, wasm::JumpBuffer::StackState expected_state) {
   SwitchStackPointer(masm, stack);
   __ Ld_d(fp, MemOperand(stack, wasm::kStackFpOffset));
   if (load_pc) {
@@ -3123,11 +3102,12 @@ void LoadJumpBuffer(MacroAssembler* masm, Register stack, bool load_pc,
 }
 
 void LoadTargetJumpBuffer(MacroAssembler* masm, Register target_stack,
-                          Register tmp) {
+                          Register tmp,
+                          wasm::JumpBuffer::StackState expected_state) {
   __ St_d(zero_reg,
           MemOperand(fp, WasmJspiFrameConstants::kGCScanSlotCountOffset));
   // Switch stack!
-  LoadJumpBuffer(masm, target_stack, false, tmp);
+  LoadJumpBuffer(masm, target_stack, false, tmp, expected_state);
 }
 
 // Updates the stack limit and central stack info, and validates the switch.
@@ -3185,10 +3165,13 @@ void ReloadParentStack(MacroAssembler* masm, Register return_reg,
   Register parent = tmp2;
   __ Ld_d(parent, MemOperand(active_stack, wasm::kStackParentOffset));
 
+  // Update active stack.
+  __ StoreRootRelative(IsolateData::active_stack_offset(), parent);
+
   // Switch stack!
-  SwitchStacks(masm, ExternalReference::wasm_return_stack(), parent, nullptr,
-               no_reg, {return_reg, return_value, context, parent});
-  LoadJumpBuffer(masm, parent, false, tmp3);
+  SwitchStacks(masm, ExternalReference::wasm_return_stack(), active_stack,
+               nullptr, no_reg, {return_reg, return_value, context, parent});
+  LoadJumpBuffer(masm, parent, false, tmp3, wasm::JumpBuffer::Inactive);
 }
 
 void RestoreParentSuspender(MacroAssembler* masm, Register tmp1) {
@@ -3421,27 +3404,57 @@ void Builtins::Generate_WasmSuspend(MacroAssembler* masm) {
   // Set a sentinel value for the spill slots visited by the GC.
   ResetWasmJspiFrameStackSlots(masm);
 
+  // -------------------------------------------
+  // Save current state in active jump buffer.
+  // -------------------------------------------
   Label resume;
-  DEFINE_REG(scratch);
+  DEFINE_REG(stack);
+  __ LoadRootRelative(stack, IsolateData::active_stack_offset());
+  regs.ResetExcept(suspender, stack);
 
+  DEFINE_REG(suspender_stack);
+  __ LoadExternalPointerField(
+      suspender_stack,
+      FieldMemOperand(suspender, WasmSuspenderObject::kStackOffset),
+      kWasmStackMemoryTag);
+  if (v8_flags.debug_code) {
+    // -------------------------------------------
+    // Check that the suspender's stack is the active stack.
+    // -------------------------------------------
+    // TODO(thibaudm): Once we add core stack-switching instructions, this
+    // check will not hold anymore: it's possible that the active stack
+    // changed (due to an internal switch), so we have to update the suspender.
+    Label ok;
+    __ Branch(&ok, eq, suspender_stack, Operand(stack));
+    __ Trap();
+    __ bind(&ok);
+  }
+  // -------------------------------------------
+  // Update roots.
+  // -------------------------------------------
+  DEFINE_REG(caller);
+  __ Ld_d(caller, MemOperand(suspender_stack, wasm::kStackParentOffset));
+  __ StoreRootRelative(IsolateData::active_stack_offset(), caller);
   DEFINE_REG(parent);
   __ LoadProtectedPointerField(
       parent, FieldMemOperand(suspender, WasmSuspenderObject::kParentOffset));
-  DEFINE_REG(target_stack);
-  __ LoadExternalPointerField(
-      target_stack, FieldMemOperand(parent, WasmSuspenderObject::kStackOffset),
-      kWasmStackMemoryTag);
-
-  SwitchStacks(masm, ExternalReference::wasm_suspend_stack(), target_stack,
-               &resume, no_reg, {target_stack, suspender, parent});
   __ StoreRootRelative(IsolateData::active_suspender_offset(), parent);
+  regs.ResetExcept(suspender, caller, stack);
+
+  // -------------------------------------------
+  // Load jump buffer.
+  // -------------------------------------------
+  SwitchStacks(masm, ExternalReference::wasm_suspend_stack(), stack, &resume,
+               no_reg, {caller, suspender});
+  FREE_REG(stack);
   __ LoadTaggedField(
       kReturnRegister0,
       FieldMemOperand(suspender, WasmSuspenderObject::kPromiseOffset));
   MemOperand GCScanSlotPlace =
       MemOperand(fp, WasmJspiFrameConstants::kGCScanSlotCountOffset);
   __ St_d(zero_reg, GCScanSlotPlace);
-  LoadJumpBuffer(masm, target_stack, true, scratch);
+  DEFINE_REG(scratch)
+  LoadJumpBuffer(masm, caller, true, scratch, wasm::JumpBuffer::Inactive);
   __ Trap();
   __ bind(&resume);
   __ LeaveFrame(StackFrame::WASM_JSPI);
@@ -3505,8 +3518,11 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
       target_stack,
       FieldMemOperand(suspender, WasmSuspenderObject::kStackOffset),
       kWasmStackMemoryTag);
-  SwitchStacks(masm, ExternalReference::wasm_resume_jspi_stack(), target_stack,
+
+  __ StoreRootRelative(IsolateData::active_stack_offset(), target_stack);
+  SwitchStacks(masm, ExternalReference::wasm_resume_stack(), active_stack,
                &suspend, suspender, {target_stack});
+
   regs.ResetExcept(target_stack);
 
   // -------------------------------------------
@@ -3521,7 +3537,8 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
   __ St_d(zero_reg, GCScanSlotPlace);
   if (on_resume == wasm::OnResume::kThrow) {
     // Switch without restoring the PC.
-    LoadJumpBuffer(masm, target_stack, false, scratch);
+    LoadJumpBuffer(masm, target_stack, false, scratch,
+                   wasm::JumpBuffer::Suspended);
     // Pop this frame now. The unwinder expects that the first STACK_SWITCH
     // frame is the outermost one.
     __ LeaveFrame(StackFrame::WASM_JSPI);
@@ -3530,7 +3547,8 @@ void Generate_WasmResumeHelper(MacroAssembler* masm, wasm::OnResume on_resume) {
     __ CallRuntime(Runtime::kThrow);
   } else {
     // Resume the stack normally.
-    LoadJumpBuffer(masm, target_stack, true, scratch);
+    LoadJumpBuffer(masm, target_stack, true, scratch,
+                   wasm::JumpBuffer::Suspended);
   }
   __ Trap();
   __ bind(&suspend);
@@ -3549,30 +3567,6 @@ void Builtins::Generate_WasmReject(MacroAssembler* masm) {
   Generate_WasmResumeHelper(masm, wasm::OnResume::kThrow);
 }
 
-void Builtins::Generate_WasmFXResume(MacroAssembler* masm) {
-  __ EnterFrame(StackFrame::WASM_STACK_EXIT);
-  Register target_stack = WasmFXResumeDescriptor::GetRegisterParameter(0);
-  Label suspend;
-  SwitchStacks(masm, ExternalReference::wasm_resume_wasmfx_stack(),
-               target_stack, &suspend, no_reg, {target_stack});
-  LoadJumpBuffer(masm, target_stack, true, a1);
-  __ Trap();
-  __ bind(&suspend);
-  __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ Ret();
-}
-
-void Builtins::Generate_WasmFXReturn(MacroAssembler* masm) {
-  Register active_stack = a0;
-  __ LoadRootRelative(active_stack, IsolateData::active_stack_offset());
-  Register parent = a1;
-  __ Move(parent, MemOperand(active_stack, wasm::kStackParentOffset));
-  SwitchStacks(masm, ExternalReference::wasm_return_stack(), parent, nullptr,
-               no_reg, {parent});
-  LoadJumpBuffer(masm, parent, true, a2);
-  __ Trap();
-}
-
 void Builtins::Generate_WasmOnStackReplace(MacroAssembler* masm) {
   // Only needed on x64.
   __ Trap();
@@ -3585,22 +3579,22 @@ void SwitchToAllocatedStack(MacroAssembler* masm, RegisterAllocator& regs,
                             Label* suspend) {
   ResetWasmJspiFrameStackSlots(masm);
   DEFINE_SCOPED(scratch)
-  DEFINE_REG(stack)
-  __ LoadRootRelative(stack, IsolateData::active_suspender_offset());
-  __ LoadExternalPointerField(
-      stack, FieldMemOperand(stack, WasmSuspenderObject::kStackOffset),
-      kWasmStackMemoryTag);
-  SwitchStacks(masm, ExternalReference::wasm_start_stack(), stack, suspend,
-               no_reg, {wasm_instance, wrapper_buffer});
+  DEFINE_REG(parent_stack)
+  __ LoadRootRelative(parent_stack, IsolateData::active_stack_offset());
+  __ Ld_d(parent_stack, MemOperand(parent_stack, wasm::kStackParentOffset));
 
-  FREE_REG(stack);
+  SwitchStacks(masm, ExternalReference::wasm_start_stack(), parent_stack,
+               suspend, no_reg, {wasm_instance, wrapper_buffer});
+
+  FREE_REG(parent_stack);
   // Save the old stack's fp in t0, and use it to access the parameters in
   // the parent frame.
   regs.Pinned(t1, &original_fp);
   __ mov(original_fp, fp);
   DEFINE_REG(target_stack);
   __ LoadRootRelative(target_stack, IsolateData::active_stack_offset());
-  LoadTargetJumpBuffer(masm, target_stack, scratch);
+  LoadTargetJumpBuffer(masm, target_stack, scratch,
+                       wasm::JumpBuffer::Suspended);
   FREE_REG(target_stack);
 
   // Push the loaded fp. We know it is null, because there is no frame yet,

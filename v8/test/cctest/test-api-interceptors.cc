@@ -6002,12 +6002,13 @@ Local<Object> BuildWrappedObject(v8::Isolate* isolate, T* data) {
   return instance;
 }
 
+
 template <typename T>
 T* GetWrappedObject(Local<Value> data) {
   return reinterpret_cast<T*>(
-      Object::Cast(*data)->GetAlignedPointerFromInternalField(
-          0, kApiInterceptorTag));
+      Object::Cast(*data)->GetAlignedPointerFromInternalField(0));
 }
+
 
 struct AccessCheckData {
   int count;

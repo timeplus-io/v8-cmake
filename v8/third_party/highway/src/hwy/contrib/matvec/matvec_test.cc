@@ -24,8 +24,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <cmath>  // std::abs
-
 #include "hwy/aligned_allocator.h"
 
 // clang-format off
@@ -54,23 +52,21 @@ HWY_NOINLINE void SimpleMatVecAdd(const MatT* HWY_RESTRICT mat,
                                   ThreadPool& pool) {
   if (add) {
     pool.Run(0, rows, [=](uint64_t r, size_t /*thread*/) {
-      double dot = 0.0;
+      T dot = ConvertScalarTo<T>(0);
       for (size_t c = 0; c < cols; c++) {
         // For reasons unknown, fp16 += does not compile on clang (Arm).
-        dot += ConvertScalarTo<double>(mat[r * cols + c]) *
-               ConvertScalarTo<double>(vec[c]);
+        dot = ConvertScalarTo<T>(dot + mat[r * cols + c] * vec[c]);
       }
-      out[r] = ConvertScalarTo<T>(dot + ConvertScalarTo<double>(add[r]));
+      out[r] = dot + add[r];
     });
   } else {
     pool.Run(0, rows, [=](uint64_t r, size_t /*thread*/) {
-      double dot = 0.0;
+      T dot = ConvertScalarTo<T>(0);
       for (size_t c = 0; c < cols; c++) {
         // For reasons unknown, fp16 += does not compile on clang (Arm).
-        dot += ConvertScalarTo<double>(mat[r * cols + c]) *
-               ConvertScalarTo<double>(vec[c]);
+        dot = ConvertScalarTo<T>(dot + mat[r * cols + c] * vec[c]);
       }
-      out[r] = ConvertScalarTo<T>(dot);
+      out[r] = dot;
     });
   }
 }
@@ -122,33 +118,22 @@ HWY_MAYBE_UNUSED HWY_NOINLINE void SimpleMatVecAdd(
   }
 }
 
-// Workaround for incorrect codegen on Arm, which results in values of `av`
-// >= 1E10. Can also be prevented by calling `Print(du, indices)`.
-#if HWY_ARCH_ARM && HWY_COMPILER_CLANG
-#define GENERATE_INLINE HWY_NOINLINE
-#else
-#define GENERATE_INLINE HWY_INLINE
-#endif
-
 struct GenerateMod {
   template <class D, HWY_IF_NOT_BF16_D(D), HWY_IF_LANES_GT_D(D, 1)>
-  GENERATE_INLINE Vec<D> operator()(D d,
-                                    Vec<RebindToUnsigned<D>> indices) const {
+  Vec<D> operator()(D d, Vec<RebindToUnsigned<D>> indices) const {
     const RebindToUnsigned<D> du;
     return Reverse2(d, ConvertTo(d, And(indices, Set(du, 0xF))));
   }
 
   template <class D, HWY_IF_NOT_BF16_D(D), HWY_IF_LANES_LE_D(D, 1)>
-  GENERATE_INLINE Vec<D> operator()(D d,
-                                    Vec<RebindToUnsigned<D>> indices) const {
+  Vec<D> operator()(D d, Vec<RebindToUnsigned<D>> indices) const {
     const RebindToUnsigned<D> du;
     return ConvertTo(d, And(indices, Set(du, 0xF)));
   }
 
   // Requires >= 4 bf16 lanes for float32 Reverse2.
   template <class D, HWY_IF_BF16_D(D), HWY_IF_LANES_GT_D(D, 2)>
-  GENERATE_INLINE Vec<D> operator()(D d,
-                                    Vec<RebindToUnsigned<D>> indices) const {
+  Vec<D> operator()(D d, Vec<RebindToUnsigned<D>> indices) const {
     const RebindToUnsigned<D> du;
     const RebindToSigned<D> di;
     const RepartitionToWide<decltype(di)> dw;
@@ -161,10 +146,9 @@ struct GenerateMod {
 
   // For one or two lanes, we don't have OrderedDemote2To nor Reverse2.
   template <class D, HWY_IF_BF16_D(D), HWY_IF_LANES_LE_D(D, 2)>
-  GENERATE_INLINE Vec<D> operator()(D d,
-                                    Vec<RebindToUnsigned<D>> indices) const {
+  Vec<D> operator()(D d, Vec<RebindToUnsigned<D>> indices) const {
     const Rebind<float, D> df;
-    return DemoteTo(d, Set(df, static_cast<float>(GetLane(indices))));
+    return DemoteTo(d, Set(df, GetLane(indices)));
   }
 };
 
@@ -210,19 +194,15 @@ class TestMatVecAdd {
       for (size_t i = 0; i < kRows; ++i) {
         const double exp = ConvertScalarTo<double>(expected[i]);
         const double act = ConvertScalarTo<double>(actual[i]);
-        const double epsilon =
-            1.0 / (1ULL << HWY_MIN(MantissaBits<MatT>(), MantissaBits<VecT>()));
-        const double tolerance = exp * 20.0 / epsilon;
-        const double l1 = std::abs(exp - act);
-        const double rel = exp == 0.0 ? 0.0 : l1 / exp;
-
-        if (l1 > tolerance && rel > epsilon) {
+        const double tolerance =
+            exp * 20 * 1.0 /
+            (1ULL << HWY_MIN(MantissaBits<MatT>(), MantissaBits<VecT>()));
+        if (!(exp - tolerance <= act && act <= exp + tolerance)) {
           fprintf(stderr,
-                  "%s/%s %zu x %zu, %s: mismatch at %zu: %E != %E; "
-                  "tol %f l1 %f rel %E\n",
+                  "%s/%s %zu x %zu, %s: mismatch at %zu %f %f; tol %f\n",
                   TypeName(MatT(), 1).c_str(), TypeName(VecT(), 1).c_str(),
                   kRows, kCols, (with_add ? "with add" : "without add"), i, exp,
-                  act, tolerance, l1, rel);
+                  act, tolerance);
           HWY_ASSERT(0);
         }
       }

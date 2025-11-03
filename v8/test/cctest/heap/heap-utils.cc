@@ -111,13 +111,11 @@ void CreatePadding(Heap* heap, int padding_size, AllocationType allocation,
       if (length <= 0) {
         // Not enough room to create another FixedArray, so create a filler.
         if (allocation == i::AllocationType::kOld) {
-          LinearAllocationArea* old_space =
-              &heap->isolate()->isolate_data()->old_allocation_info();
-          heap->CreateFillerObjectAt(old_space->top(), free_memory);
+          heap->CreateFillerObjectAt(*heap->OldSpaceAllocationTopAddress(),
+                                     free_memory);
         } else {
-          LinearAllocationArea* new_space =
-              &heap->isolate()->isolate_data()->new_allocation_info();
-          heap->CreateFillerObjectAt(new_space->top(), free_memory);
+          heap->CreateFillerObjectAt(*heap->NewSpaceAllocationTopAddress(),
+                                     free_memory);
         }
         break;
       }

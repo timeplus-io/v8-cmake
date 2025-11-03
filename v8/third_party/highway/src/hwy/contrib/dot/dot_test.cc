@@ -89,10 +89,11 @@ class TestDot {
       a[i] = ConvertScalarTo<T>(random_t());
       b[i] = ConvertScalarTo<T>(random_t());
     }
-    // Fill padding - the values are not used, but avoids MSAN errors.
+    // Fill padding with NaN - the values are not used, but avoids MSAN errors.
     for (; i < padded; ++i) {
-      a[i] = ConvertScalarTo<T>(0);
-      b[i] = ConvertScalarTo<T>(0);
+      ScalableTag<float> df1;
+      a[i] = ConvertScalarTo<T>(GetLane(NaN(df1)));
+      b[i] = ConvertScalarTo<T>(GetLane(NaN(df1)));
     }
 
     const double expected = SimpleDot(a, b, num);
@@ -101,11 +102,8 @@ class TestDot {
         ConvertScalarTo<double>(Dot::Compute<kAssumptions>(d, a, b, num));
     const double max = static_cast<double>(8 * 8 * num);
     HWY_ASSERT(-max <= actual && actual <= max);
-    // Integer math is exact, so no tolerance.
     const double tolerance =
-        IsFloat<T>() ? 96.0 * ConvertScalarTo<double>(Epsilon<T>()) *
-                           HWY_MAX(magnitude, 1.0)
-                     : 0;
+        96.0 * ConvertScalarTo<double>(Epsilon<T>()) * HWY_MAX(magnitude, 1.0);
     HWY_ASSERT(expected - tolerance <= actual &&
                actual <= expected + tolerance);
   }
@@ -265,14 +263,14 @@ class TestDotF32BF16 {
 // All floating-point types, both arguments same.
 void TestAllDot() { ForFloatTypes(ForPartialVectors<TestDot>()); }
 
-// Mixed f32 and bf16 inputs.
-void TestAllDotF32BF16() { ForPartialVectors<TestDotF32BF16>()(float()); }
+// Mixed f32 and bf16.
+void TestAllDotF32BF16() {
+  ForPartialVectors<TestDotF32BF16> test;
+  test(float());
+}
 
-// Both inputs bf16.
+// Both bf16.
 void TestAllDotBF16() { ForShrinkableVectors<TestDot>()(bfloat16_t()); }
-
-// Both inputs i16.
-void TestAllDotI16() { ForShrinkableVectors<TestDot>()(int16_t()); }
 
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -287,7 +285,6 @@ HWY_BEFORE_TEST(DotTest);
 HWY_EXPORT_AND_TEST_P(DotTest, TestAllDot);
 HWY_EXPORT_AND_TEST_P(DotTest, TestAllDotF32BF16);
 HWY_EXPORT_AND_TEST_P(DotTest, TestAllDotBF16);
-HWY_EXPORT_AND_TEST_P(DotTest, TestAllDotI16);
 HWY_AFTER_TEST();
 }  // namespace
 }  // namespace hwy

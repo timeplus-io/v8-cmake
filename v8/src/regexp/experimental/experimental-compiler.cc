@@ -467,10 +467,6 @@ class FilterGroupsCompileVisitor final : private RegExpVisitor {
   void* VisitText(RegExpText* node, void*) override { return nullptr; }
 
   void* VisitQuantifier(RegExpQuantifier* node, void*) override {
-    if (node->max() == 0) {
-      return nullptr;
-    }
-
     if (can_compile_node_) {
       assembler_.FilterQuantifier(quantifier_id_remapping_.at(node->index()));
       can_compile_node_ = false;
@@ -1041,6 +1037,10 @@ class CompileVisitor : private RegExpVisitor {
     // correctly determine the number of quantifiers.
     if (v8_flags.experimental_regexp_engine_capture_group_opt &&
         node->max() == 0) {
+      if (!node->CaptureRegisters().is_empty()) {
+        assembler_.SetQuantifierToClock(RemapQuantifier(node->index()));
+      }
+
       return nullptr;
     }
 

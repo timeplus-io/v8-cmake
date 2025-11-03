@@ -182,28 +182,20 @@ void StackFrameIterator::Advance() {
   StackFrame::State state;
   StackFrame::Type type;
 #if V8_ENABLE_WEBASSEMBLY
-  if (((frame_->type() == StackFrame::WASM_JSPI &&
-        Memory<Address>(frame_->fp() +
-                        WasmJspiFrameConstants::kCallerFPOffset) ==
-            kNullAddress) ||
-       frame_->type() == StackFrame::WASM_STACK_ENTRY) &&
+  if (frame_->type() == StackFrame::WASM_JSPI &&
+      Memory<Address>(frame_->fp() + WasmJspiFrameConstants::kCallerFPOffset) ==
+          kNullAddress &&
       !first_stack_only_) {
     // Handle stack switches here.
-    // For JSPI, both the parent stack exit frame and child stack entry frame
-    // have type WASM_JSPI. We only want to process the child frame here, so
-    // filter it based on the caller FP.
+    // Note: both the "callee" frame (outermost frame of the child stack) and
+    // the "caller" frame (top frame of the parent stack) have frame type
+    // WASM_JSPI. We use the caller FP to distinguish them: the callee frame
+    // does not have a caller fp.
     wasm_stack_ = wasm_stack()->jmpbuf()->parent;
     CHECK_NOT_NULL(wasm_stack_);
     CHECK_EQ(wasm_stack_->jmpbuf()->state, wasm::JumpBuffer::Inactive);
     WasmJspiFrame::GetStateForJumpBuffer(wasm_stack_->jmpbuf(), &state);
-    type = StackFrame::MarkerToType(
-        Memory<intptr_t>(wasm_stack_->jmpbuf()->fp +
-                         CommonFrameConstants::kContextOrFrameTypeOffset));
-    DCHECK((frame_->type() == StackFrame::WASM_JSPI &&
-            type == StackFrame::WASM_JSPI) ||
-           (frame_->type() == StackFrame::WASM_STACK_ENTRY &&
-            type == StackFrame::WASM_STACK_EXIT));
-    SetNewFrame(type, &state);
+    SetNewFrame(StackFrame::WASM_JSPI, &state);
     return;
   }
 #endif
@@ -307,11 +299,7 @@ void StackFrameIterator::Reset(ThreadLocalTop* top, wasm::StackMemory* stack) {
   WasmJspiFrame::GetStateForJumpBuffer(stack->jmpbuf(), &state);
   handler_ = StackHandler::FromAddress(Isolate::handler(top));
   wasm_stack_ = stack;
-  StackFrame::Type type = StackFrame::MarkerToType(
-      Memory<intptr_t>(wasm_stack_->jmpbuf()->fp +
-                       CommonFrameConstants::kContextOrFrameTypeOffset));
-  DCHECK(type == StackFrame::WASM_JSPI || type == StackFrame::WASM_STACK_EXIT);
-  SetNewFrame(type, &state);
+  SetNewFrame(StackFrame::WASM_JSPI, &state);
 }
 #endif
 
@@ -869,7 +857,6 @@ StackFrame::Type SafeStackFrameType(StackFrame::Type candidate) {
     case StackFrame::WASM_TO_JS:
     case StackFrame::WASM_SEGMENT_START:
     case StackFrame::WASM_STACK_ENTRY:
-    case StackFrame::WASM_STACK_EXIT:
 #if V8_ENABLE_DRUMBRAKE
     case StackFrame::C_WASM_ENTRY:
     case StackFrame::WASM_INTERPRETER_ENTRY:
@@ -951,8 +938,7 @@ StackFrame::Type StackFrameIterator::ComputeStackFrameType(
       state->fp + CommonFrameConstants::kContextOrFrameTypeOffset);
   switch (lookup_result.value()->kind()) {
     case CodeKind::BUILTIN:
-    case CodeKind::FOR_TESTING:
-    case CodeKind::FOR_TESTING_JS: {
+    case CodeKind::FOR_TESTING: {
       if (StackFrame::IsTypeMarker(marker)) break;
       return ComputeBuiltinFrameType(lookup_result.value());
     }
@@ -1180,7 +1166,6 @@ StackFrame::Type ExitFrame::ComputeFrameType(Address fp) {
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_EXIT:
     case WASM_JSPI:
-    case WASM_STACK_EXIT:
 #endif  // V8_ENABLE_WEBASSEMBLY
       return frame_type;
     default:
@@ -2475,20 +2460,14 @@ bool CommonFrameWithJSLinkage::IsConstructor() const {
 }
 
 FrameSummaries CommonFrameWithJSLinkage::Summarize() const {
-  Tagged<GcSafeCode> gcsafe_code;
+  Tagged<GcSafeCode> code;
   int offset = -1;
-  std::tie(gcsafe_code, offset) = GcSafeLookupCodeAndOffset();
-  DirectHandle<Code> code(gcsafe_code->UnsafeCastToCode(), isolate());
-#if V8_ENABLE_WEBASSEMBLY
-  if (code->kind() == CodeKind::BUILTIN &&
-      code->builtin_id() == Builtin::kWasmMethodWrapper) {
-    // Skip generated method wrappers, they are not useful to see in traces.
-    return FrameSummaries{};
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY
+  std::tie(code, offset) = GcSafeLookupCodeAndOffset();
+  DirectHandle<AbstractCode> abstract_code(
+      Cast<AbstractCode>(code->UnsafeCastToCode()), isolate());
   DirectHandle<FixedArray> params = GetParameters();
   FrameSummary::JavaScriptFrameSummary summary(
-      isolate(), receiver(), function(), *Cast<AbstractCode>(code), offset,
+      isolate(), receiver(), function(), *abstract_code, offset,
       IsConstructor(), *params);
   return FrameSummaries(summary);
 }
@@ -2539,10 +2518,7 @@ void JavaScriptFrame::PrintFunctionAndOffset(Isolate* isolate,
                                              int code_offset, FILE* file,
                                              bool print_line_number) {
   PtrComprCageBase cage_base = GetPtrComprCageBase(function);
-  PrintF(file, "%s",
-         CodeKindToMarker(code->kind(cage_base),
-                          code->is_context_specialized(cage_base),
-                          code->osr_offset(cage_base)));
+  PrintF(file, "%s", CodeKindToMarker(code->kind(cage_base), false));
   function->PrintName(file);
   PrintF(file, "+%d", code_offset);
   if (print_line_number) {
@@ -3057,10 +3033,9 @@ FrameSummaries OptimizedJSFrame::Summarize() const {
   // TODO(turbofan): Revisit once we support deoptimization across the board.
   DirectHandle<Code> code(LookupCode(), isolate());
   if (code->kind() == CodeKind::BUILTIN ||
-      code->kind() == CodeKind::FOR_TESTING_JS) {
+      code->kind() == CodeKind::FOR_TESTING) {
     return JavaScriptFrame::Summarize();
   }
-  DCHECK_NE(code->kind(), CodeKind::FOR_TESTING);
 
   int deopt_index = SafepointEntry::kNoDeoptIndex;
   Tagged<DeoptimizationData> const data =
@@ -3875,10 +3850,7 @@ Address WasmInterpreterEntryFrame::GetCallerStackPointer() const {
 void WasmJspiFrame::GetStateForJumpBuffer(wasm::JumpBuffer* jmpbuf,
                                           State* state) {
   DCHECK_NE(jmpbuf->fp, kNullAddress);
-#ifdef DEBUG
-  StackFrame::Type type = ComputeFrameType(jmpbuf->fp);
-  DCHECK(type == WASM_JSPI || type == WASM_STACK_EXIT);
-#endif
+  DCHECK_EQ(ComputeFrameType(jmpbuf->fp), WASM_JSPI);
   FillState(jmpbuf->fp, jmpbuf->sp, state);
   state->pc_address = &jmpbuf->pc;
   state->is_stack_exit_frame = true;

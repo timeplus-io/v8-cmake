@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "src/base/logging.h"
-#include "src/base/macros.h"
 #include "src/builtins/builtins-utils-inl.h"
 #include "src/builtins/builtins.h"
 #include "src/common/message-template.h"
@@ -16,7 +15,8 @@
 #include "src/objects/simd.h"
 #include "third_party/simdutf/simdutf.h"
 
-namespace v8::internal {
+namespace v8 {
+namespace internal {
 
 // -----------------------------------------------------------------------------
 // ES6 section 22.2 TypedArray Objects
@@ -837,11 +837,11 @@ BUILTIN(Uint8ArrayPrototypeToBase64) {
     size_t simd_result_size;
     if (uint8array->buffer()->is_shared()) {
       simd_result_size = simdutf::atomic_binary_to_base64(
-          reinterpret_cast<const char*>(uint8array->DataPtr()), length,
+          std::bit_cast<const char*>(uint8array->DataPtr()), length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
     } else {
       simd_result_size = simdutf::binary_to_base64(
-          reinterpret_cast<const char*>(uint8array->DataPtr()), length,
+          std::bit_cast<const char*>(uint8array->DataPtr()), length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
     }
     DCHECK_EQ(simd_result_size, output_length);
@@ -1080,8 +1080,9 @@ BUILTIN(Uint8ArrayPrototypeToHex) {
   //    b. Set hex to StringPad(hex, 2, "0", start).
   //    c. Set out to the string-concatenation of out and hex.
   //  6. Return out.
-  return Uint8ArrayToHex(reinterpret_cast<const char*>(uint8array->DataPtr()),
+  return Uint8ArrayToHex(std::bit_cast<const char*>(uint8array->DataPtr()),
                          length, uint8array->buffer()->is_shared(), output);
 }
 
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

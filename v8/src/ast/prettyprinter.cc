@@ -631,10 +631,7 @@ void CallPrinter::FindArguments(const ZonePtrList<Expression>* arguments) {
 void CallPrinter::PrintLiteral(DirectHandle<Object> value, bool quote) {
   if (!ShouldPrint()) return;
 
-  if (IsAnyHole(*value)) {
-    // Holes can occur in array literals, and should show up as empty entries.
-    Print("");
-  } else if (IsString(*value)) {
+  if (IsString(*value)) {
     if (quote) Print("\"");
     Print(Cast<String>(value));
     if (quote) Print("\"");

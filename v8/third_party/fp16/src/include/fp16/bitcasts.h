@@ -8,16 +8,12 @@
 	#include <stdint.h>
 #endif
 
-#if defined(__INTEL_COMPILER) || defined(_MSC_VER) && (_MSC_VER >= 1932) && (defined(_M_IX86) || defined(_M_X64))
+#if defined(__INTEL_COMPILER)
 	#include <immintrin.h>
 #endif
 
 #if defined(_MSC_VER) && !defined(__clang__) && (defined(_M_ARM) || defined(_M_ARM64))
 	#include <intrin.h>
-#endif
-
-#if defined(__clang__) && (defined(_M_IX86) || defined(_M_X64))
-   #include <x86intrin.h>
 #endif
 
 
@@ -26,7 +22,7 @@ static inline float fp32_from_bits(uint32_t w) {
 	return as_float(w);
 #elif defined(__CUDA_ARCH__)
 	return __uint_as_float((unsigned int) w);
-#elif defined(__INTEL_COMPILER) || defined(_MSC_VER) && (_MSC_VER >= 1932) && (defined(_M_IX86) || defined(_M_X64))
+#elif defined(__INTEL_COMPILER)
 	return _castu32_f32(w);
 #elif defined(_MSC_VER) && !defined(__clang__) && (defined(_M_ARM) || defined(_M_ARM64))
 	return _CopyFloatFromInt32((__int32) w);
@@ -44,7 +40,7 @@ static inline uint32_t fp32_to_bits(float f) {
 	return as_uint(f);
 #elif defined(__CUDA_ARCH__)
 	return (uint32_t) __float_as_uint(f);
-#elif defined(__INTEL_COMPILER) || defined(_MSC_VER) && (_MSC_VER >= 1932) && (defined(_M_IX86) || defined(_M_X64))
+#elif defined(__INTEL_COMPILER)
 	return _castf32_u32(f);
 #elif defined(_MSC_VER) && !defined(__clang__) && (defined(_M_ARM) || defined(_M_ARM64))
 	return (uint32_t) _CopyInt32FromFloat(f);
@@ -62,7 +58,7 @@ static inline double fp64_from_bits(uint64_t w) {
 	return as_double(w);
 #elif defined(__CUDA_ARCH__)
 	return __longlong_as_double((long long) w);
-#elif defined(__INTEL_COMPILER) || defined(_MSC_VER) && (_MSC_VER >= 1932) && (defined(_M_IX86) || defined(_M_X64))
+#elif defined(__INTEL_COMPILER)
 	return _castu64_f64(w);
 #elif defined(_MSC_VER) && !defined(__clang__) && (defined(_M_ARM) || defined(_M_ARM64))
 	return _CopyDoubleFromInt64((__int64) w);
@@ -80,7 +76,7 @@ static inline uint64_t fp64_to_bits(double f) {
 	return as_ulong(f);
 #elif defined(__CUDA_ARCH__)
 	return (uint64_t) __double_as_longlong(f);
-#elif defined(__INTEL_COMPILER) || defined(_MSC_VER) && (_MSC_VER >= 1932) && (defined(_M_IX86) || defined(_M_X64))
+#elif defined(__INTEL_COMPILER)
 	return _castf64_u64(f);
 #elif defined(_MSC_VER) && !defined(__clang__) && (defined(_M_ARM) || defined(_M_ARM64))
 	return (uint64_t) _CopyInt64FromDouble(f);

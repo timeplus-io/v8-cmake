@@ -9,7 +9,6 @@
 
 #include "src/base/compiler-specific.h"
 #include "src/base/container-utils.h"
-#include "src/base/macros.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/tnode.h"
 #include "src/common/globals.h"
@@ -48,7 +47,7 @@ struct WasmTypeCheckConfig;
 
 size_t hash_value(BaseTaggedness);
 
-V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, BaseTaggedness);
+std::ostream& operator<<(std::ostream&, BaseTaggedness);
 
 struct ConstFieldInfo {
   // the map that introduced the const field, if any. An access is considered

@@ -25,7 +25,6 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
-namespace {
 
 void SortF32Desc(float* HWY_RESTRICT keys, const size_t num) {
   return VQSortStatic(keys, num, SortDescending());
@@ -40,7 +39,6 @@ void SelectF32Desc(float* HWY_RESTRICT keys, const size_t num, const size_t k) {
   return VQSelectStatic(keys, num, k, SortDescending());
 }
 
-}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
@@ -66,11 +64,6 @@ void VQPartialSort(float* HWY_RESTRICT keys, const size_t n, const size_t k,
 void VQSelect(float* HWY_RESTRICT keys, const size_t n, const size_t k,
               SortDescending) {
   HWY_DYNAMIC_DISPATCH(SelectF32Desc)(keys, n, k);
-}
-
-void Sorter::operator()(float* HWY_RESTRICT keys, size_t n,
-                        SortDescending tag) const {
-  VQSort(keys, n, tag);
 }
 
 }  // namespace hwy

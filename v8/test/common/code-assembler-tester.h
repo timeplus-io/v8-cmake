@@ -31,18 +31,16 @@ class CodeAssemblerTester {
                   zone, descriptor, descriptor.GetStackParameterCount(),
                   CallDescriptor::kNoFlags, Operator::kNoProperties);
             },
-            descriptor == JSTrampolineDescriptor{} ? CodeKind::FOR_TESTING_JS
-                                                   : CodeKind::FOR_TESTING,
-            name)),
+            CodeKind::FOR_TESTING, name)),
         scope_(isolate) {}
 
-  // Test generating code for a JS function without arguments adaptation.
+  // Test generating code for a stub. Assumes VoidDescriptor call interface.
   explicit CodeAssemblerTester(Isolate* isolate, const char* name = "test")
-      : CodeAssemblerTester(isolate, JSTrampolineDescriptor{}, name) {}
+      : CodeAssemblerTester(isolate, VoidDescriptor{}, name) {}
 
-  // Test generating code for a JS function with given JS parameter count
-  // (see JSParameterCount(n)).
+  // Test generating code for a JS function (e.g. builtins).
   CodeAssemblerTester(Isolate* isolate, int parameter_count,
+                      CodeKind kind = CodeKind::FOR_TESTING,
                       const char* name = "test")
       : isolate_(isolate),
         job_(CodeAssemblerCompilationJob::NewJobForTesting(
@@ -52,11 +50,15 @@ class CodeAssemblerTester {
               return Linkage::GetJSCallDescriptor(zone, false, parameter_count,
                                                   CallDescriptor::kCanUseRoots);
             },
-            CodeKind::FOR_TESTING_JS, name)),
+            kind, name)),
         scope_(isolate) {
     // Parameter count must include at least the receiver.
     DCHECK_LE(1, parameter_count);
   }
+
+  CodeAssemblerTester(Isolate* isolate, CodeKind kind,
+                      const char* name = "test")
+      : CodeAssemblerTester(isolate, 1, kind, name) {}
 
   CodeAssemblerTester(Isolate* isolate, CallDescriptor* call_descriptor,
                       const char* name = "test")

@@ -1247,7 +1247,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void movhps(Operand dst, XMMRegister src);
 
   void shufps(XMMRegister dst, XMMRegister src, uint8_t imm8);
-  void shufpd(XMMRegister dst, XMMRegister src, uint8_t imm8);
 
   void cvttss2si(Register dst, Operand src);
   void cvttss2si(Register dst, XMMRegister src);

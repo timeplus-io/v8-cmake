@@ -98,7 +98,8 @@ DirectHandle<Code> BuildSetupFunction(
     CallDescriptor* teardown_call_descriptor,
     std::vector<AllocatedOperand> parameters,
     const std::vector<AllocatedOperand>& results) {
-  CodeAssemblerTester tester(isolate, JSParameterCount(2), "setup");
+  CodeAssemblerTester tester(isolate, JSParameterCount(2), CodeKind::BUILTIN,
+                             "setup");
   CodeStubAssembler assembler(tester.state());
   std::vector<Node*> params;
   // The first parameter is always the callee.
@@ -619,7 +620,7 @@ class TestEnvironment : public HandleAndZoneScope {
     const int kTotalStackParameterCount = stack_slot_count_ + 1;
     return main_zone()->New<CallDescriptor>(
         CallDescriptor::kCallCodeObject,  // kind
-        kCodeEntrypointTagForTesting,     // tag
+        kDefaultCodeEntrypointTag,        // tag
         MachineType::AnyTagged(),         // target MachineType
         LinkageLocation::ForAnyRegister(
             MachineType::AnyTagged()),  // target location
@@ -1313,7 +1314,7 @@ class CodeGeneratorTester {
                          kReturnRegister0.code()),
         ImmediateOperand(
             ImmediateOperand::INLINE_INT32,
-            (kCodeEntrypointTagForTesting >> kCodeEntrypointTagShift)),
+            (kDefaultCodeEntrypointTag >> kCodeEntrypointTagShift)),
         ImmediateOperand(ImmediateOperand::INLINE_INT32, optional_padding_slot),
         ImmediateOperand(ImmediateOperand::INLINE_INT32,
                          first_unused_stack_slot)};

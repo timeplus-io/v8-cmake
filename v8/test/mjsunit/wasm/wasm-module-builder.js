@@ -1463,7 +1463,6 @@ class WasmModuleBuilder {
     this.explicit = [];
     this.rec_groups = [];
     this.compilation_priorities = new Map();
-    this.start_index = undefined;
     this.num_imported_funcs = 0;
     this.num_imported_globals = 0;
     this.num_imported_tables = 0;

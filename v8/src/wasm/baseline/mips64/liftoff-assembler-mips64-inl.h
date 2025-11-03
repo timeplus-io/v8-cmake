@@ -582,15 +582,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
     *protected_store_pc = pc_offset() - kInstrSize;
   }
 
-  if (v8_flags.disable_write_barriers) return;
-
-  if (skip_write_barrier) {
-    if (v8_flags.verify_write_barriers) {
-      CallVerifySkippedWriteBarrierStubSaveRegisters(dst_addr, src,
-                                                     SaveFPRegsMode::kSave);
-    }
-    return;
-  }
+  if (skip_write_barrier || v8_flags.disable_write_barriers) return;
 
   Label exit;
   JumpIfSmi(src, &exit);

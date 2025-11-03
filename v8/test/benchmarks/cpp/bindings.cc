@@ -162,8 +162,7 @@ class BindingsBenchmarkBase : public v8::benchmarking::BenchmarkWithIsolate {
     auto* isolate = info.GetIsolate();
     auto ctx = isolate->GetCurrentContext();
     auto* data = reinterpret_cast<PerContextData*>(
-        ctx->GetAlignedPointerFromEmbedderData(v8::benchmarking::kEmbedderId,
-                                               kPerContextDataTag));
+        ctx->GetAlignedPointerFromEmbedderData(v8::benchmarking::kEmbedderId));
 
     // Unwrap: Get the C++ instance pointer.
     typename ConcreteBindings::GlobalWrappable* receiver =
@@ -237,7 +236,7 @@ class BindingsBenchmarkBase : public v8::benchmarking::BenchmarkWithIsolate {
     auto context = context_.Get(isolate);
     delete reinterpret_cast<PerContextData*>(
         context->GetAlignedPointerFromEmbedderData(
-            v8::benchmarking::kEmbedderId, kPerContextDataTag));
+            v8::benchmarking::kEmbedderId));
     context->Exit();
     context_.Reset();
   }
@@ -305,7 +304,7 @@ class UnmanagedBindings : public BindingsBenchmarkBase<UnmanagedBindings> {
   template <typename T>
   static V8_INLINE T* Unwrap(v8::Isolate* isolate, v8::Local<v8::Object> thiz) {
     return reinterpret_cast<T*>(thiz->GetAlignedPointerFromInternalField(
-        v8::benchmarking::kInstanceOffset, v8::kEmbedderDataTypeTagDefault));
+        v8::benchmarking::kInstanceOffset));
   }
 
   static void SetupContextTemplate(

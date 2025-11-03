@@ -679,8 +679,7 @@ THREADED_TEST(Regress1006600) {
 
   Local<v8::Value> ab = CompileRunChecked(isolate, "new ArrayBuffer()");
   for (int i = 0; i < v8::ArrayBuffer::kEmbedderFieldCount; i++) {
-    CHECK_NULL(ab.As<v8::Object>()->GetAlignedPointerFromInternalField(
-        i, v8::kEmbedderDataTypeTagDefault));
+    CHECK_NULL(ab.As<v8::Object>()->GetAlignedPointerFromInternalField(i));
   }
 }
 

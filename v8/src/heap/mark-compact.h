@@ -134,13 +134,11 @@ class MarkCompactCollector final {
 
   static void RecordRelocSlot(Tagged<InstructionStream> host, RelocInfo* rinfo,
                               Tagged<HeapObject> target);
-  template <typename THeapObjectSlot,
-            RecordYoungSlot kRecordYoung = RecordYoungSlot::kNo>
+  template <typename THeapObjectSlot>
   V8_INLINE static void RecordSlot(Tagged<HeapObject> object,
                                    THeapObjectSlot slot,
                                    Tagged<HeapObject> target);
-  template <typename THeapObjectSlot,
-            RecordYoungSlot kRecordYoung = RecordYoungSlot::kNo>
+  template <typename THeapObjectSlot>
   V8_INLINE static void RecordSlot(MemoryChunk* source_chunk,
                                    THeapObjectSlot slot,
                                    Tagged<HeapObject> target);
@@ -210,7 +208,7 @@ class MarkCompactCollector final {
   void MarkLiveObjects();
 
   // Marks the object and adds it to the worklist.
-  V8_INLINE void MarkObject(Tagged<HeapObject> obj,
+  V8_INLINE void MarkObject(Tagged<HeapObject> host, Tagged<HeapObject> obj,
                             MarkingHelper::WorklistTarget target_worklist);
 
   // Marks the root object and adds it to the worklist.
@@ -306,6 +304,10 @@ class MarkCompactCollector final {
   void FlushSFI(Tagged<SharedFunctionInfo> sfi,
                 bool bytecode_already_decompiled);
 
+#ifndef V8_ENABLE_LEAPTIERING
+  void ProcessFlushedBaselineCandidates();
+#endif  // !V8_ENABLE_LEAPTIERING
+
   // Resets any JSFunctions which have had their bytecode flushed.
   void ClearFlushedJsFunctions();
 
@@ -355,7 +357,7 @@ class MarkCompactCollector final {
 
   // Goes through the list of encountered JSWeakRefs and WeakCells and clears
   // those with dead values.
-  void ProcessJSWeakRefs();
+  void ClearJSWeakRefs();
 
   // Starts sweeping of spaces by contributing on the main thread and setting
   // up other pages for sweeping. Does not start sweeper tasks.

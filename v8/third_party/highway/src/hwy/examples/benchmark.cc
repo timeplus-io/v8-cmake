@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>  // abort
 
@@ -33,7 +32,6 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
-namespace {
 
 // These templates are not found via ADL.
 #if HWY_TARGET != HWY_SCALAR
@@ -77,7 +75,7 @@ void RunBenchmark(const char* caption) {
       [&benchmark](const FuncInput input) { return benchmark(input); }, inputs,
       kNumInputs, results, p);
   if (num_results != kNumInputs) {
-    HWY_WARN("MeasureClosure failed.\n");
+    fprintf(stderr, "MeasureClosure failed.\n");
   }
 
   benchmark.Verify(num_items);
@@ -149,14 +147,17 @@ class BenchmarkDot : public TwoArray {
   }
   void Verify(size_t num_items) {
     if (dot_ == -1.0f) {
-      HWY_ABORT("Dot: must call Verify after benchmark");
+      fprintf(stderr, "Dot: must call Verify after benchmark");
+      abort();
     }
 
     const float expected =
         std::inner_product(a_.get(), a_.get() + num_items, b_, 0.0f);
     const float rel_err = std::abs(expected - dot_) / expected;
     if (rel_err > 1.1E-6f) {
-      HWY_ABORT("Dot: expected %e actual %e (%e)\n", expected, dot_, rel_err);
+      fprintf(stderr, "Dot: expected %e actual %e (%e)\n", expected, dot_,
+              rel_err);
+      abort();
     }
   }
 
@@ -213,7 +214,7 @@ struct BenchmarkDelta : public TwoArray {
       const float expected = (i == 0) ? a_[0] : a_[i] - a_[i - 1];
       const float err = std::abs(expected - b_[i]);
       if (err > 1E-6f) {
-        HWY_WARN("Delta: expected %e, actual %e\n", expected, b_[i]);
+        fprintf(stderr, "Delta: expected %e, actual %e\n", expected, b_[i]);
       }
     }
   }
@@ -226,7 +227,6 @@ void RunBenchmarks() {
   RunBenchmark<BenchmarkDelta>("delta");
 }
 
-}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
@@ -234,7 +234,6 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
-namespace {
 HWY_EXPORT(RunBenchmarks);
 
 void Run() {
@@ -245,7 +244,6 @@ void Run() {
   SetSupportedTargetsForTest(0);  // Reset the mask afterwards.
 }
 
-}  // namespace
 }  // namespace hwy
 
 int main(int /*argc*/, char** /*argv*/) {

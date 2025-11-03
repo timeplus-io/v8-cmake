@@ -8,8 +8,6 @@ This module contains helper functions to compile V8.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 FlagInfo = provider("The value of an option.",
 fields = ["value"])
@@ -443,7 +441,7 @@ def _v8_target_cpu_transition_impl(settings,
         "armeabi-v7a": "arm32",
         "s390x": "s390x",
         "riscv64": "riscv64",
-        "ppc": "ppc64le",
+        "ppc64": "ppc64le",
     }
     v8_target_cpu = mapping[settings["//command_line_option:cpu"]]
     return {"@v8//bazel/config:v8_target_cpu": v8_target_cpu}

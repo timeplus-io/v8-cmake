@@ -267,7 +267,11 @@ bool AssemblerRISCVI::IsLw(Instr instr) {
 }
 
 int AssemblerRISCVI::LoadOffset(Instr instr) {
-  DCHECK(IsLoadWord(instr));
+#if V8_TARGET_ARCH_RISCV64
+  DCHECK(IsLd(instr));
+#elif V8_TARGET_ARCH_RISCV32
+  DCHECK(IsLw(instr));
+#endif
   int32_t imm12 = static_cast<int32_t>(instr & kImm12Mask) >> 20;
   return imm12;
 }

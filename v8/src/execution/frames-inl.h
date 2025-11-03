@@ -355,9 +355,6 @@ inline WasmStackEntryFrame::WasmStackEntryFrame(
     StackFrameIteratorBase* iterator)
     : TypedFrame(iterator) {}
 
-inline WasmStackExitFrame::WasmStackExitFrame(StackFrameIteratorBase* iterator)
-    : TypedFrame(iterator) {}
-
 inline CWasmEntryFrame::CWasmEntryFrame(StackFrameIteratorBase* iterator)
     : StubFrame(iterator) {}
 

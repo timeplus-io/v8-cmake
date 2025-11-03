@@ -577,6 +577,7 @@ function TestNestedSuspenders(suspend) {
   const module = builder.toModule();
 
   function workerCode() {
+    d8.test.enableJSPI();
     onmessage = async function({data:module}) {
       let wasm_async;
       let instance = new WebAssembly.Instance(module, {m: {

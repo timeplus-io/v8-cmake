@@ -207,8 +207,7 @@ NamedAccessFeedback const& ElementAccessFeedback::Refine(JSHeapBroker* broker,
   // key is know to be a known name.
   CHECK(transition_groups_.empty());
   ZoneVector<MapRef> maps(broker->zone());
-  return *broker->zone()->New<NamedAccessFeedback>(broker, name, maps,
-                                                   slot_kind());
+  return *broker->zone()->New<NamedAccessFeedback>(name, maps, slot_kind());
 }
 
 ElementAccessFeedback const& ElementAccessFeedback::Refine(
@@ -414,12 +413,10 @@ MegaDOMPropertyAccessFeedback::MegaDOMPropertyAccessFeedback(
 }
 
 NamedAccessFeedback::NamedAccessFeedback(
-    JSHeapBroker* broker, NameRef name, ZoneVector<MapRef> const& maps,
-    FeedbackSlotKind slot_kind,
+    NameRef name, ZoneVector<MapRef> const& maps, FeedbackSlotKind slot_kind,
     bool has_deprecated_map_without_migration_target)
     : ProcessedFeedback(kNamedAccess, slot_kind),
-      name_(name.UnpackIfThin(broker)),
-      original_name_maybe_thin_(name),
+      name_(name),
       maps_(maps),
       has_deprecated_map_without_migration_target_(
           has_deprecated_map_without_migration_target) {
@@ -534,7 +531,7 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForPropertyAccess(
     DCHECK_IMPLIES(maps.empty(),
                    nexus.ic_state() == InlineCacheState::MEGAMORPHIC);
     return *zone()->New<NamedAccessFeedback>(
-        this, *name, maps, kind, has_deprecated_map_without_migration_target);
+        *name, maps, kind, has_deprecated_map_without_migration_target);
   } else if (nexus.GetKeyType() == IcCheckType::kElement && !maps.empty()) {
     return ProcessFeedbackMapsForElementAccess(
         maps, KeyedAccessMode::FromNexus(nexus), kind);

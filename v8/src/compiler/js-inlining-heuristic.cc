@@ -9,7 +9,6 @@
 #include "src/compiler/js-heap-broker.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/simplified-operator.h"
-#include "src/compiler/turboshaft/utils.h"
 #include "src/numbers/conversions-inl.h"
 
 namespace v8 {
@@ -248,8 +247,7 @@ Reduction JSInliningHeuristic::Reduce(Node* node) {
         candidate.can_inline_function[i],
         shared.IsInlineable(CodeKind::TURBOFAN_JS, broker()) ||
             shared.GetInlineability(CodeKind::TURBOFAN_JS, broker()) ==
-                turboshaft::any_of(SharedFunctionInfo::kHasOptimizationDisabled,
-                                   SharedFunctionInfo::kMayContainBreakPoints));
+                SharedFunctionInfo::kHasOptimizationDisabled);
     // Do not allow direct recursion i.e. f() -> f(). We still allow indirect
     // recursion like f() -> g() -> f(). The indirect recursion is helpful in
     // cases where f() is a small dispatch function that calls the appropriate
@@ -906,9 +904,7 @@ bool JSInliningHeuristic::CandidateCompare::operator()(
 
 void JSInliningHeuristic::PrintCandidates() {
   StdoutStream os;
-  os << "Budget used: " << total_inlined_bytecode_size_ << "/"
-     << max_inlined_bytecode_size_cumulative_ << " -- " << candidates_.size()
-     << " candidate(s) for inlining:" << std::endl;
+  os << candidates_.size() << " candidate(s) for inlining:" << std::endl;
   for (const Candidate& candidate : candidates_) {
     os << "- candidate: " << candidate.node->op()->mnemonic() << " node #"
        << candidate.node->id() << " with frequency " << candidate.frequency

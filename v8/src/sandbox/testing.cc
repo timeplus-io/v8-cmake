@@ -6,7 +6,6 @@
 
 #include "src/api/api-inl.h"
 #include "src/api/api-natives.h"
-#include "src/base/virtual-address-space.h"
 #include "src/builtins/builtins.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate-inl.h"
@@ -24,14 +23,19 @@
 #include <unistd.h>
 #endif  // V8_OS_LINUX
 
-#if defined(V8_USE_ADDRESS_SANITIZER)
+#ifdef V8_USE_ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
-#endif
+#endif  // V8_USE_ADDRESS_SANITIZER
+#ifdef V8_USE_MEMORY_SANITIZER
+#include <sanitizer/msan_interface.h>
+#endif  // V8_USE_MEMORY_SANITIZER
+#ifdef V8_USE_UNDEFINED_BEHAVIOR_SANITIZER
+#include <sanitizer/ubsan_interface.h>
+#endif  // V8_USE_UNDEFINED_BEHAVIOR_SANITIZER
 
 #if defined(V8_USE_ADDRESS_SANITIZER) || defined(V8_USE_MEMORY_SANITIZER) || \
     defined(V8_USE_UNDEFINED_BEHAVIOR_SANITIZER)
 #define V8_USE_ANY_SANITIZER 1
-#include <sanitizer/common_interface_defs.h>
 #endif
 
 namespace v8 {
@@ -235,8 +239,7 @@ static void SandboxIsWritableImpl(
     return;
   }
 
-  MemoryChunkMetadata* chunk = MemoryChunkMetadata::FromHeapObject(
-      reinterpret_cast<Isolate*>(info.GetIsolate()), obj);
+  MemoryChunkMetadata* chunk = MemoryChunkMetadata::FromHeapObject(obj);
   bool is_writable = chunk->IsWritable();
   info.GetReturnValue().Set(is_writable);
 }

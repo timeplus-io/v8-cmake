@@ -20,10 +20,6 @@
 #include <random>
 #include <vector>
 
-#if !defined(HWY_DISABLED_TARGETS) && HWY_IS_DEBUG_BUILD
-#define HWY_DISABLED_TARGETS (HWY_SSE2 | HWY_SSSE3)
-#endif
-
 #include "hwy/aligned_allocator.h"  // IsAligned
 #include "hwy/base.h"
 #include "hwy/contrib/sort/vqsort.h"
@@ -41,6 +37,15 @@
 #include "hwy/contrib/sort/vqsort-inl.h"  // BaseCase
 #include "hwy/print-inl.h"
 #include "hwy/tests/test_util-inl.h"
+
+// TODO(b/314758657): Compiler bug causes incorrect results on SSE2/S-SSE3.
+#undef VQSORT_SKIP
+#if !defined(VQSORT_DO_NOT_SKIP) && HWY_COMPILER_CLANG && HWY_ARCH_X86 && \
+    HWY_TARGET >= HWY_SSSE3
+#define VQSORT_SKIP 1
+#else
+#define VQSORT_SKIP 0
+#endif
 
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
@@ -90,6 +95,7 @@ void TestAllSortIota() {
   if (hwy::HaveFloat64()) {
     TestSortIota<double>(pool);
   }
+  fprintf(stderr, "Iota OK\n");
 #endif
 }
 
@@ -119,7 +125,7 @@ void TestAnySort(const std::vector<Algo>& algos, size_t num_lanes) {
   HWY_ASSERT(aligned);
 
   for (Algo algo : algos) {
-    if (IsVQ(algo) && !VQSORT_ENABLED) continue;
+    if (IsVQ(algo) && (!VQSORT_ENABLED || VQSORT_SKIP)) continue;
 
     for (Dist dist : AllDist()) {
       for (size_t misalign :
@@ -232,7 +238,7 @@ void TestAllSort() {
       Algo::kVQSort,  Algo::kHeapSort,
   };
 
-  for (int num : {129, 504, 3 * 1000, 14567}) {
+  for (int num : {129, 504, 3 * 1000, 34567}) {
     const size_t num_lanes = AdjustedReps(static_cast<size_t>(num));
     CallAllSortTraits(algos, num_lanes);
   }
@@ -241,7 +247,7 @@ void TestAllSort() {
 void TestAllPartialSort() {
   const std::vector<Algo> algos{Algo::kVQPartialSort, Algo::kHeapPartialSort};
 
-  for (int num : {129, 504, 3 * 1000, 14567}) {
+  for (int num : {129, 504, 3 * 1000, 34567}) {
     const size_t num_lanes = AdjustedReps(static_cast<size_t>(num));
     CallAllSortTraits(algos, num_lanes);
   }
@@ -250,7 +256,7 @@ void TestAllPartialSort() {
 void TestAllSelect() {
   const std::vector<Algo> algos{Algo::kVQSelect, Algo::kHeapSelect};
 
-  for (int num : {129, 504, 3 * 1000, 14567}) {
+  for (int num : {129, 504, 3 * 1000, 34567}) {
     const size_t num_lanes = AdjustedReps(static_cast<size_t>(num));
     CallAllSortTraits(algos, num_lanes);
   }

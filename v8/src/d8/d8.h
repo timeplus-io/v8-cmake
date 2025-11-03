@@ -334,11 +334,10 @@ class PerIsolateData {
                            Local<Value> exception);
   int HandleUnhandledPromiseRejections();
 
-  // Keep track of DynamicImportData so we can prevent leaks and unauthorized
-  // uses.
+  // Keep track of DynamicImportData so we can properly free it on shutdown
+  // when LEAK_SANITIZER is active.
   void AddDynamicImportData(DynamicImportData*);
   void DeleteDynamicImportData(DynamicImportData*);
-  DynamicImportData* LookupImportData(void*);
 
   Local<FunctionTemplate> GetTestApiObjectCtor() const;
   void SetTestApiObjectCtor(Local<FunctionTemplate> ctor);
@@ -368,7 +367,9 @@ class PerIsolateData {
   std::vector<std::tuple<Global<Promise>, Global<Message>, Global<Value>>>
       unhandled_promises_;
   AsyncHooks* async_hooks_wrapper_;
+#if defined(LEAK_SANITIZER)
   std::unordered_set<DynamicImportData*> import_data_;
+#endif
   Global<FunctionTemplate> test_api_object_ctor_;
   Global<FunctionTemplate> dom_node_ctor_;
   // Track workers and their callbacks separately, so that we know both which
@@ -612,6 +613,7 @@ class Shell : public i::AllStatic {
 
   static void InstallConditionalFeatures(
       const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void EnableJSPI(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void SetFlushDenormals(
       const v8::FunctionCallbackInfo<v8::Value>& info);
 

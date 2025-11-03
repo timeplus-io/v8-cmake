@@ -122,8 +122,8 @@ void CompilationCacheEvalOrScript::Clear() {
 }
 
 void CompilationCacheRegExp::Clear() {
-  MemsetPointer(FullObjectSlot(tables_),
-                ReadOnlyRoots(isolate()).undefined_value(), kGenerations);
+  MemsetPointer(reinterpret_cast<Address*>(tables_),
+                ReadOnlyRoots(isolate()).undefined_value().ptr(), kGenerations);
 }
 
 void CompilationCacheEvalOrScript::Remove(

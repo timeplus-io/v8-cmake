@@ -25,17 +25,13 @@ async function logPrototypeChain(objectId) {
 }
 
 (async () => {
-  const expr = "globalThis";
-  InspectorTest.log(`Prototype chain for "${expr}":`);
-  const { result: { result } } = await Protocol.Runtime.evaluate({ expression: expr });
+  InspectorTest.log('Prototype chain for "globalThis":');
+  const { result: { result } } = await Protocol.Runtime.evaluate({ expression: 'globalThis' });
   InspectorTest.logMessage(result);
   await logPrototypeChain(result.objectId);
 
-  // Set weird[@@toStringTag] in order to avoid finding tag value installed on
-  // globalThis object.
-  const expr2 = "var weird = {[Symbol.toStringTag]: 'Object'}; weird.__proto__ = globalThis; weird;";
-  InspectorTest.log(`Prototype chain for "${expr2}":`);
-  const { result: { result: result2 }  } = await Protocol.Runtime.evaluate({ expression: expr2 });
+  InspectorTest.log('\nPrototype chain for "var weird = {}; weird.__proto__ = globalThis; weird;":')
+  const { result: { result: result2 }  } = await Protocol.Runtime.evaluate({ expression: 'var weird = {}; weird.__proto__ = globalThis; weird;' });
   InspectorTest.logMessage(result2);
   await logPrototypeChain(result2.objectId);
 

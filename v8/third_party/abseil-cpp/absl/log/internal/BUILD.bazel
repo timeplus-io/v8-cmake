@@ -81,7 +81,6 @@ cc_library(
         "//absl/base:nullability",
         "//absl/debugging:leak_check",
         "//absl/strings",
-        "//absl/strings:has_ostream_operator",
     ],
 )
 

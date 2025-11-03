@@ -12,12 +12,6 @@
 
 namespace v8::internal::compiler::turboshaft {
 
-namespace {
-bool IsStringConcatenation(const Operation* op) {
-  return op->Is<StringConcatOp>() || op->Is<NewConsStringOp>();
-}
-}  // namespace
-
 void StringEscapeAnalyzer::Run() {
   for (uint32_t processed = graph_.block_count(); processed > 0; --processed) {
     BlockIndex block_index = static_cast<BlockIndex>(processed - 1);
@@ -63,7 +57,7 @@ void StringEscapeAnalyzer::ProcessFrameState(V<FrameState> index,
   max_frame_state_input_count_ =
       std::max<uint32_t>(max_frame_state_input_count_, framestate.input_count);
   for (V<Any> input_idx : framestate.inputs()) {
-    if (IsStringConcatenation(&graph_.Get(input_idx))) {
+    if (graph_.Get(input_idx).Is<StringConcatOp>()) {
       // This FrameState has a StringConcat as input, so we might need to
       // recreate it in the reducer.
       maybe_to_reconstruct_frame_states_.push_back(index);
@@ -90,7 +84,6 @@ void StringEscapeAnalyzer::ProcessBlock(const Block& block) {
         ProcessFrameState(V<FrameState>::Cast(index), op.Cast<FrameStateOp>());
         break;
       case Opcode::kStringConcat:
-      case Opcode::kNewConsString:
         // The inputs of a StringConcat are only escaping if the StringConcat
         // itself is already escaping itself.
         if (IsEscaping(index)) {
@@ -120,21 +113,19 @@ void StringEscapeAnalyzer::MarkAllInputsAsEscaping(const Operation& op) {
 }
 
 void StringEscapeAnalyzer::RecursivelyMarkAllStringConcatInputsAsEscaping(
-    const Operation* concat) {
-  DCHECK(IsStringConcatenation(concat));
-  base::SmallVector<const Operation*, 16> to_mark;
+    const StringConcatOp* concat) {
+  base::SmallVector<const StringConcatOp*, 16> to_mark;
   to_mark.push_back(concat);
 
   while (!to_mark.empty()) {
-    const Operation* curr = to_mark.back();
-    DCHECK(IsStringConcatenation(curr));
+    const StringConcatOp* curr = to_mark.back();
     to_mark.pop_back();
 
     for (V<Any> input_index : curr->inputs()) {
       const Operation& input = graph_.Get(input_index);
-      if (IsStringConcatenation(&input) && !IsEscaping(input_index)) {
+      if (input.Is<StringConcatOp>() && !IsEscaping(input_index)) {
         MarkAsEscaping(input_index);
-        to_mark.push_back(&input);
+        to_mark.push_back(&input.Cast<StringConcatOp>());
       }
     }
   }
@@ -155,12 +146,12 @@ void StringEscapeAnalyzer::ReprocessStringConcats() {
     for (V<String> index : maybe_non_escaping_string_concats_) {
       MarkAsEscaping(index);
     }
-    return;
   }
 
   for (V<String> index : maybe_non_escaping_string_concats_) {
     if (IsEscaping(index)) {
-      RecursivelyMarkAllStringConcatInputsAsEscaping(&graph_.Get(index));
+      RecursivelyMarkAllStringConcatInputsAsEscaping(
+          &graph_.Get(index).Cast<StringConcatOp>());
     }
   }
 }
@@ -170,7 +161,7 @@ void StringEscapeAnalyzer::ComputeFrameStatesToReconstruct() {
     const FrameStateOp& frame_state =
         graph_.Get(frame_state_idx).Cast<FrameStateOp>();
     for (V<Any> input : frame_state.inputs()) {
-      if (IsStringConcatenation(&graph_.Get(input)) && !IsEscaping(input)) {
+      if (graph_.Get(input).Is<StringConcatOp>() && !IsEscaping(input)) {
         RecursiveMarkAsShouldReconstruct(frame_state_idx);
         break;
       }

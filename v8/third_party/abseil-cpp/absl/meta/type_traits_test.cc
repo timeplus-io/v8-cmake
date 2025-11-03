@@ -36,9 +36,6 @@ using IsOwnerAndNotView =
     absl::conjunction<absl::type_traits_internal::IsOwner<T>,
                       absl::negation<absl::type_traits_internal::IsView<T>>>;
 
-static_assert(
-    IsOwnerAndNotView<std::pair<std::vector<int>, std::string>>::value,
-    "pair of owners is an owner, not a view");
 static_assert(IsOwnerAndNotView<std::vector<int>>::value,
               "vector is an owner, not a view");
 static_assert(IsOwnerAndNotView<std::string>::value,

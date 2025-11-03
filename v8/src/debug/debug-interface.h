@@ -166,7 +166,6 @@ struct LiveEditResult {
     BLOCKED_BY_RUNNING_GENERATOR,
     BLOCKED_BY_ACTIVE_FUNCTION,
     BLOCKED_BY_TOP_LEVEL_ES_MODULE_CHANGE,
-    FEATURE_DISABLED,
   };
   Status status = OK;
   bool stack_changed = false;

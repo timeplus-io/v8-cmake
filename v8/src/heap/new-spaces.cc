@@ -68,7 +68,7 @@ SemiSpace::~SemiSpace() {
 
 bool SemiSpace::ContainsSlow(Address address) const {
   for (const PageMetadata* page : *this) {
-    if (page == MemoryChunkMetadata::FromAddress(heap()->isolate(), address)) {
+    if (page == MemoryChunkMetadata::FromAddress(address)) {
       return true;
     }
   }
@@ -669,7 +669,7 @@ bool SemiSpaceNewSpace::ShouldPageBePromoted(const MemoryChunk* chunk) const {
   // will also contain pinned new objects (that will prevent us from promoting
   // the page). Thus, we conservatively keep the page in new space. Pinned
   // objects on it will either die or be promoted in the next GC cycle.
-  return !chunk->Metadata(heap()->isolate())->ContainsLimit(age_mark_);
+  return !chunk->Metadata()->ContainsLimit(age_mark_);
 }
 
 std::unique_ptr<ObjectIterator> SemiSpaceNewSpace::GetObjectIterator(
@@ -679,8 +679,7 @@ std::unique_ptr<ObjectIterator> SemiSpaceNewSpace::GetObjectIterator(
 
 bool SemiSpaceNewSpace::Contains(Tagged<HeapObject> object) const {
   // Don't delegate to SemiSpace to avoid the repeated metadata lookup.
-  const auto* owner =
-      MemoryChunkMetadata::FromHeapObject(heap()->isolate(), object)->owner();
+  const auto* owner = MemoryChunkMetadata::FromHeapObject(object)->owner();
   return owner == &to_space_ || owner == &from_space_;
 }
 

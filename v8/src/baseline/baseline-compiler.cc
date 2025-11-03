@@ -634,6 +634,7 @@ constexpr static bool BuiltinMayDeopt(Builtin id) {
     case Builtin::kStoreCurrentContextElementBaseline:
     // This one explicitly skips the construct if the debugger is enabled.
     case Builtin::kFindNonDefaultConstructorOrConstruct:
+    case Builtin::kForOfNextBaseline:
       return false;
     default:
       return true;
@@ -1015,22 +1016,8 @@ void BaselineCompiler::VisitStaModuleVariable() {
 }
 
 void BaselineCompiler::VisitSetPrototypeProperties() {
-  BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
-  Register feedback_array = scratch_scope.AcquireScratch();
-  LoadClosureFeedbackArray(feedback_array);
-
-  CallRuntime(Runtime::kSetPrototypeProperties,
-              // The object upon whose prototype boilerplate shall be applied
-              kInterpreterAccumulatorRegister,
-              // ObjectBoilerplateDescription whose properties will be merged in
-              // to the above object
-              Constant<ObjectBoilerplateDescription>(0),
-              // Array of feedback cells. Needed to instantiate
-              // ShareFunctionInfo(s) from the boilerplate
-              feedback_array,
-              // Index of the feedback cell of the first ShareFunctionInfo. We
-              // may assume all other SFI to be tightly packed.
-              IndexAsSmi(1));
+  CallRuntime(Runtime::kSetPrototypeProperties, kInterpreterAccumulatorRegister,
+              Constant<ObjectBoilerplateDescription>(0));
 }
 
 void BaselineCompiler::VisitSetNamedProperty() {

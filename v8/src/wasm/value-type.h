@@ -1295,7 +1295,6 @@ constexpr IndependentHeapType kWasmStringViewWtf16{
 constexpr IndependentHeapType kWasmStringViewIter{GenericKind::kStringViewIter,
                                                   kNonNullable};
 constexpr IndependentHeapType kWasmNullRef{GenericKind::kNone};
-constexpr IndependentHeapType kWasmRefNone{GenericKind::kNone, kNonNullable};
 constexpr IndependentHeapType kWasmNullExternRef{GenericKind::kNoExtern};
 constexpr IndependentHeapType kWasmNullExnRef{GenericKind::kNoExn};
 constexpr IndependentHeapType kWasmNullFuncRef{GenericKind::kNoFunc};

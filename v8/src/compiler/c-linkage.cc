@@ -338,11 +338,10 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(
   LinkageLocation target_loc = LinkageLocation::ForAnyRegister(target_type);
   flags |= CallDescriptor::kNoAllocate;
 
-  // Use kInvalidEntrypointTag since C call functions are never supposed
-  // to be called indirectly through Code objects.
+  // TODO(saelo): here we probably want to use a c-call specific tag.
   return zone->New<CallDescriptor>(  // --
       CallDescriptor::kCallAddress,  // kind
-      kInvalidEntrypointTag,         // tag
+      kDefaultCodeEntrypointTag,     // tag
       target_type,                   // target MachineType
       target_loc,                    // target location
       locations.Get(),               // location_sig

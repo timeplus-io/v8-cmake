@@ -943,9 +943,9 @@ double flat_string_to_f64(Address string_address) {
                             std::numeric_limits<double>::quiet_NaN());
 }
 
-void start_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
+void start_stack(Isolate* isolate, wasm::StackMemory* from, Address sp,
                  Address fp, Address pc) {
-  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
+  wasm::StackMemory* to = isolate->isolate_data()->active_stack();
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (start)\n", from->id(), to->id());
   }
@@ -953,28 +953,9 @@ void start_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
       from, to, sp, fp, pc);
 }
 
-// The active stack is checked inline in the wasm-to-js wrapper. This only
-// checks the inactive stacks.
-int32_t suspender_has_js_frames(Isolate* isolate) {
-  wasm::StackMemory* from_stack = isolate->isolate_data()->active_stack();
-  Tagged<WasmSuspenderObject> suspender =
-      isolate->isolate_data()->active_suspender();
-  Tagged<WasmSuspenderObject> parent = suspender->parent();
-  wasm::StackMemory* to_stack = parent->stack();
-  for (wasm::StackMemory* stack = from_stack; stack != to_stack;
-       stack = stack->jmpbuf()->parent) {
-    if (stack->jmpbuf()->is_on_central_stack) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void suspend_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
+void suspend_stack(Isolate* isolate, wasm::StackMemory* from, Address sp,
                    Address fp, Address pc) {
-  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
-  auto suspender = isolate->isolate_data()->active_suspender();
-  suspender->set_stack(isolate, from);
+  wasm::StackMemory* to = isolate->isolate_data()->active_stack();
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (suspend)\n", from->id(), to->id());
   }
@@ -982,14 +963,17 @@ void suspend_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
       from, to, sp, fp, pc);
 }
 
-void resume_jspi_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
-                       Address fp, Address pc, Address suspender_raw) {
+void resume_stack(Isolate* isolate, wasm::StackMemory* from, Address sp,
+                  Address fp, Address pc, Address suspender_raw) {
   Tagged<Object> suspender_obj(suspender_raw);
   auto suspender = TrustedCast<WasmSuspenderObject>(suspender_obj);
-  Tagged<WasmSuspenderObject> active_suspender =
-      isolate->isolate_data()->active_suspender();
-  suspender->set_parent(active_suspender);
-  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
+  Tagged<Object> active_suspender = isolate->isolate_data()->active_suspender();
+  if (active_suspender == Smi::zero()) {
+    suspender->clear_parent();
+  } else {
+    suspender->set_parent(TrustedCast<WasmSuspenderObject>(active_suspender));
+  }
+  wasm::StackMemory* to = isolate->isolate_data()->active_stack();
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (resume)\n", from->id(), to->id());
   }
@@ -998,19 +982,8 @@ void resume_jspi_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
       from, to, sp, fp, pc);
 }
 
-void resume_wasmfx_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
-                         Address fp, Address pc) {
-  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
-  if (v8_flags.trace_wasm_stack_switching) {
-    PrintF("Switch from stack %d to %d (resume)\n", from->id(), to->id());
-  }
-  isolate->SwitchStacks<JumpBuffer::Inactive, JumpBuffer::Suspended>(
-      from, to, sp, fp, pc);
-}
-
-void return_stack(Isolate* isolate, wasm::StackMemory* to) {
-  // The active stack was already updated by the builtin.
-  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
+void return_stack(Isolate* isolate, wasm::StackMemory* from) {
+  wasm::StackMemory* to = isolate->isolate_data()->active_stack();
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (return)\n", from->id(), to->id());
   }
@@ -1035,7 +1008,6 @@ intptr_t switch_to_the_central_stack(Isolate* isolate, uintptr_t current_sp) {
   auto counter = isolate->wasm_switch_to_the_central_stack_counter();
   isolate->set_wasm_switch_to_the_central_stack_counter(counter + 1);
 
-  DCHECK_NE(thread_local_top->central_stack_sp_, kNullAddress);
   return thread_local_top->central_stack_sp_;
 }
 
@@ -1058,7 +1030,6 @@ intptr_t switch_to_the_central_stack_for_js(Isolate* isolate, Address fp) {
   StackGuard* stack_guard = isolate->stack_guard();
   wasm::StackMemory* stack = isolate->isolate_data()->active_stack();
   Address central_stack_sp = thread_local_top->central_stack_sp_;
-  DCHECK_NE(central_stack_sp, kNullAddress);
   stack->set_stack_switch_info(fp, central_stack_sp);
   stack_guard->SetStackLimitForStackSwitching(
       thread_local_top->central_stack_limit_);

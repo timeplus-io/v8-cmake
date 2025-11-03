@@ -138,10 +138,4 @@
   'fast/js/deep-recursion-test': [SKIP],
 }], # gc_fuzzer or deopt_fuzzer
 
-##############################################################################
-['full_debug', {
-  # https://crbug.com/447172713
-  'run-json-stringify': [SKIP],
-}],  # 'full_debug'
-
 ]

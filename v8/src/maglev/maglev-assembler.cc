@@ -5,7 +5,6 @@
 #include "src/maglev/maglev-assembler.h"
 
 #include "src/builtins/builtins-inl.h"
-#include "src/codegen/external-reference.h"
 #include "src/codegen/reglist.h"
 #include "src/maglev/maglev-assembler-inl.h"
 #include "src/maglev/maglev-code-generator.h"
@@ -559,7 +558,11 @@ void MaglevAssembler::CheckAndEmitDeferredWriteBarrier(
     AssertNotSmi(value);
   }
 
-  MaybeJumpIfReadOnlyOrSmallSmi(value, *done);
+#if V8_STATIC_ROOTS_BOOL
+  // Quick check for Read-only and small Smi values.
+  static_assert(StaticReadOnlyRoot::kLastAllocatedRoot < kRegularPageSize);
+  JumpIfUnsignedLessThan(value, kRegularPageSize, *done);
+#endif  // V8_STATIC_ROOTS_BOOL
 
   if (value_can_be_smi) {
     JumpIfSmi(value, *done);
@@ -707,13 +710,6 @@ void MaglevAssembler::TryMigrateInstanceAndMarkMapAsMigrationTarget(
   Move(kContextRegister, native_context().object());
   CallRuntime(Runtime::kTryMigrateInstanceAndMarkMapAsMigrationTarget);
   save_register_state.DefineSafepoint();
-}
-
-void MaglevAssembler::ResetLastYoungAllocation() {
-  DCHECK(v8_flags.verify_write_barriers);
-  ExternalReference last_young_allocation_address =
-      ExternalReference::last_young_allocation_address(isolate_);
-  Move(last_young_allocation_address, 0);
 }
 
 }  // namespace maglev

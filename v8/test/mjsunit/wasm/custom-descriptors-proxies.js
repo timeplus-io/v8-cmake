@@ -6,16 +6,18 @@
 // Flags: --experimental-wasm-js-interop
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
-d8.file.execute('test/mjsunit/wasm/prototype-setup-builder.js');
+
+function StringToArray(str) {
+  let result = [str.length];
+  for (let c of str) result.push(c.charCodeAt(0));
+  return result;
+}
 
 let builder = new WasmModuleBuilder();
 builder.startRecGroup();
 let $obj0 = builder.addStruct({fields: [], descriptor: 1});
-let $desc0 = builder.addStruct(
-    {fields: [makeField(kWasmExternRef, false)], describes: $obj0});
+let $desc0 = builder.addStruct({describes: $obj0});
 builder.endRecGroup();
-
-let proto_config = new WasmPrototypeSetupBuilder(builder);
 
 let kStringTest = builder.addImport('wasm:js-string', 'test', kSig_i_r);
 
@@ -29,28 +31,20 @@ let $make_t = builder.addType(makeSig([kWasmI32], [kWasmAnyRef]));
 // 4: Proxy handler is Array prototype, acquires elements later.
 // 5: Proxy handler is empty object, acquires elements later.
 const kNumDescriptors = 6;
-
-const proto_imports = {};
-const proto_globals = new Array(kNumDescriptors);
-const constructor_funcs = new Array(kNumDescriptors);
-
-for (let i = 0; i < kNumDescriptors; i++) {
-  let name = `p${i}`;
-  proto_globals[i] = builder.addImportedGlobal("p", name, kWasmExternRef);
-  proto_imports[name] = {};
-}
-for (let i = 0; i < kNumDescriptors; i++) {
+const kFuncIndexOffset = 1;  // Because of {kStringTest}.
+function MakeDescriptorAndConstructor(index) {
   let global =
       builder.addGlobal(wasmRefType($desc0).exact(), false, false, [
-          kExprGlobalGet, proto_globals[i],
-          kGCPrefix, kExprStructNew, $desc0]);
+          kGCPrefix, kExprStructNewDefault, $desc0]);
+  assertEquals(global.index, index);
   let body = [
-    kExprGlobalGet, global.index,
+    kExprGlobalGet, index,
     kGCPrefix, kExprStructNew, $obj0,
   ];
-  constructor_funcs[i] =
-      builder.addFunction("WasmP", $make_t).addBody(body);
+  let func = builder.addFunction("WasmP", $make_t).addBody(body);
+  assertEquals(func.index, index + kFuncIndexOffset);
 }
+for (let i = 0; i < kNumDescriptors; i++) MakeDescriptorAndConstructor(i);
 
 let $foo = builder.addFunction("foo", kSig_i_v).addBody([kExprI32Const, 42]);
 
@@ -76,80 +70,96 @@ builder.addFunction("seti", makeSig(eiee, [kWasmI32])).exportFunc().addBody([
   kExprI32Const, 1,
 ]);
 
-for (let i of [0, 2, 3, 4, 5]) {
-  proto_config.addConfig(proto_globals[i])
-    .addConstructor(`W${i}`, constructor_funcs[i]);
+
+let global_entries = [
+  kNumDescriptors,  // number of entries
+];
+function ConfigurePrototype(index, methods) {
+  global_entries.push(...[
+    index,  // global index
+    0,  // no parent
+    methods.length,
+  ]);
+  for (let m of methods) global_entries.push(...m);
+  global_entries.push(...[
+    1, ...StringToArray(`W${index}`), index + kFuncIndexOffset,  // constructor
+    0,  // no statics
+  ]);
 }
-proto_config.addConfig(proto_globals[1])
-    .addConstructor("W1", constructor_funcs[1])
-    .addMethod("foo", kWasmGetter, $foo);
+ConfigurePrototype(0, []);
+ConfigurePrototype(1, [[1, ...StringToArray("foo"), $foo.index]]);  // 1=getter
+ConfigurePrototype(2, []);
+ConfigurePrototype(3, []);
+ConfigurePrototype(4, []);
+ConfigurePrototype(5, []);
 
-proto_config.build();
+builder.addCustomSection("experimental-descriptors", [
+  0,  // version
+  0,  // module name
+  2,  // "GlobalEntries" subsection
+  ...wasmUnsignedLeb(global_entries.length),
+  ...global_entries,
+]);
 
-let constructors = {};
-let instance = builder.instantiate({
-  p: proto_imports,
-  c: {constructors},
-}, {builtins: ["js-string", "js-prototypes"]});
+let instance = builder.instantiate({}, {builtins: ["js-string"]});
 let wasm = instance.exports;
-
 Object.setPrototypeOf(
-    constructors.W0.prototype,
+    wasm.W0.prototype,
     new Proxy(Object.freeze(Object.create(null)), Object.freeze({
       get: wasm.getp,
       set: wasm.setp,
     })));
-Object.freeze(constructors.W0.prototype);
+Object.freeze(wasm.W0.prototype);
 
 Object.setPrototypeOf(
-    constructors.W1.prototype,
+    wasm.W1.prototype,
     new Proxy(Object.freeze(Object.create(null)), Object.freeze({
       get: wasm.getp,  // can't get inlined due to prototype getter {foo}.
       set: wasm.setf,  // can't get inlined due to prototype getter {foo}.
     })));
-Object.freeze(constructors.W1.prototype);
+Object.freeze(wasm.W1.prototype);
 
 Object.setPrototypeOf(
-    constructors.W2.prototype,
+    wasm.W2.prototype,
     new Proxy(Object.freeze(Object.create(null)), Object.freeze({
       get: wasm.getp,
       set: wasm.setf,  // returns 0, meaning {false}.
     })));
-Object.freeze(constructors.W2.prototype);
+Object.freeze(wasm.W2.prototype);
 
-constructors.W3.prototype[0] = 42;
+wasm.W3.prototype[0] = 42;
 Object.setPrototypeOf(
-    constructors.W3.prototype,
+    wasm.W3.prototype,
     new Proxy(Object.freeze(Object.create(null)), Object.freeze({
       get: wasm.geti,
       set: wasm.seti,
     })));
-Object.freeze(constructors.W3.prototype);
+Object.freeze(wasm.W3.prototype);
 
 Object.setPrototypeOf(
-    constructors.W4.prototype,
+    wasm.W4.prototype,
     new Proxy(Array.prototype, Object.freeze({
       get: wasm.geti,
       set: wasm.seti,
     })));
-Object.freeze(constructors.W4.prototype);
+Object.freeze(wasm.W4.prototype);
 
 function W5Target() {}
 let w5_target = new W5Target();
 Object.setPrototypeOf(
-    constructors.W5.prototype,
+    wasm.W5.prototype,
     new Proxy(w5_target, Object.freeze({
       get: wasm.geti,
       set: wasm.seti,
     })));
-Object.freeze(constructors.W5.prototype);
+Object.freeze(wasm.W5.prototype);
 
-let w0 = new constructors.W0();
-let w1 = new constructors.W1();
-let w2 = new constructors.W2();
-let w3 = new constructors.W3();
-let w4 = new constructors.W4();
-let w5 = new constructors.W5();
+let w0 = new wasm.W0();
+let w1 = new wasm.W1();
+let w2 = new wasm.W2();
+let w3 = new wasm.W3();
+let w4 = new wasm.W4();
+let w5 = new wasm.W5();
 
 class Test {
   constructor(body, expected, inner = null) {

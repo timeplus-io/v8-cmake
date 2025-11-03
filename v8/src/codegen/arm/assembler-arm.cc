@@ -266,24 +266,6 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
-static bool IsEabiHardFloat() {
-  const char* arm_fpu_abi = v8_flags.mfloat_abi;
-  if (strcmp(arm_fpu_abi, "hardfp") == 0) {
-    return true;
-  } else if (strcmp(arm_fpu_abi, "softfp") == 0) {
-    return false;
-  } else if (strcmp(arm_fpu_abi, "auto") == 0) {
-#ifdef __arm__
-    return base::OS::ArmUsingHardFloat();
-#elif USE_EABI_HARDFLOAT
-    return true;
-#else
-    return false;
-#endif
-  }
-  UNREACHABLE();
-}
-
 void CpuFeatures::PrintTarget() {
   const char* arm_arch = nullptr;
   const char* arm_target_type = "";
@@ -320,7 +302,13 @@ void CpuFeatures::PrintTarget() {
   arm_fpu = " vfp2";
 #endif
 
-  arm_float_abi = IsEabiHardFloat() ? "hard" : "softfp";
+#ifdef __arm__
+  arm_float_abi = base::OS::ArmUsingHardFloat() ? "hard" : "softfp";
+#elif USE_EABI_HARDFLOAT
+  arm_float_abi = "hard";
+#else
+  arm_float_abi = "softfp";
+#endif
 
 #if defined __arm__ && (defined __thumb__) || (defined __thumb2__)
   arm_thumb = " thumb";
@@ -335,7 +323,13 @@ void CpuFeatures::PrintFeatures() {
          CpuFeatures::IsSupported(ARMv8), CpuFeatures::IsSupported(ARMv7),
          CpuFeatures::IsSupported(VFPv3), CpuFeatures::IsSupported(VFP32DREGS),
          CpuFeatures::IsSupported(NEON), CpuFeatures::IsSupported(SUDIV));
-  bool eabi_hardfloat = IsEabiHardFloat();
+#ifdef __arm__
+  bool eabi_hardfloat = base::OS::ArmUsingHardFloat();
+#elif USE_EABI_HARDFLOAT
+  bool eabi_hardfloat = true;
+#else
+  bool eabi_hardfloat = false;
+#endif
   printf(" USE_EABI_HARDFLOAT=%d\n", eabi_hardfloat);
 }
 
@@ -525,8 +519,7 @@ Assembler::Assembler(const AssemblerOptions& options,
     : AssemblerBase(options, std::move(buffer)),
       pending_32_bit_constants_(),
       scratch_register_list_(DefaultTmpList()),
-      scratch_vfp_register_list_(DefaultFPTmpList()),
-      use_eabi_hardfloat_(IsEabiHardFloat()) {
+      scratch_vfp_register_list_(DefaultFPTmpList()) {
   reloc_info_writer.Reposition(buffer_start_ + buffer_->size(), pc_);
   constant_pool_deadline_ = kMaxInt;
   const_pool_blocked_nesting_ = 0;

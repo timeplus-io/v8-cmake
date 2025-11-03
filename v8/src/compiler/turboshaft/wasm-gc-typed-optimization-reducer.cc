@@ -445,10 +445,7 @@ void WasmGCTypeAnalyzer::ProcessBranchOnTarget(const BranchOp& branch,
       } else {
         DCHECK_EQ(branch.if_false, &target);
         if (wasm::IsSubtypeOf(GetResolvedType(check.object()), check.config.to,
-                              module_) &&
-            // When checking for a particular custom descriptor, static types
-            // cannot predict the outcome.
-            !(IsCastToCustomDescriptor(module_, check.config))) {
+                              module_)) {
           // The type check always succeeds, the target is impossible to be
           // reached.
           DCHECK_EQ(target.PredecessorCount(), 1);

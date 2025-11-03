@@ -14,7 +14,6 @@
 // limitations under the License.
 
 #include "hwy/contrib/sort/vqsort.h"  // VQSort
-#include "hwy/nanobenchmark.h"        // Unpredictable1
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/contrib/sort/vqsort_f16a.cc"
@@ -26,7 +25,6 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
-namespace {
 
 void SortF16Asc(float16_t* HWY_RESTRICT keys, const size_t num) {
 #if HWY_HAVE_FLOAT16
@@ -34,7 +32,7 @@ void SortF16Asc(float16_t* HWY_RESTRICT keys, const size_t num) {
 #else
   (void)keys;
   (void)num;
-  if (Unpredictable1()) HWY_ASSERT(0);
+  HWY_ASSERT(0);
 #endif
 }
 
@@ -46,7 +44,7 @@ void PartialSortF16Asc(float16_t* HWY_RESTRICT keys, const size_t num,
   (void)keys;
   (void)num;
   (void)k;
-  if (Unpredictable1()) HWY_ASSERT(0);
+  HWY_ASSERT(0);
 #endif
 }
 
@@ -58,11 +56,10 @@ void SelectF16Asc(float16_t* HWY_RESTRICT keys, const size_t num,
   (void)keys;
   (void)num;
   (void)k;
-  if (Unpredictable1()) HWY_ASSERT(0);
+  HWY_ASSERT(0);
 #endif
 }
 
-}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
@@ -88,11 +85,6 @@ void VQPartialSort(float16_t* HWY_RESTRICT keys, const size_t n, const size_t k,
 void VQSelect(float16_t* HWY_RESTRICT keys, const size_t n, const size_t k,
               SortAscending) {
   HWY_DYNAMIC_DISPATCH(SelectF16Asc)(keys, n, k);
-}
-
-void Sorter::operator()(float16_t* HWY_RESTRICT keys, size_t n,
-                        SortAscending tag) const {
-  VQSort(keys, n, tag);
 }
 
 }  // namespace hwy

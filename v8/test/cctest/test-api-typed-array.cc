@@ -567,8 +567,7 @@ TEST(InternalFieldsOnTypedArray) {
   v8::Local<v8::Uint8Array> array = v8::Uint8Array::New(buffer, 0, 1);
   for (int i = 0; i < v8::ArrayBufferView::kInternalFieldCount; i++) {
     CHECK_EQ(static_cast<void*>(nullptr),
-             array->GetAlignedPointerFromInternalField(
-                 i, v8::kEmbedderDataTypeTagDefault));
+             array->GetAlignedPointerFromInternalField(i));
   }
 }
 
@@ -582,8 +581,7 @@ TEST(InternalFieldsOnDataView) {
   v8::Local<v8::DataView> array = v8::DataView::New(buffer, 0, 1);
   for (int i = 0; i < v8::ArrayBufferView::kInternalFieldCount; i++) {
     CHECK_EQ(static_cast<void*>(nullptr),
-             array->GetAlignedPointerFromInternalField(
-                 i, v8::kEmbedderDataTypeTagDefault));
+             array->GetAlignedPointerFromInternalField(i));
   }
 }
 

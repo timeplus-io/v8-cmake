@@ -70,12 +70,12 @@ class Runner {
  * Runner that randomly selects a number of tests from all corpora.
  */
 class RandomCorpusRunner extends Runner {
-  constructor(settings,
+  constructor(inputDir, primary, numFiles,
               maxTestInputs=MAX_TEST_INPUTS_PER_TEST) {
     super();
-    const inputDir = path.resolve(settings.input_dir);
-    this.primary = settings.engine;
-    this.numFiles = settings.no_of_files;
+    inputDir = path.resolve(inputDir);
+    this.primary = primary;
+    this.numFiles = numFiles;
     this.maxTestInputs = maxTestInputs;
     this.corpora = {
       'v8': corpus.create(inputDir, 'v8'),
@@ -107,13 +107,11 @@ class RandomCorpusRunner extends Runner {
  * Like above, including the Fuzzilli corpus.
  */
 class RandomCorpusRunnerWithFuzzilli extends RandomCorpusRunner {
-  constructor(settings,
+  constructor(inputDir, primary, numFiles,
               maxTestInputs=MAX_TEST_INPUTS_PER_TEST) {
-    super(settings, maxTestInputs);
-    const forDiffFuzz = random.toggle(settings.diff_fuzz, 0.2);
-    this.corpora.fuzzilli = corpus.create(
-        settings.input_dir, 'fuzzilli', false, this.corpora.v8,
-        forDiffFuzz);
+    super(inputDir, primary, numFiles, maxTestInputs);
+    this.corpora['fuzzilli'] = corpus.create(
+        inputDir, 'fuzzilli', false, this.corpora['v8']);
   }
 }
 
@@ -121,16 +119,16 @@ class RandomCorpusRunnerWithFuzzilli extends RandomCorpusRunner {
  * Runner that randomly selects Wasm cases from V8 and Fuzzilli.
  */
 class RandomWasmCorpusRunner extends Runner {
-  constructor(settings,
+  constructor(inputDir, engine, numFiles,
               maxTestInputs=MAX_WASM_TEST_INPUTS_PER_TEST) {
     super();
-    this.numFiles = settings.no_of_files;
+    this.numFiles = numFiles;
     this.maxTestInputs = maxTestInputs;
 
     // Bias a bit towards the V8 corpus.
-    const v8Corpus = corpus.create(settings.input_dir, 'v8_wasm');
+    const v8Corpus = corpus.create(inputDir, 'v8_wasm');
     const fuzzilliCorpus = corpus.create(
-        settings.input_dir, 'fuzzilli_wasm', false, v8Corpus);
+        inputDir, 'fuzzilli_wasm', false, v8Corpus);
     this.corpora = [v8Corpus, v8Corpus, fuzzilliCorpus];
   }
 
@@ -171,17 +169,15 @@ class SingleCorpusRunner extends Runner {
  * repeats and without cases from the crashes directory.
  */
 class RandomFuzzilliNoCrashCorpusRunner extends Runner {
-  constructor(settings) {
+  constructor(inputDir, engine, numFiles) {
     super();
-    this.numFiles = settings.no_of_files;
+    this.numFiles = numFiles;
 
     // We need a V8 corpus placeholder only to cross-load dependencies
     // from there, e.g. the wasm module builder.
-    const v8Corpus = corpus.create(settings.input_dir, 'v8');
-    const forDiffFuzz = random.toggle(settings.diff_fuzz, 0.2);
+    const v8Corpus = corpus.create(inputDir, 'v8');
     this.corpus = corpus.create(
-      settings.input_dir, 'fuzzilli_no_crash', false, v8Corpus,
-      forDiffFuzz);
+      inputDir, 'fuzzilli_no_crash', false, v8Corpus);
   }
 
   *inputGen() {

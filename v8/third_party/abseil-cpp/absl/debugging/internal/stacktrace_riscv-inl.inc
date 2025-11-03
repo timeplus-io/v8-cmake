@@ -162,8 +162,7 @@ static int UnwindImpl(void **result, uintptr_t *frames, int *sizes,
               absl::debugging_internal::StripPointerMetadata(frame_pointer);
         }
         if (sizes != nullptr) {
-          sizes[n] = static_cast<int>(
-              ComputeStackFrameSize(frame_pointer, next_frame_pointer));
+          sizes[n] = ComputeStackFrameSize(frame_pointer, next_frame_pointer);
         }
       }
       n++;

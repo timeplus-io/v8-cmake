@@ -250,7 +250,7 @@ class TurboshaftInstructionSelectorTest : public TestWithNativeContextAndZone {
 
       return zone->New<CallDescriptor>(  // --
           CallDescriptor::kCallAddress,  // kind
-          kCodeEntrypointTagForTesting,  // tag
+          kDefaultCodeEntrypointTag,     // tag
           target_type,                   // target MachineType
           target_loc,                    // target location
           locations.Get(),               // location_sig

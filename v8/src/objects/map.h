@@ -108,6 +108,7 @@ enum InstanceType : uint16_t;
   IF_WASM(V, WasmMemoryObject)        \
   IF_WASM(V, WasmResumeData)          \
   IF_WASM(V, WasmStruct)              \
+  IF_WASM(V, WasmDescriptorOptions)   \
   IF_WASM(V, WasmSuspendingObject)    \
   IF_WASM(V, WasmContinuationObject)  \
   IF_WASM(V, WasmTableObject)         \
@@ -208,7 +209,7 @@ using MapHandlesSpan = v8::MemorySpan<DirectHandle<Map>>;
 // |               |   - is_deprecated (bit 24)                      |
 // |               |   - is_unstable (bit 25)                        |
 // |               |   - is_migration_target (bit 26)                |
-// |               |   - is_extensible (bit 27)                      |
+// |               |   - is_extensible (bit 28)                      |
 // |               |   - may_have_interesting_properties (bit 28)    |
 // |               |   - construction_counter (bit 29..31)           |
 // |               |                                                 |
@@ -219,7 +220,6 @@ using MapHandlesSpan = v8::MemorySpan<DirectHandle<Map>>;
 // | TaggedPointer | [prototype]                                     |
 // +---------------+-------------------------------------------------+
 // | TaggedPointer | [constructor_or_back_pointer_or_native_context] |
-// |               | [WasmTypeInfo] (if Wasm map)                    |
 // +---------------+-------------------------------------------------+
 // | TaggedPointer | [instance_descriptors] (if JS object)           |
 // |               | [custom_descriptor]    (if WasmStruct)          |
@@ -510,7 +510,7 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
   // PrototypeInfo is created lazily using this helper (which installs it on
   // the given prototype's map).
   static DirectHandle<PrototypeInfo> GetOrCreatePrototypeInfo(
-      DirectHandle<JSReceiver> prototype, Isolate* isolate);
+      DirectHandle<JSObject> prototype, Isolate* isolate);
   static DirectHandle<PrototypeInfo> GetOrCreatePrototypeInfo(
       DirectHandle<Map> prototype_map, Isolate* isolate);
   inline bool should_be_fast_prototype_map() const;

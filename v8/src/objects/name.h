@@ -26,7 +26,6 @@ class WasmGraphBuilder;
 
 namespace maglev {
 class MaglevGraphBuilder;
-struct VirtualNameShape;
 }
 
 class SharedStringAccessGuardIfNeeded;
@@ -233,7 +232,6 @@ V8_OBJECT class Name : public PrimitiveHeapObject {
   friend class SandboxTesting;
   friend class maglev::MaglevGraphBuilder;
   friend class maglev::MaglevAssembler;
-  friend struct maglev::VirtualNameShape;
   friend class compiler::AccessBuilder;
   friend class compiler::WasmGraphBuilder;
   friend class TorqueGeneratedNameAsserts;

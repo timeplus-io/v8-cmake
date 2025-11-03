@@ -459,6 +459,8 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
       return kVisitWasmResumeData;
     case WASM_STRUCT_TYPE:
       return kVisitWasmStruct;
+    case WASM_DESCRIPTOR_OPTIONS_TYPE:
+      return kVisitWasmDescriptorOptions;
     case WASM_CONTINUATION_OBJECT_TYPE:
       return kVisitWasmContinuationObject;
     case WASM_SUSPENDING_OBJECT_TYPE:
@@ -2382,8 +2384,8 @@ void Map::SetInstanceDescriptors(Isolate* isolate,
 
 // static
 DirectHandle<PrototypeInfo> Map::GetOrCreatePrototypeInfo(
-    DirectHandle<JSReceiver> prototype, Isolate* isolate) {
-  DCHECK(IsAnyObjectThatCanBeTrackedAsPrototype(*prototype));
+    DirectHandle<JSObject> prototype, Isolate* isolate) {
+  DCHECK(IsJSObjectThatCanBeTrackedAsPrototype(*prototype));
   {
     Tagged<PrototypeInfo> prototype_info;
     if (prototype->map()->TryGetPrototypeInfo(&prototype_info)) {

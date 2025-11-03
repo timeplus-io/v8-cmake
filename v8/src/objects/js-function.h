@@ -323,9 +323,6 @@ class JSFunction : public TorqueGeneratedJSFunction<
 
   // Resets function to clear compiled data after bytecode has been flushed.
   inline bool NeedsResetDueToFlushedBytecode(Isolate* isolate);
-  inline bool NeedsResetDueToFlushedBytecode(Isolate* isolate,
-                                             Tagged<SharedFunctionInfo> sfi,
-                                             Tagged<Code> code);
   inline void ResetIfCodeFlushed(
       Isolate* isolate,
       std::optional<

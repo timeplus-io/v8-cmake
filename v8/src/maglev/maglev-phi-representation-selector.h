@@ -107,7 +107,8 @@ class MaglevPhiRepresentationSelector {
   void ConvertTaggedPhiTo(Phi* phi, ValueRepresentation repr,
                           const HoistTypeList& hoist_untagging);
   template <class NodeT>
-  ValueNode* GetReplacementForPhiInputConversion(ValueNode* input, Phi* phi,
+  ValueNode* GetReplacementForPhiInputConversion(ValueNode* conversion_node,
+                                                 Phi* phi,
                                                  uint32_t input_index);
 
   // Since this pass changes the representation of Phis, it makes some untagging

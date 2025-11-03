@@ -50,9 +50,6 @@ class AbstractCode : public HeapObject {
 
   inline bool has_instruction_stream(PtrComprCageBase cage_base);
 
-  bool is_context_specialized(PtrComprCageBase cage_base);
-  BytecodeOffset osr_offset(PtrComprCageBase cage_base);
-
   inline Tagged<Code> GetCode();
   inline Tagged<BytecodeArray> GetBytecodeArray();
 

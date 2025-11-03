@@ -129,26 +129,7 @@ class RegExpBytecodeOperandsBase {
     return Traits::kOperandTypes[Index(op)];
   }
 
-  // Returns a tuple of all "real" (non-padding) operands.
-  static consteval auto GetOperandsTuple() {
-    return []<size_t... Is>(std::index_sequence<Is...>) {
-      return std::tuple_cat([]<size_t I>() {
-        constexpr auto id = static_cast<Operand>(I);
-        if constexpr (Type(id) == ReBcOpType::kPadding1 ||
-                      Type(id) == ReBcOpType::kPadding2) {
-          return std::tuple<>();
-        } else {
-          return std::tuple(std::integral_constant<Operand, id>{});
-        }
-      }.template operator()<Is>()...);
-    }(std::make_index_sequence<kCount>{});
-  }
-
-  static constexpr int kCountWithoutPadding =
-      std::tuple_size_v<decltype(GetOperandsTuple())>;
-
-  // Calls |f| templatized by Operand for each Operand in the Operands list,
-  // ignoring padding.
+  // Calls |f| templatized by Operand for each Operand in the Operands list.
   // Example:
   // using Operands = RegExpBytecodeOperands<RegExpBytecode::...>;
   // size_t op_sizes = 0;
@@ -159,9 +140,9 @@ class RegExpBytecodeOperandsBase {
   // above is essentially a constant.
   template <typename Func>
   static constexpr void ForEachOperand(Func&& f) {
-    constexpr auto filtered_ops = GetOperandsTuple();
-    std::apply([&](auto... ops) { (..., f.template operator()<ops.value>()); },
-               filtered_ops);
+    [&]<size_t... I>(std::index_sequence<I...>) {
+      (..., f.template operator()<static_cast<Operand>(I)>());
+    }(std::make_index_sequence<kCount>{});
   }
 
   // Similar to above, but calls |f| only for operands of a given type.

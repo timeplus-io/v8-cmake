@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Test that live-editing a frame that uses new.target fails.
-// Flags: --allow-natives-syntax --inspector-live-edit
+// Flags: --allow-natives-syntax
 
 Debug = debug.Debug
 var calls = 0;

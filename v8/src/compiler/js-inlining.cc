@@ -19,7 +19,6 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/simplified-operator.h"
-#include "src/compiler/turboshaft/utils.h"
 #include "src/execution/isolate-inl.h"
 #include "src/objects/feedback-cell-inl.h"
 
@@ -702,12 +701,9 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
     // The function is no longer inlineable. The only way this can happen is if
     // the function had its optimization disabled in the meantime, e.g. because
     // another optimization job failed too often.
-    CHECK_EQ(inlineability,
-             turboshaft::any_of(SharedFunctionInfo::kHasOptimizationDisabled,
-                                SharedFunctionInfo::kMayContainBreakPoints));
+    CHECK_EQ(inlineability, SharedFunctionInfo::kHasOptimizationDisabled);
     TRACE("Not inlining " << *shared_info << " into " << outer_shared_info
-                          << " because it had its optimization disabled or may "
-                             "contain breakpoints.");
+                          << " because it had its optimization disabled.");
     return NoChange();
   }
   // NOTE: Even though we bailout in the kHasOptimizationDisabled case above, we

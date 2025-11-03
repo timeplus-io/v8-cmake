@@ -338,13 +338,8 @@ void Int32MultiplyOverflownBits::GenerateCode(MaglevAssembler* masm,
   Register out = ToRegister(result());
 
   // TODO(leszeks): peephole optimise multiplication by a constant.
-#ifdef V8_TARGET_ARCH_RISCV64
-  __ Mulh32(out, left, right);
-#elif V8_TARGET_ARCH_RISCV32
-  __ Mulh(out, left, right);
-#else
-  UNREACHABLE();
-#endif
+  __ Mul32(out, left, right);
+  __ srai(out, out, 32);
 }
 
 void Int32Divide::SetValueLocationConstraints() {
@@ -959,11 +954,6 @@ enum class ReduceInterruptBudgetType { kLoop, kReturn };
 void HandleInterruptsAndTiering(MaglevAssembler* masm, ZoneLabelRef done,
                                 Node* node, ReduceInterruptBudgetType type,
                                 Register scratch0) {
-  if (v8_flags.verify_write_barriers) {
-    // The safepoint/interrupt might trigger GC.
-    __ ResetLastYoungAllocation();
-  }
-
   // For loops, first check for interrupts. Don't do this for returns, as we
   // can't lazy deopt to the end of a return.
   if (type == ReduceInterruptBudgetType::kLoop) {

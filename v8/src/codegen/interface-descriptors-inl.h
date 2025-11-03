@@ -811,12 +811,6 @@ constexpr auto WasmToJSWrapperDescriptor::return_double_registers() {
 #endif
 }
 
-#if V8_ENABLE_WEBASSEMBLY
-constexpr auto WasmFXResumeDescriptor::registers() {
-  return RegisterArray(wasm::kGpParamRegisters[0]);
-}
-#endif
-
 #define DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER(Name, DescriptorName) \
   template <>                                                         \
   struct CallInterfaceDescriptorFor<Builtin::k##Name> {               \

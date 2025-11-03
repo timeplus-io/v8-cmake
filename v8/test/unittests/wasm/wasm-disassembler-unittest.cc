@@ -127,16 +127,7 @@ TEST_F(WasmDisassemblerTest, Gc) {
   CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
 }
 
-TEST_F(WasmDisassemblerTest, CustomDescriptors) {
-  constexpr uint8_t module_bytes[] = {
-#include "wasm-disassembler-unittest-custom-descriptors.wasm.inc"
-  };
-  std::string expected;
-#include "wasm-disassembler-unittest-custom-descriptors.wat.inc"
-  CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
-}
-
-TEST_F(WasmDisassemblerTest, TooManyEnds) {
+TEST_F(WasmDisassemblerTest, TooManyends) {
   constexpr uint8_t module_bytes[] = {
 #include "wasm-disassembler-unittest-too-many-ends.wasm.inc"
   };

@@ -17,9 +17,6 @@ namespace compiler {
 enum WriteBarrierKind : uint8_t {
   kNoWriteBarrier,
   kAssertNoWriteBarrier,
-  // Used in write barrier verification to mark stores with eliminated write
-  // barriers.
-  kSkippedWriteBarrier,
   kMapWriteBarrier,
   kPointerWriteBarrier,
   kIndirectPointerWriteBarrier,
@@ -37,8 +34,6 @@ inline std::ostream& operator<<(std::ostream& os, WriteBarrierKind kind) {
       return os << "NoWriteBarrier";
     case kAssertNoWriteBarrier:
       return os << "AssertNoWriteBarrier";
-    case kSkippedWriteBarrier:
-      return os << "SkippedWriteBarrier";
     case kMapWriteBarrier:
       return os << "MapWriteBarrier";
     case kPointerWriteBarrier:

@@ -133,7 +133,7 @@ struct TestPack {
           },
           inputs, kNumInputs, results, p);
       if (num_results != kNumInputs) {
-        HWY_WARN("MeasureClosure failed.\n");
+        fprintf(stderr, "MeasureClosure failed.\n");
         return;
       }
       // Print throughput for pack+unpack round trip

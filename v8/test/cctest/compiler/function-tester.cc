@@ -34,10 +34,14 @@ FunctionTester::FunctionTester(DirectHandle<Code> code, int param_count)
       function((v8_flags.allow_natives_syntax = true,
                 NewFunction(BuildFunction(param_count).c_str()))),
       flags_(0) {
-  CHECK_LE(0, param_count);
+  CHECK(!code.is_null());
+  CHECK(IsCode(*code));
   Compile(function);
   function->UpdateCode(isolate, *code);
 }
+
+FunctionTester::FunctionTester(DirectHandle<Code> code)
+    : FunctionTester(code, 0) {}
 
 void FunctionTester::CheckThrows(Handle<Object> a) {
   TryCatch try_catch(reinterpret_cast<v8::Isolate*>(isolate));

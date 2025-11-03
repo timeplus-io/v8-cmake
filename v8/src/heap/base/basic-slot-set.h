@@ -123,13 +123,8 @@ class BasicSlotSet {
     DCHECK(bucket != nullptr);
     DCHECK_EQ(bucket->cells(), LoadBucket<access_mode>(bucket_index)->cells());
     uint32_t mask = 1u << bit_index;
-    if constexpr (access_mode == AccessMode::ATOMIC) {
-      if ((bucket->template LoadCell<AccessMode::ATOMIC>(cell_index) & mask) ==
-          0) {
-        bucket->template SetCellBits<AccessMode::ATOMIC>(cell_index, mask);
-      }
-    } else {
-      bucket->template SetCellBits<AccessMode::NON_ATOMIC>(cell_index, mask);
+    if ((bucket->template LoadCell<access_mode>(cell_index) & mask) == 0) {
+      bucket->template SetCellBits<access_mode>(cell_index, mask);
     }
   }
 
@@ -306,7 +301,8 @@ class BasicSlotSet {
       if constexpr (access_mode == AccessMode::ATOMIC) {
         v8::base::AsAtomic32::Release_SetBits(cell(cell_index), mask, mask);
       } else {
-        *cell(cell_index) |= mask;
+        uint32_t* c = cell(cell_index);
+        *c = (*c & ~mask) | mask;
       }
     }
 

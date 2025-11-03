@@ -13,7 +13,6 @@
 #include "src/api/api-inl.h"
 #include "src/base/logging.h"
 #include "src/codegen/source-position-table.h"
-#include "src/flags/save-flags.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/bytecode-generator.h"
 #include "src/interpreter/bytecodes.h"
@@ -41,6 +40,8 @@ static const char* NameForNativeContextIntrinsicIndex(uint32_t idx) {
 }
 
 // static
+const char* const BytecodeExpectationsPrinter::kDefaultTopFunctionName =
+    "__genbckexp_wrapper__";
 const char* const BytecodeExpectationsPrinter::kIndent = "  ";
 
 v8::Local<v8::String> BytecodeExpectationsPrinter::V8StringFromUTF8(
@@ -384,45 +385,34 @@ void BytecodeExpectationsPrinter::PrintBytecodeArray(
   PrintHandlers(stream, bytecode_array);
 }
 
-static constexpr const char* kDefaultTopFunctionName = "__genbckexp_wrapper__";
-
 void BytecodeExpectationsPrinter::PrintExpectation(
     std::ostream* stream, const std::string& snippet) const {
-  const char* test_function_name = options_.test_function_name.empty()
-                                       ? kDefaultTopFunctionName
-                                       : options_.test_function_name.c_str();
   std::string source_code =
-      options_.wrap ? WrapCodeInFunction(test_function_name, snippet) : snippet;
-
-  SaveFlags save_flags;
-
-  if (!options_.extra_flags.empty()) {
-    v8::V8::SetFlagsFromString(options_.extra_flags.c_str());
-  }
+      wrap_ ? WrapCodeInFunction(test_function_name_.c_str(), snippet)
+            : snippet;
 
   i::v8_flags.compilation_cache = false;
-  i::v8_flags.lazy = false;
-  i::v8_flags.flush_bytecode = false;
   i::Handle<i::BytecodeArray> bytecode_array;
-  if (options_.module) {
-    CHECK(options_.top_level && !options_.wrap);
+  if (module_) {
+    CHECK(top_level_ && !wrap_);
     v8::Local<v8::Module> module = CompileModule(source_code.c_str());
     bytecode_array = GetBytecodeArrayForModule(module);
-  } else if (options_.print_callee) {
+  } else if (print_callee_) {
     bytecode_array = GetBytecodeArrayOfCallee(source_code.c_str());
   } else {
     v8::Local<v8::Script> script = CompileScript(source_code.c_str());
-    if (options_.top_level) {
+    if (top_level_) {
       bytecode_array = GetBytecodeArrayForScript(script);
     } else {
       Run(script);
-      bytecode_array = GetBytecodeArrayForGlobal(test_function_name);
+      bytecode_array = GetBytecodeArrayForGlobal(test_function_name_.c_str());
     }
   }
 
+  *stream << "---\n";
   PrintCodeSnippet(stream, snippet);
   PrintBytecodeArray(stream, bytecode_array);
-  *stream << std::endl;
+  *stream << '\n';
 }
 
 }  // namespace interpreter

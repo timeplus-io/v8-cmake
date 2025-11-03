@@ -95,7 +95,7 @@ CallDescriptor* CreateDescriptorForStackArguments(Zone* zone, int param_slots) {
 
   return zone->New<CallDescriptor>(
       CallDescriptor::kCallCodeObject,  // kind
-      kCodeEntrypointTagForTesting,     // tag
+      kDefaultCodeEntrypointTag,        // tag
       MachineType::AnyTagged(),         // target MachineType
       LinkageLocation::ForAnyRegister(
           MachineType::AnyTagged()),  // target location

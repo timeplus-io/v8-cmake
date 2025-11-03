@@ -404,9 +404,11 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
   AllocationType RefineAllocationTypeForInPlaceInternalizableString(
       AllocationType allocation, Tagged<Map> string_map);
 
+#ifdef V8_ENABLE_LEAPTIERING
   JSDispatchHandle NewJSDispatchHandle(uint16_t parameter_count,
                                        DirectHandle<Code> code,
                                        JSDispatchTable::Space* space);
+#endif
 
  protected:
   // Must be large enough to fit any double, int, or size_t.

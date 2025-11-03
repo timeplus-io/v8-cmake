@@ -27,7 +27,6 @@
   V(extended_const)                      \
   V(relaxed_simd)                        \
   V(gc)                                  \
-  V(imported_strings)                    \
   V(typed_funcref)                       \
   V(multi_memory)                        \
   V(multi_value)                         \
@@ -35,8 +34,7 @@
   V(bulk_memory)                         \
   V(mutable_globals)                     \
   V(non_trapping_float_to_int)           \
-  V(sign_extension_ops)                  \
-  V(jspi)
+  V(sign_extension_ops)
 
 // All features, including features that do not have flags.
 #define FOREACH_WASM_FEATURE(V) \

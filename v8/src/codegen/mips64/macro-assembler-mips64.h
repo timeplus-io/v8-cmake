@@ -398,11 +398,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
       Register object, Register slot_address, SaveFPRegsMode fp_mode,
       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
 
-  void CallVerifySkippedWriteBarrierStubSaveRegisters(Register object,
-                                                      Register value,
-                                                      SaveFPRegsMode fp_mode);
-  void CallVerifySkippedWriteBarrierStub(Register object, Register value);
-
   // Push multiple registers on the stack.
   // Registers are saved in numerical order, with higher numbered registers
   // saved in higher memory addresses.
@@ -758,9 +753,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
       mov(dst, src);
     }
   }
-
-  // Move src0 to dst0 and src1 to dst1, handling possible overlaps.
-  void MovePair(Register dst0, Register src0, Register dst1, Register src1);
 
   inline void Move(FPURegister dst, FPURegister src) { Move_d(dst, src); }
 

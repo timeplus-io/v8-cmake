@@ -646,12 +646,6 @@ MaybeDirectHandle<String> Object::NoSideEffectsToMaybeString(
                   .ToHandleChecked();
         } else if (IsJSFunction(*ctor)) {
           ctor_name = JSFunction::GetName(isolate, Cast<JSFunction>(ctor));
-        } else if (IsJSWrappedFunction(*ctor)) {
-          ctor_name =
-              JSWrappedFunction::GetName(isolate, Cast<JSWrappedFunction>(ctor))
-                  .ToHandleChecked();
-        } else {
-          UNREACHABLE();
         }
 
         if (ctor_name->length() != 0) {
@@ -2061,7 +2055,7 @@ int HeapObject::SizeFromMap(Tagged<Map> map) const {
     return WasmArray::SizeFor(map, UncheckedCast<WasmArray>(*this)->length());
   }
   if (instance_type == WASM_NULL_TYPE) {
-    return WasmNull::Size();
+    return WasmNull::kSize;
   }
   if (instance_type == WASM_DISPATCH_TABLE_TYPE) {
     return WasmDispatchTable::SizeFor(
@@ -4646,12 +4640,7 @@ MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
     // is the (initial) Promise.prototype and the Promise#then protector
     // is intact, as that guards the lookup path for the "then" property
     // on JSPromise instances which have the (initial) %PromisePrototype%.
-    DirectHandle<NativeContext> resolution_proto_context =
-        Cast<JSReceiver>(resolution_recv->map()->prototype())
-            ->GetCreationContext(isolate)
-            .ToHandleChecked();
-    then =
-        DirectHandle<Object>(resolution_proto_context->promise_then(), isolate);
+    then = isolate->promise_then();
   } else {
     then = JSReceiver::GetProperty(isolate, resolution_recv,
                                    isolate->factory()->then_string());

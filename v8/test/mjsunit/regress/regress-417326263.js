@@ -16,6 +16,6 @@ assertArrayEquals([42, undefined], result1);
 %OptimizeFunctionOnNextCall(foo);
 var result2 = foo();
 assertArrayEquals([42, undefined], result2);
-if(%IsUndefinedDoubleEnabled()) {
+if(%IsExperimentalUndefinedDoubleEnabled()) {
   assertTrue(%HasDoubleElements(result2));
 }

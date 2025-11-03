@@ -544,14 +544,15 @@ void RegExpMacroAssemblerMIPS::CheckBitInTable(
 
 void RegExpMacroAssemblerMIPS::SkipUntilBitInTable(
     int cp_offset, Handle<ByteArray> table, Handle<ByteArray> nibble_table,
-    int advance_by, Label* on_match, Label* on_no_match) {
+    int advance_by) {
   // TODO(pthier): Optimize. Table can be loaded outside of the loop.
-  Label again;
+  Label cont, again;
   Bind(&again);
-  LoadCurrentCharacter(cp_offset, on_no_match, true);
-  CheckBitInTable(table, on_match);
+  LoadCurrentCharacter(cp_offset, &cont, true);
+  CheckBitInTable(table, &cont);
   AdvanceCurrentPosition(advance_by);
   GoTo(&again);
+  Bind(&cont);
 }
 
 bool RegExpMacroAssemblerMIPS::CheckSpecialClassRanges(
@@ -1195,6 +1196,8 @@ void RegExpMacroAssemblerMIPS::ClearRegisters(int reg_from, int reg_to) {
     __ Sd(a0, register_location(reg));
   }
 }
+
+bool RegExpMacroAssemblerMIPS::CanReadUnaligned() const { return false; }
 
 // Private methods:
 

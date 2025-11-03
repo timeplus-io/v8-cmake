@@ -101,9 +101,7 @@ void MakeCheckOpValueString(std::ostream& os, const void* p) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, UnprintableWrapper) {
-  return os << "UNPRINTABLE";
-}
+void MakeCheckOpUnprintableString(std::ostream& os) { os << "UNPRINTABLE"; }
 
 // Helper functions for string comparisons.
 #define DEFINE_CHECK_STROP_IMPL(name, func, expected)                          \

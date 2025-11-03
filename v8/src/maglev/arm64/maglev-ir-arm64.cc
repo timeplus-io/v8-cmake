@@ -299,9 +299,6 @@ void Int32Multiply::GenerateCode(MaglevAssembler* masm,
 
   // TODO(leszeks): peephole optimise multiplication by a constant.
   __ Smull(out, left, right);
-
-  // Making sure that the 32-bit output is zero-extended.
-  __ Move(out.W(), out.W());
 }
 
 void Int32MultiplyOverflownBits::SetValueLocationConstraints() {
@@ -318,10 +315,7 @@ void Int32MultiplyOverflownBits::GenerateCode(MaglevAssembler* masm,
 
   // TODO(leszeks): peephole optimise multiplication by a constant.
   __ Smull(out, left, right);
-
-  // Note: this has to be a Lsr rather than a Asr to ensure that the 32-bit
-  // output is zero-extended.
-  __ Lsr(out, out, 32);
+  __ Asr(out, out, 32);
 }
 
 void Int32Divide::SetValueLocationConstraints() {
@@ -443,10 +437,9 @@ void Int32MultiplyWithOverflow::GenerateCode(MaglevAssembler* masm,
             __ GetDeoptLabel(this, DeoptimizeReason::kOverflow));
   }
   __ Bind(&end);
-
-  // Making sure that the 32-bit output is zero-extended (and moving it to the
-  // right register if {out_alias_input} is true).
-  __ Move(out, res.W());
+  if (out_alias_input) {
+    __ Move(out, res.W());
+  }
 }
 
 void Int32DivideWithOverflow::SetValueLocationConstraints() {
@@ -916,7 +909,7 @@ void HoleyFloat64ToMaybeNanFloat64::GenerateCode(MaglevAssembler* masm,
   __ CanonicalizeNaN(ToDoubleRegister(result()), ToDoubleRegister(input()));
 }
 
-#ifdef V8_ENABLE_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 void Float64ToHoleyFloat64::SetValueLocationConstraints() {
   UseRegister(input());
   DefineAsRegister(this);
@@ -945,7 +938,7 @@ void ConvertHoleNanToUndefinedNan::GenerateCode(MaglevAssembler* masm,
   __ Move(value, UndefinedNan());
   __ Bind(&done);
 }
-#endif  // V8_ENABLE_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
 
 namespace {
 
@@ -954,11 +947,6 @@ enum class ReduceInterruptBudgetType { kLoop, kReturn };
 void HandleInterruptsAndTiering(MaglevAssembler* masm, ZoneLabelRef done,
                                 Node* node, ReduceInterruptBudgetType type,
                                 Register scratch0) {
-  if (v8_flags.verify_write_barriers) {
-    // The safepoint/interrupt might trigger GC.
-    __ ResetLastYoungAllocation();
-  }
-
   // For loops, first check for interrupts. Don't do this for returns, as we
   // can't lazy deopt to the end of a return.
   if (type == ReduceInterruptBudgetType::kLoop) {

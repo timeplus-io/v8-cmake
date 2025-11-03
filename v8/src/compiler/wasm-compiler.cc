@@ -52,6 +52,7 @@
 #include "src/wasm/compilation-environment-inl.h"
 #include "src/wasm/function-compiler.h"
 #include "src/wasm/jump-table-assembler.h"
+#include "src/wasm/memory-tracing.h"
 #include "src/wasm/object-access.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-constants.h"
@@ -62,7 +63,6 @@
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-opcodes-inl.h"
 #include "src/wasm/wasm-subtyping.h"
-#include "src/wasm/wasm-tracing.h"
 
 namespace v8::internal::compiler {
 
@@ -605,7 +605,8 @@ Node* WasmGraphBuilder::SetType(Node* node, wasm::ValueType type) {
     static constexpr wasm::ValueType kRefExtern =
         wasm::kWasmExternRef.AsNonNull();
     DCHECK((compiler::NodeProperties::GetType(node).AsWasm().type == type) ||
-           (compiler::NodeProperties::GetType(node).AsWasm().type ==
+           (enabled_features_.has_imported_strings() &&
+            compiler::NodeProperties::GetType(node).AsWasm().type ==
                 wasm::kWasmRefExternString &&
             (type == wasm::kWasmExternRef || type == kRefExtern)));
 #endif
