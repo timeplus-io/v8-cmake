@@ -34,7 +34,7 @@ endif()
 
 option(V8CMAKE_FIND_PYTHON "Enable finding python" ON)
 
-add_definitions("-DV8_ENABLE_WEBASSEMBLY -DV8_ADVANCED_BIGINT_ALGORITHMS -DV8_ENABLE_WASM_SIMD256_REVEC")
+add_definitions("-DV8_ADVANCED_BIGINT_ALGORITHMS")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -98,6 +98,7 @@ option(V8_ENABLE_I18N "Enable Internationalization support")
 option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
 option(V8_ENABLE_SPARKPLUG "Enable Sparkplug baseline JIT" ON)
 option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
+option(V8_ENABLE_WEBASSEMBLY "Enable WebAssembly support" OFF)
 
 set(
   v8_defines
@@ -117,6 +118,8 @@ set(
   V8_ENABLE_TURBOFAN
   V8_ENABLE_MAGLEV
   V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
+  $<$<BOOL:${V8_ENABLE_WEBASSEMBLY}>:V8_ENABLE_WEBASSEMBLY>
+  $<$<BOOL:${V8_ENABLE_WEBASSEMBLY}>:V8_ENABLE_WASM_SIMD256_REVEC>
   $<$<BOOL:${V8_ENABLE_SPARKPLUG}>:V8_ENABLE_SPARKPLUG>
 )
 
@@ -177,9 +180,22 @@ target_include_directories(v8-i18n-support
 )
 
 file(GLOB api-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/api/*.cc)
-file(GLOB asmjs-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/asmjs/*.cc)
+if(V8_ENABLE_WEBASSEMBLY)
+  file(GLOB asmjs-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/asmjs/*.cc)
+else()
+  set(asmjs-sources)
+endif()
 file(GLOB ast-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/ast/*.cc)
 file(GLOB builtin-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/builtins/*.cc)
+# The builtins "-gen" files are pulled explicitly into v8_initializers. Ensure
+# they are not also compiled into v8_base_without_compiler.
+list(REMOVE_ITEM builtin-sources
+  v8/src/builtins/builtins-intl-gen.cc
+  v8/src/builtins/builtins-intl.cc
+)
+# Exclude WASM builtins from the generic builtins list. These are added
+# conditionally to v8_initializers based on V8_ENABLE_WEBASSEMBLY.
+list(REMOVE_ITEM builtin-sources v8/src/builtins/builtins-wasm-gen.cc)
 file(GLOB baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/baseline/*.cc)
 if(NOT V8_ENABLE_SPARKPLUG)
   # Exclude Sparkplug baseline sources when disabled
@@ -207,13 +223,24 @@ file(GLOB parsing-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS
 file(GLOB profiler-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/profiler/*.cc)
 file(GLOB regexp-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/regexp/*.cc v8/src/regexp/experimental/*.cc)
 file(GLOB runtime-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/runtime/*.cc)
+if(NOT V8_ENABLE_WEBASSEMBLY)
+  # Drop WASM-specific runtime and debug units when WebAssembly is disabled.
+  list(FILTER runtime-sources EXCLUDE REGEX ".*/runtime-wasm[.]cc$")
+  list(FILTER runtime-sources EXCLUDE REGEX ".*/runtime-test-wasm[.]cc$")
+  list(FILTER debug-sources EXCLUDE REGEX ".*/debug-wasm-objects[.]cc$")
+endif()
 file(GLOB snapshot-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/snapshot/*.cc)
 file(GLOB strings-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/strings/*.cc)
 file(GLOB sandbox-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/sandbox/*.cc)
 file(GLOB maglev-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/maglev/*.cc)
 file(GLOB utils-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/utils/*.cc)
-file(GLOB wasm-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/*.cc)
-file(GLOB wasm-baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/baseline/*.cc)
+if(V8_ENABLE_WEBASSEMBLY)
+  file(GLOB wasm-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/*.cc)
+  file(GLOB wasm-baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/baseline/*.cc)
+else()
+  set(wasm-sources)
+  set(wasm-baseline-sources)
+endif()
 file(GLOB zone-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/zone/*.cc)
 file(GLOB zlib-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/third_party/zlib/*.c v8/third_party/zlib/google/compression_utils_portable.cc)
 
@@ -243,10 +270,7 @@ list(APPEND heap-sources
   $<${is-x64}:v8/src/heap/base/asm/x64/push_registers_asm.cc>
 )
 
-list(REMOVE_ITEM builtin-sources
-  v8/src/builtins/builtins-intl-gen.cc
-  v8/src/builtins/builtins-intl.cc
-)
+# (moved earlier next to builtin-sources definition)
 if(NOT V8_ENABLE_TEMPORAL)
   list(REMOVE_ITEM builtin-sources v8/src/builtins/builtins-temporal.cc)
 endif()
@@ -429,6 +453,22 @@ file(GLOB_RECURSE compiler-sources
 list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
 # Exclude the disabled Turbofan shim when building full compiler.
 list(REMOVE_ITEM compiler-sources v8/src/compiler/turbofan-disabled.cc)
+if(NOT V8_ENABLE_WEBASSEMBLY)
+  # Drop WASM-specific compiler sources when WebAssembly is disabled.
+  # This broadly filters any compiler translation units with "wasm" in the name.
+  list(FILTER compiler-sources EXCLUDE REGEX ".*/compiler/.*wasm.*[.]cc$")
+  # Some files are WASM-only despite not containing "wasm" in their filename.
+  # - revectorizer.cc uses WASM SIMD revectorization and includes wasm headers
+  #   unconditionally.
+  list(REMOVE_ITEM compiler-sources v8/src/compiler/revectorizer.cc)
+endif()
+
+# int64-lowering is only relevant for 32-bit architectures; it includes WASM
+# headers unconditionally which breaks non-WASM builds. Do not compile it on
+# 64-bit targets.
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+  list(REMOVE_ITEM compiler-sources v8/src/compiler/int64-lowering.cc)
+endif()
 
 add_library(v8_compiler STATIC)
 target_sources(v8_compiler PRIVATE ${compiler-sources})
@@ -474,6 +514,7 @@ add_library(
   $<${is-s390}:v8/src/builtins/s390/builtins-s390.cc>
   $<${is-x64}:v8/src/builtins/x64/builtins-x64.cc>
   $<$<BOOL:${V8_ENABLE_I18N}>:v8/src/builtins/builtins-intl-gen.cc>
+  $<$<BOOL:${V8_ENABLE_WEBASSEMBLY}>:v8/src/builtins/builtins-wasm-gen.cc>
   v8/src/builtins/builtins-array-gen.cc
   v8/src/builtins/builtins-async-function-gen.cc
   v8/src/builtins/builtins-async-gen.cc
@@ -501,7 +542,6 @@ add_library(
   v8/src/builtins/builtins-sharedarraybuffer-gen.cc
   v8/src/builtins/builtins-string-gen.cc
   v8/src/builtins/builtins-typed-array-gen.cc
-  v8/src/builtins/builtins-wasm-gen.cc
   v8/src/builtins/growable-fixed-array-gen.cc
   v8/src/builtins/setup-builtins-internal.cc
   v8/src/codegen/code-stub-assembler.cc
@@ -796,11 +836,14 @@ if(enable-fPIC)
 endif()
 target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
 target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp)
+target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src)
+target_sources(v8_libbase PRIVATE v8/third_party/highway/src/hwy/abort.cc)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
     $<${is-linux}:${CMAKE_DL_LIBS}>
     $<${is-linux}:rt>
+    $<${is-linux}:atomic>
     $<${is-win}:winmm>
     $<${is-win}:dbghelp>
   PUBLIC
@@ -885,6 +928,17 @@ endif()
 if(NOT V8_ENABLE_TEMPORAL)
   list(REMOVE_ITEM torque_files
     src/objects/js-temporal-objects.tq
+  )
+endif()
+if(NOT V8_ENABLE_WEBASSEMBLY)
+  list(REMOVE_ITEM torque_files
+    src/wasm/wasm-objects.tq
+    src/debug/debug-wasm-objects.tq
+    src/builtins/js-to-js.tq
+    src/builtins/js-to-wasm.tq
+    src/builtins/wasm.tq
+    src/builtins/wasm-strings.tq
+    src/builtins/wasm-to-js.tq
   )
 endif()
 
