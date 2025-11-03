@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef INCLUDE_V8_H_
+#define INCLUDE_V8_H_
+
 /** \mainpage V8 API Reference Guide
  *
  * V8 is Google's open source JavaScript engine.
@@ -11,9 +14,6 @@
  *
  * For other documentation see https://v8.dev/.
  */
-
-#ifndef INCLUDE_V8_H_
-#define INCLUDE_V8_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -61,7 +61,6 @@
 #include "v8-version.h"            // NOLINT(build/include_directory)
 #include "v8-wasm.h"               // NOLINT(build/include_directory)
 #include "v8config.h"              // NOLINT(build/include_directory)
-#include "libplatform/libplatform.h"
 
 // We reserve the V8_* prefix for macros defined in V8 public API and
 // assume there are no name conflicts with the embedder's code.

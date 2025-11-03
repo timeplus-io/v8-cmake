@@ -9,6 +9,7 @@
 #include "src/compiler/wasm-compiler.h"
 #include "src/compiler/wasm-graph-assembler.h"
 #include "src/wasm/decoder.h"
+#include "src/wasm/struct-types.h"
 #include "src/wasm/wasm-linkage.h"
 #include "src/wasm/wasm-opcodes-inl.h"
 #include "src/wasm/wasm-subtyping.h"
@@ -19,6 +20,8 @@ namespace {
 
 using wasm::WasmOpcode;
 using wasm::WasmOpcodes;
+
+static constexpr bool kNotShared = false;
 
 class WasmIntoJSInlinerImpl : private wasm::Decoder {
   using ValidationTag = NoValidationTag;
@@ -54,23 +57,30 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
     // We have to add another +1 as the minimum parameter index is actually
     // -1, not 0...
     size_t params_extended = params + 1;
-    parameters_ = zone->NewArray<Node*>(params_extended);
+    parameters_ = zone->AllocateArray<Node*>(params_extended);
     for (unsigned i = 0; i < params_extended; i++) {
       parameters_[i] = nullptr;
     }
     // Instance node at parameter 0.
-    instance_node_ = Param(wasm::kWasmInstanceParameterIndex);
+    trusted_data_node_ = Param(wasm::kWasmInstanceDataParameterIndex);
   }
 
   Node* Param(int index, const char* debug_name = nullptr) {
     DCHECK_NOT_NULL(graph_->start());
     // Turbofan allows negative parameter indices.
-    static constexpr int kMinParameterIndex = -1;
     DCHECK_GE(index, kMinParameterIndex);
     int array_index = index - kMinParameterIndex;
     if (parameters_[array_index] == nullptr) {
-      parameters_[array_index] = graph_->NewNode(
+      Node* param = graph_->NewNode(
           mcgraph_->common()->Parameter(index, debug_name), graph_->start());
+      if (index > wasm::kWasmInstanceDataParameterIndex) {
+        // Add a type guard to keep type information based on the inlinee's
+        // signature.
+        wasm::ValueType type = body_.sig->GetParam(index - 1);
+        Type tf_type = compiler::Type::Wasm(type, module_, graph_->zone());
+        param = gasm_.TypeGuard(tf_type, param);
+      }
+      parameters_[array_index] = param;
     }
     return parameters_[array_index];
   }
@@ -89,13 +99,13 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
     while (is_inlineable_) {
       WasmOpcode opcode = ReadOpcode();
       switch (opcode) {
-        case wasm::kExprExternInternalize:
+        case wasm::kExprAnyConvertExtern:
           DCHECK(!stack.empty());
-          stack.back() = ParseExternInternalize(stack.back());
+          stack.back() = ParseAnyConvertExtern(stack.back());
           continue;
-        case wasm::kExprExternExternalize:
+        case wasm::kExprExternConvertAny:
           DCHECK(!stack.empty());
-          stack.back() = ParseExternExternalize(stack.back());
+          stack.back() = ParseExternConvertAny(stack.back());
           continue;
         case wasm::kExprRefCast:
         case wasm::kExprRefCastNull:
@@ -176,24 +186,20 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
  private:
-  Value ParseExternInternalize(Value input) {
+  Value ParseAnyConvertExtern(Value input) {
     DCHECK(input.type.is_reference_to(wasm::HeapType::kExtern) ||
            input.type.is_reference_to(wasm::HeapType::kNoExtern));
-    wasm::ValueType result_type = wasm::ValueType::RefMaybeNull(
-        wasm::HeapType::kAny, input.type.is_nullable()
-                                  ? wasm::Nullability::kNullable
-                                  : wasm::Nullability::kNonNullable);
-    Node* internalized = gasm_.WasmExternInternalize(input.node);
+    wasm::ValueType result_type = wasm::ValueType::Generic(
+        wasm::GenericKind::kAny, input.type.nullability(), kNotShared);
+    Node* internalized = gasm_.WasmAnyConvertExtern(input.node);
     return TypeNode(internalized, result_type);
   }
 
-  Value ParseExternExternalize(Value input) {
+  Value ParseExternConvertAny(Value input) {
     DCHECK(input.type.is_reference());
-    wasm::ValueType result_type = wasm::ValueType::RefMaybeNull(
-        wasm::HeapType::kExtern, input.type.is_nullable()
-                                     ? wasm::Nullability::kNullable
-                                     : wasm::Nullability::kNonNullable);
-    Node* internalized = gasm_.WasmExternExternalize(input.node);
+    wasm::ValueType result_type = wasm::ValueType::Generic(
+        wasm::GenericKind::kExtern, input.type.nullability(), kNotShared);
+    Node* internalized = gasm_.WasmExternConvertAny(input.node);
     return TypeNode(internalized, result_type);
   }
 
@@ -204,7 +210,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
   Value ParseStructGet(Value struct_val, WasmOpcode opcode) {
-    uint32_t struct_index = consume_u32v();
+    wasm::ModuleTypeIndex struct_index{consume_u32v()};
     DCHECK(module_->has_struct(struct_index));
     const wasm::StructType* struct_type = module_->struct_type(struct_index);
     uint32_t field_index = consume_u32v();
@@ -219,7 +225,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
   void ParseStructSet(Value wasm_struct, Value value) {
-    uint32_t struct_index = consume_u32v();
+    wasm::ModuleTypeIndex struct_index{consume_u32v()};
     DCHECK(module_->has_struct(struct_index));
     const wasm::StructType* struct_type = module_->struct_type(struct_index);
     uint32_t field_index = consume_u32v();
@@ -231,6 +237,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
     SetSourcePosition(gasm_.effect());
   }
 
+  // TODO(14616): Implement for shared types.
   Value ParseRefCast(Value input, bool null_succeeds) {
     auto [heap_index, length] = read_i33v<ValidationTag>(pc_);
     pc_ += length;
@@ -252,10 +259,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       gasm_.Goto(&done);
       gasm_.Bind(&done);
       // Add TypeGuard for graph typing.
-      Graph* graph = mcgraph_->graph();
-      wasm::ValueType result_type = wasm::ValueType::RefMaybeNull(
-          wasm::HeapType::kArray,
-          null_succeeds ? wasm::kNullable : wasm::kNonNullable);
+      TFGraph* graph = mcgraph_->graph();
+      wasm::ValueType result_type = wasm::ValueType::Generic(
+          wasm::GenericKind::kArray,
+          null_succeeds ? wasm::kNullable : wasm::kNonNullable, kNotShared);
       Node* type_guard =
           graph->NewNode(mcgraph_->common()->TypeGuard(
                              Type::Wasm(result_type, module_, graph->zone())),
@@ -263,25 +270,34 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       gasm_.InitializeEffectControl(type_guard, gasm_.control());
       return TypeNode(type_guard, result_type);
     }
-    if (module_->has_signature(static_cast<uint32_t>(heap_index))) {
+    wasm::ModuleTypeIndex target_type_index{static_cast<uint32_t>(heap_index)};
+    if (module_->has_signature(target_type_index)) {
       is_inlineable_ = false;
       return {};
     }
     wasm::ValueType target_type = wasm::ValueType::RefMaybeNull(
-        static_cast<uint32_t>(heap_index),
+        module_->heap_type(target_type_index),
         null_succeeds ? wasm::kNullable : wasm::kNonNullable);
     Node* rtt = mcgraph_->graph()->NewNode(
-        gasm_.simplified()->RttCanon(target_type.ref_index()), instance_node_);
-    TypeNode(rtt, wasm::ValueType::Rtt(target_type.ref_index()));
-    Node* cast = gasm_.WasmTypeCast(input.node, rtt, {input.type, target_type});
+        gasm_.simplified()->RttCanon(target_type.ref_index()),
+        trusted_data_node_);
+    // Technically this is incorrect: the {rtt} node doesn't hold a reference
+    // to an object of type {target_type}, but to such an object's map. But
+    // we only need this type annotation so {ReduceWasmTypeCast} can get to
+    // the {ref_index}, we never need the type's {kind()}.
+    TypeNode(rtt, wasm::ValueType::Ref(target_type.heap_type()));
+    Node* cast = gasm_.WasmTypeCast(
+        input.node, rtt,
+        {input.type, target_type,
+         module_->type(target_type_index).is_final ? kExactMatchOnly
+                                                   : kMayBeSubtype});
     SetSourcePosition(cast);
     return TypeNode(cast, target_type);
   }
 
   Value ParseArrayLen(Value input) {
     DCHECK(wasm::IsHeapSubtypeOf(input.type.heap_type(),
-                                 wasm::HeapType(wasm::HeapType::kArray),
-                                 module_));
+                                 wasm::kWasmArrayRef.heap_type(), module_));
     const CheckForNull null_check =
         input.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
     Node* len = gasm_.ArrayLength(input.node, null_check);
@@ -290,7 +306,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
   Value ParseArrayGet(Value array, Value index, WasmOpcode opcode) {
-    uint32_t array_index = consume_u32v();
+    wasm::ModuleTypeIndex array_index{consume_u32v()};
     DCHECK(module_->has_array(array_index));
     const wasm::ArrayType* array_type = module_->array_type(array_index);
     const bool is_signed = opcode == WasmOpcode::kExprArrayGetS;
@@ -309,7 +325,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
   void ParseArraySet(Value array, Value index, Value value) {
-    uint32_t array_index = consume_u32v();
+    wasm::ModuleTypeIndex array_index{consume_u32v()};
     DCHECK(module_->has_array(array_index));
     const wasm::ArrayType* array_type = module_->array_type(array_index);
     const CheckForNull null_check =
@@ -355,8 +371,8 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   MachineGraph* mcgraph_;
   const wasm::FunctionBody& body_;
   Node** parameters_;
-  Graph* graph_;
-  Node* instance_node_;
+  TFGraph* graph_;
+  Node* trusted_data_node_;
   WasmGraphAssembler gasm_;
   SourcePositionTable* source_position_table_ = nullptr;
   const uint8_t* instruction_start_ = pc_;

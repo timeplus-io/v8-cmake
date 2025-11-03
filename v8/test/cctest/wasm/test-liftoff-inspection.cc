@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "src/wasm/baseline/liftoff-compiler.h"
+#include "src/wasm/compilation-environment-inl.h"
 #include "src/wasm/wasm-debug.h"
 #include "test/cctest/cctest.h"
-#include "test/cctest/wasm/wasm-run-utils.h"
+#include "test/cctest/wasm/wasm-runner.h"
 #include "test/common/wasm/test-signatures.h"
 #include "test/common/wasm/wasm-macro-gen.h"
 
@@ -22,7 +23,7 @@ class LiftoffCompileEnvironment {
         handle_scope_(isolate_),
         zone_(isolate_->allocator(), ZONE_NAME),
         wasm_runner_(nullptr, kWasmOrigin, TestExecutionTier::kLiftoff, 0,
-                     kRuntimeExceptionSupport) {
+                     isolate_) {
     // Add a table of length 1, for indirect calls.
     wasm_runner_.builder().AddIndirectFunctionTable(nullptr, 1);
     // Set tiered down such that we generate debugging code.
@@ -41,9 +42,10 @@ class LiftoffCompileEnvironment {
     auto test_func = AddFunction(return_types, param_types, raw_function_bytes);
 
     // Now compile the function with Liftoff two times.
-    CompilationEnv env = wasm_runner_.builder().CreateCompilationEnv();
-    WasmFeatures detected1;
-    WasmFeatures detected2;
+    CompilationEnv env = CompilationEnv::ForModule(
+        wasm_runner_.builder().trusted_instance_data()->native_module());
+    WasmDetectedFeatures detected1;
+    WasmDetectedFeatures detected2;
     WasmCompilationResult result1 =
         ExecuteLiftoffCompilation(&env, test_func.body,
                                   LiftoffOptions{}
@@ -74,7 +76,8 @@ class LiftoffCompileEnvironment {
       std::vector<int> breakpoints = {}) {
     auto test_func = AddFunction(return_types, param_types, raw_function_bytes);
 
-    CompilationEnv env = wasm_runner_.builder().CreateCompilationEnv();
+    CompilationEnv env = CompilationEnv::ForModule(
+        wasm_runner_.builder().trusted_instance_data()->native_module());
     std::unique_ptr<DebugSideTable> debug_side_table_via_compilation;
     auto result = ExecuteLiftoffCompilation(
         &env, test_func.body,
@@ -118,8 +121,8 @@ class LiftoffCompileEnvironment {
 
   FunctionSig* AddSig(std::initializer_list<ValueType> return_types,
                       std::initializer_list<ValueType> param_types) {
-    ValueType* storage =
-        zone_.NewArray<ValueType>(return_types.size() + param_types.size());
+    ValueType* storage = zone_.AllocateArray<ValueType>(return_types.size() +
+                                                        param_types.size());
     std::copy(return_types.begin(), return_types.end(), storage);
     std::copy(param_types.begin(), param_types.end(),
               storage + return_types.size());
@@ -148,8 +151,10 @@ class LiftoffCompileEnvironment {
         native_module->wire_bytes().SubVector(function->code.offset(),
                                               function->code.end_offset());
 
+    bool is_shared =
+        native_module->module()->type(function->sig_index).is_shared;
     FunctionBody body{sig, 0, function_wire_bytes.begin(),
-                      function_wire_bytes.end()};
+                      function_wire_bytes.end(), is_shared};
     return {code, body};
   }
 
@@ -438,7 +443,7 @@ TEST(Liftoff_debug_side_table_catch_all) {
   LiftoffCompileEnvironment env;
   TestSignatures sigs;
   int ex = env.builder()->AddException(sigs.v_v());
-  ValueType exception_type = ValueType::Ref(HeapType::kAny);
+  ValueType exception_type = kWasmAnyRef.AsNonNull();
   auto debug_side_table = env.GenerateDebugSideTable(
       {}, {kWasmI32},
       {WASM_TRY_CATCH_ALL_T(kWasmI32, WASM_STMTS(WASM_I32V(0), WASM_THROW(ex)),
@@ -462,7 +467,7 @@ TEST(Liftoff_debug_side_table_catch_all) {
 
 TEST(Regress1199526) {
   LiftoffCompileEnvironment env;
-  ValueType exception_type = ValueType::Ref(HeapType::kAny);
+  ValueType exception_type = kWasmAnyRef.AsNonNull();
   auto debug_side_table = env.GenerateDebugSideTable(
       {}, {},
       {kExprTry, kVoidCode, kExprCallFunction, 0, kExprCatchAll, kExprLoop,

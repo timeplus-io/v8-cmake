@@ -54,7 +54,7 @@ class ValueMirror {
   static std::unique_ptr<ValueMirror> create(v8::Local<v8::Context> context,
                                              v8::Local<v8::Value> value);
   virtual protocol::Response buildRemoteObject(
-      v8::Local<v8::Context> context, WrapOptions wrapOptions,
+      v8::Local<v8::Context> context, const WrapOptions& wrapOptions,
       std::unique_ptr<protocol::Runtime::RemoteObject>* result) const = 0;
   virtual void buildPropertyPreview(
       v8::Local<v8::Context> context, const String16& name,
@@ -66,11 +66,13 @@ class ValueMirror {
   virtual void buildEntryPreview(
       v8::Local<v8::Context> context, int* nameLimit, int* indexLimit,
       std::unique_ptr<protocol::Runtime::ObjectPreview>*) const {}
-  virtual v8::Local<v8::Value> v8Value() const = 0;
+  virtual v8::Local<v8::Value> v8Value(v8::Isolate* isolate) const = 0;
   // https://goo.gle/browser-automation-deepserialization
-  virtual std::unique_ptr<protocol::DictionaryValue> buildDeepSerializedValue(
+  virtual Response buildDeepSerializedValue(
       v8::Local<v8::Context> context, int maxDepth,
-      V8SerializationDuplicateTracker& duplicateTracker) const = 0;
+      v8::Local<v8::Object> additionalParameters,
+      V8SerializationDuplicateTracker& duplicateTracker,
+      std::unique_ptr<protocol::DictionaryValue>* result) const = 0;
 
   class PropertyAccumulator {
    public:

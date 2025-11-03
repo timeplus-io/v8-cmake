@@ -24,7 +24,9 @@ void CheckDisassemblerOutput(base::Vector<const uint8_t> module_bytes,
                              std::string expected_output) {
   AccountingAllocator allocator;
 
-  ModuleResult module_result = DecodeWasmModuleForDisassembler(module_bytes);
+  std::unique_ptr<OffsetsProvider> offsets = AllocateOffsetsProvider();
+  ModuleResult module_result =
+      DecodeWasmModuleForDisassembler(module_bytes, offsets.get());
   ASSERT_TRUE(module_result.ok())
       << "Decoding error: " << module_result.error().message() << " at offset "
       << module_result.error().offset();
@@ -35,12 +37,14 @@ void CheckDisassemblerOutput(base::Vector<const uint8_t> module_bytes,
 
   MultiLineStringBuilder output_sb;
 
-  ModuleDisassembler md(output_sb, module, &names, wire_bytes, &allocator);
+  constexpr bool kNoOffsets = false;
+  ModuleDisassembler md(output_sb, module, &names, wire_bytes, &allocator,
+                        std::move(offsets));
   constexpr size_t max_mb = 100;  // Even 1 would be enough.
   md.PrintModule({0, 2}, max_mb);
 
   std::ostringstream output;
-  output_sb.WriteTo(output);
+  output_sb.WriteTo(output, kNoOffsets);
 
   // Remove comment lines from expected output since they cannot be recovered
   // by a disassembler.
@@ -123,7 +127,16 @@ TEST_F(WasmDisassemblerTest, Gc) {
   CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
 }
 
-TEST_F(WasmDisassemblerTest, TooManyends) {
+TEST_F(WasmDisassemblerTest, CustomDescriptors) {
+  constexpr uint8_t module_bytes[] = {
+#include "wasm-disassembler-unittest-custom-descriptors.wasm.inc"
+  };
+  std::string expected;
+#include "wasm-disassembler-unittest-custom-descriptors.wat.inc"
+  CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
+}
+
+TEST_F(WasmDisassemblerTest, TooManyEnds) {
   constexpr uint8_t module_bytes[] = {
 #include "wasm-disassembler-unittest-too-many-ends.wasm.inc"
   };
@@ -138,6 +151,25 @@ TEST_F(WasmDisassemblerTest, Stringref) {
   };
   std::string expected;
 #include "wasm-disassembler-unittest-stringref.wat.inc"
+  CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
+}
+
+TEST_F(WasmDisassemblerTest, SharedEverything) {
+  // TODO(42204563): Add tests for other shared-everything instructions.
+  constexpr uint8_t module_bytes[] = {
+#include "wasm-disassembler-unittest-shared-everything.wasm.inc"
+  };
+  std::string expected;
+#include "wasm-disassembler-unittest-shared-everything.wat.inc"
+  CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
+}
+
+TEST_F(WasmDisassemblerTest, Exnref) {
+  constexpr uint8_t module_bytes[] = {
+#include "wasm-disassembler-unittest-exnref.wasm.inc"
+  };
+  std::string expected;
+#include "wasm-disassembler-unittest-exnref.wat.inc"
   CheckDisassemblerOutput(base::ArrayVector(module_bytes), expected);
 }
 

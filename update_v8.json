@@ -1,38 +1,50 @@
 [
   {
     "url": "https://chromium.googlesource.com/v8/v8.git",
-    "commit": "07c05c4b8c5e8916e604c09692d7b6e1813c606e",
+    "commit": "bb294624702efbb17691b642333f06bf5108e600",
     "/* comment */": "Dependency v8 must be first.",
-    "branch": "branch-heads/11.5",
+    "branch": "tags/14.2.231.14",
     "path": ""
   },
   {
+    "url": "https://chromium.googlesource.com/external/github.com/jk-jeon/dragonbox.git",
+    "commit": "6c7c925b571d54486b9ffae8d9d18a822801cbda",
+    "branch": "master",
+    "path": "third_party/dragonbox/src"
+  },
+  {
+    "url": "https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git",
+    "commit": "cb1d42aaa1e14b09e1452cfdef373d051b8c02a4",
+    "branch": "master",
+    "path": "third_party/fast_float/src"
+  },
+  {
     "url": "https://chromium.googlesource.com/external/github.com/google/googletest.git",
-    "commit": "af29db7ec28d6df1c7f0f745186884091e602e07",
+    "commit": "244cec869d12e53378fa0efb610cd4c32a454ec8",
     "branch": "master",
     "path": "third_party/googletest/src"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/jinja2.git",
-    "commit": "264c07d7e64f2874434a3b8039e101ddf1b01e7e",
+    "commit": "c3027d884967773057bf74b957e3fea87e5df4d7",
     "branch": "master",
     "path": "third_party/jinja2"
   },
   {
-    "url": "https://chromium.googlesource.com/chromium/src/base/trace_event/common.git",
-    "commit": "147f65333c38ddd1ebf554e89965c243c8ce50b3",
-    "branch": "master",
-    "path": "base/trace_event/common"
-  },
-  {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib.git",
-    "commit": "14dd4c4455602c9b71a1a89b5cafd1f4030d2e3f",
+    "commit": "85f05b0835f934e52772efc308baa80cdd491838",
     "branch": "master",
     "path": "third_party/zlib"
   },
   {
+    "url": "https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp.git",
+    "commit": "c3655ab8bb514aa318207c2685b3ba557a048201",
+    "branch": "master",
+    "path": "third_party/abseil-cpp"
+  },
+  {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/markupsafe.git",
-    "commit": "13f4e8c9e206567eeb13bf585406ddc574005748",
+    "commit": "4256084ae14175d38a3ff7d739dca83ae49ccec6",
     "branch": "master",
     "path": "third_party/markupsafe"
   },
@@ -41,5 +53,23 @@
     "commit": "a3911fff01a775023a06af8754f9ec1e5977dd97",
     "branch": "master",
     "path": "third_party/ittapi"
+  },
+  {
+    "url": "https://chromium.googlesource.com/external/github.com/Maratyszcza/FP16.git",
+    "commit": "3d2de1816307bac63c16a297e8c4dc501b4076df",
+    "branch": "master",
+    "path": "third_party/fp16/src"
+  },
+  {
+    "url": "https://chromium.googlesource.com/chromium/src/third_party/simdutf",
+    "commit": "acd71a451c1bcb808b7c3a77e0242052909e381e",
+    "branch": "master",
+    "path": "third_party/simdutf"
+  },
+  {
+    "url": "https://chromium.googlesource.com/external/github.com/google/highway.git",
+    "commit": "84379d1c73de9681b54fbe1c035a23c7bd5d272d",
+    "branch": "master",
+    "path": "third_party/highway/src"
   }
 ]

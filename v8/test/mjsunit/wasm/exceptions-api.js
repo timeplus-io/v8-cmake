@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-load("test/mjsunit/wasm/wasm-module-builder.js");
+d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function TestImport() {
   print(arguments.callee.name);
@@ -94,6 +94,11 @@ load("test/mjsunit/wasm/wasm-module-builder.js");
       {parameters: ['i32', 'f32', 'i64', 'f64', 'externref']});
   assertThrows(() => new WebAssembly.Exception(
       tag, [1n, 2, 3n, 4, {}]), TypeError);
+  assertThrows(() => new WebAssembly.Exception(
+      tag, {}), TypeError, /Exception values argument has no length/);
+  assertThrows(() => new WebAssembly.Exception(
+      tag, []), TypeError,
+      /Number of exception values does not match signature length/);
   assertDoesNotThrow(() => new WebAssembly.Exception(tag, [3, 4, 5n, 6, {}]));
 })();
 
@@ -212,6 +217,7 @@ function TestGetArgHelper(types_str, types, values) {
 }
 
 (function TestGetArg() {
+  print(arguments.callee.name);
   // Check errors.
   let tag = new WebAssembly.Tag({parameters: ['i32']});
   let exception = new WebAssembly.Exception(tag, [0]);
@@ -289,11 +295,11 @@ function TestGetArgHelper(types_str, types, values) {
   }});
 
   let obj = {};
+  // Creating a WA.Exception with the JSTag explicitly is not allowed.
+  assertThrows(() => new WebAssembly.Exception(WebAssembly.JSTag, [obj]), TypeError);
 
   // Catch with implicit wrapping.
   assertSame(obj, instance.exports.test(obj));
-  // Catch with explicit wrapping.
-  assertSame(obj, instance.exports.test(new WebAssembly.Exception(WebAssembly.JSTag, [obj])));
   // Don't catch with explicit wrapping.
   let not_js_tag = new WebAssembly.Tag({parameters:['externref']});
   let exn = new WebAssembly.Exception(not_js_tag, [obj]);
@@ -310,11 +316,6 @@ function TestGetArgHelper(types_str, types, values) {
 
   // Catch with explicit wrapping.
   assertSame(obj, instance.exports.test(new WebAssembly.Exception(not_js_tag, [obj])));
-  // Don't catch with explicit wrapping.
-  exn = new WebAssembly.Exception(WebAssembly.JSTag, [obj]);
-  // TODO(thibaudm): Should the exception get implicitly unwrapped when it
-  // bubbles up from wasm to JS, even though it was wrapped explicitly?
-  assertThrowsEquals(() => instance.exports.test(exn), exn);
   // Don't catch with implicit wrapping.
   assertThrowsEquals(() => instance.exports.test(obj), obj);
 })();

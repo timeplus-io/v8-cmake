@@ -4,19 +4,18 @@
 
 #include "src/compiler/backend/instruction-scheduler.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
+#include "src/compiler/backend/instruction-selector.h"
 #include "src/compiler/backend/instruction.h"
 #include "test/cctest/cctest.h"
 
-namespace v8 {
-namespace internal {
-namespace compiler {
+namespace v8::internal::compiler {
 
 // Create InstructionBlocks with a single block.
 InstructionBlocks* CreateSingleBlock(Zone* zone) {
   InstructionBlock* block = zone->New<InstructionBlock>(
       zone, RpoNumber::FromInt(0), RpoNumber::Invalid(), RpoNumber::Invalid(),
       RpoNumber::Invalid(), false, false);
-  InstructionBlocks* blocks = zone->NewArray<InstructionBlocks>(1);
+  InstructionBlocks* blocks = zone->AllocateArray<InstructionBlocks>(1);
   new (blocks) InstructionBlocks(1, block, zone);
   return blocks;
 }
@@ -25,7 +24,7 @@ InstructionBlocks* CreateSingleBlock(Zone* zone) {
 class InstructionSchedulerTester {
  public:
   InstructionSchedulerTester()
-      : scope_(kCompressGraphZone),
+      : scope_(),
         blocks_(CreateSingleBlock(scope_.main_zone())),
         sequence_(scope_.main_isolate(), scope_.main_zone(), blocks_),
         scheduler_(scope_.main_zone(), &sequence_) {}
@@ -72,10 +71,8 @@ TEST(DeoptInMiddleOfBasicBlock) {
 
   tester.StartBlock();
   InstructionCode jmp_opcode = kArchJmp;
-  Node* dummy_frame_state = Node::New(zone, 0, nullptr, 0, nullptr, false);
   FlagsContinuation cont = FlagsContinuation::ForDeoptimizeForTesting(
-      kEqual, DeoptimizeReason::kUnknown, dummy_frame_state->id(),
-      FeedbackSource{}, dummy_frame_state);
+      kEqual, DeoptimizeReason::kUnknown, 0, FeedbackSource{});
   jmp_opcode = cont.Encode(jmp_opcode);
   Instruction* jmp_inst = Instruction::New(zone, jmp_opcode);
   tester.CheckIsDeopt(jmp_inst);
@@ -104,6 +101,4 @@ TEST(DeoptInMiddleOfBasicBlock) {
   tester.EndBlock();
 }
 
-}  // namespace compiler
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::compiler

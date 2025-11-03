@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_BASE_ATOMICOPS_H_
+#define V8_BASE_ATOMICOPS_H_
+
 // The routines exported by this module are subtle.  If you use them, even if
 // you get the code right, it will depend on careful reasoning about atomicity
 // and memory ordering; it will be less readable, and harder to maintain.  If
@@ -21,9 +24,6 @@
 // Although there are currently no compiler enforcement, you are encouraged
 // to use these.
 //
-
-#ifndef V8_BASE_ATOMICOPS_H_
-#define V8_BASE_ATOMICOPS_H_
 
 #include <stdint.h>
 
@@ -125,6 +125,21 @@ inline Atomic32 Relaxed_CompareAndSwap(volatile Atomic32* ptr,
   return old_value;
 }
 
+inline Atomic8 Relaxed_FetchOr(volatile Atomic8* ptr, Atomic8 bits) {
+  auto old = helper::to_std_atomic(ptr);
+  return old->fetch_or(bits, std::memory_order_relaxed);
+}
+
+inline Atomic16 Relaxed_FetchOr(volatile Atomic16* ptr, Atomic16 bits) {
+  auto old = helper::to_std_atomic(ptr);
+  return old->fetch_or(bits, std::memory_order_relaxed);
+}
+
+inline Atomic32 Relaxed_FetchOr(volatile Atomic32* ptr, Atomic32 bits) {
+  auto old = helper::to_std_atomic(ptr);
+  return old->fetch_or(bits, std::memory_order_relaxed);
+}
+
 inline Atomic32 Relaxed_AtomicExchange(volatile Atomic32* ptr,
                                        Atomic32 new_value) {
   return std::atomic_exchange_explicit(helper::to_std_atomic(ptr), new_value,
@@ -175,6 +190,14 @@ inline Atomic32 AcquireRelease_CompareAndSwap(volatile Atomic32* ptr,
   atomic_compare_exchange_strong_explicit(
       helper::to_std_atomic(ptr), &old_value, new_value,
       std::memory_order_acq_rel, std::memory_order_acquire);
+  return old_value;
+}
+
+inline Atomic32 SeqCst_CompareAndSwap(volatile Atomic32* ptr,
+                                      Atomic32 old_value, Atomic32 new_value) {
+  atomic_compare_exchange_strong_explicit(
+      helper::to_std_atomic(ptr), &old_value, new_value,
+      std::memory_order_seq_cst, std::memory_order_seq_cst);
   return old_value;
 }
 
@@ -268,6 +291,11 @@ inline Atomic64 Relaxed_CompareAndSwap(volatile Atomic64* ptr,
   return old_value;
 }
 
+inline Atomic64 Relaxed_FetchOr(volatile Atomic64* ptr, Atomic64 bits) {
+  auto old = helper::to_std_atomic(ptr);
+  return old->fetch_or(bits, std::memory_order_relaxed);
+}
+
 inline Atomic64 Relaxed_AtomicExchange(volatile Atomic64* ptr,
                                        Atomic64 new_value) {
   return std::atomic_exchange_explicit(helper::to_std_atomic(ptr), new_value,
@@ -309,6 +337,14 @@ inline Atomic64 AcquireRelease_CompareAndSwap(volatile Atomic64* ptr,
   std::atomic_compare_exchange_strong_explicit(
       helper::to_std_atomic(ptr), &old_value, new_value,
       std::memory_order_acq_rel, std::memory_order_acquire);
+  return old_value;
+}
+
+inline Atomic64 SeqCst_CompareAndSwap(volatile Atomic64* ptr,
+                                      Atomic64 old_value, Atomic64 new_value) {
+  std::atomic_compare_exchange_strong_explicit(
+      helper::to_std_atomic(ptr), &old_value, new_value,
+      std::memory_order_seq_cst, std::memory_order_seq_cst);
   return old_value;
 }
 

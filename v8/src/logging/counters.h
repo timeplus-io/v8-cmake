@@ -9,14 +9,12 @@
 
 #include "include/v8-callbacks.h"
 #include "src/base/atomic-utils.h"
-#include "src/base/optional.h"
 #include "src/base/platform/elapsed-timer.h"
 #include "src/base/platform/time.h"
 #include "src/common/globals.h"
 #include "src/logging/counters-definitions.h"
 #include "src/logging/runtime-call-stats.h"
 #include "src/objects/code-kind.h"
-#include "src/objects/fixed-array.h"
 #include "src/objects/objects.h"
 #include "src/utils/allocation.h"
 
@@ -57,7 +55,7 @@ class StatsTable {
   // is successful, returns a non-nullptr pointer for writing the
   // value of the counter.  Each thread calling this function
   // may receive a different location to store it's counter.
-  // The return value must not be cached and re-used across
+  // The return value must not be cached and reused across
   // threads, although a single thread is free to cache it.
   int* FindLocation(const char* name) {
     if (!lookup_function_) return nullptr;
@@ -101,7 +99,10 @@ class StatsTable {
 // This class is thread-safe.
 class StatsCounter {
  public:
+  const char* name() const { return name_; }
+
   void Set(int value) { GetPtr()->store(value, std::memory_order_relaxed); }
+  int Get() { return GetPtr()->load(); }
 
   void Increment(int value = 1) {
     GetPtr()->fetch_add(value, std::memory_order_relaxed);
@@ -382,7 +383,7 @@ class V8_NODISCARD AggregatedHistogramTimerScope {
 };
 
 // AggretatedMemoryHistogram collects (time, value) sample pairs and turns
-// them into time-uniform samples for the backing historgram, such that the
+// them into time-uniform samples for the backing histogram, such that the
 // backing histogram receives one sample every T ms, where the T is controlled
 // by the v8_flags.histogram_interval.
 //
@@ -529,6 +530,16 @@ class Counters : public std::enable_shared_from_this<Counters> {
   HISTOGRAM_RANGE_LIST(HR)
 #undef HR
 
+#if V8_ENABLE_DRUMBRAKE
+#define HR(name, caption, min, max, num_buckets)     \
+  Histogram* name() {                                \
+    name##_.EnsureCreated(v8_flags.slow_histograms); \
+    return &name##_;                                 \
+  }
+  HISTOGRAM_RANGE_LIST_SLOW(HR)
+#undef HR
+#endif  // V8_ENABLE_DRUMBRAKE
+
 #define HT(name, caption, max, res) \
   NestedTimedHistogram* name() {    \
     name##_.EnsureCreated();        \
@@ -583,41 +594,6 @@ class Counters : public std::enable_shared_from_this<Counters> {
   STATS_COUNTER_NATIVE_CODE_LIST(SC)
 #undef SC
 
-  // clang-format off
-  enum Id {
-#define RATE_ID(name, caption, max, res) k_##name,
-    NESTED_TIMED_HISTOGRAM_LIST(RATE_ID)
-    NESTED_TIMED_HISTOGRAM_LIST_SLOW(RATE_ID)
-    TIMED_HISTOGRAM_LIST(RATE_ID)
-#undef RATE_ID
-#define AGGREGATABLE_ID(name, caption) k_##name,
-    AGGREGATABLE_HISTOGRAM_TIMER_LIST(AGGREGATABLE_ID)
-#undef AGGREGATABLE_ID
-#define PERCENTAGE_ID(name, caption) k_##name,
-    HISTOGRAM_PERCENTAGE_LIST(PERCENTAGE_ID)
-#undef PERCENTAGE_ID
-#define MEMORY_ID(name, caption) k_##name,
-    HISTOGRAM_LEGACY_MEMORY_LIST(MEMORY_ID)
-#undef MEMORY_ID
-#define COUNTER_ID(name, caption) k_##name,
-    STATS_COUNTER_LIST(COUNTER_ID)
-    STATS_COUNTER_NATIVE_CODE_LIST(COUNTER_ID)
-#undef COUNTER_ID
-#define COUNTER_ID(name) kCountOf##name, kSizeOf##name,
-    INSTANCE_TYPE_LIST(COUNTER_ID)
-#undef COUNTER_ID
-#define COUNTER_ID(name) kCountOfCODE_TYPE_##name, \
-    kSizeOfCODE_TYPE_##name,
-    CODE_KIND_LIST(COUNTER_ID)
-#undef COUNTER_ID
-#define COUNTER_ID(name) kCountOfFIXED_ARRAY__##name, \
-    kSizeOfFIXED_ARRAY__##name,
-    FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(COUNTER_ID)
-#undef COUNTER_ID
-    stats_counter_count
-  };
-  // clang-format on
-
 #ifdef V8_RUNTIME_CALL_STATS
   RuntimeCallStats* runtime_call_stats() { return &runtime_call_stats_; }
 
@@ -655,6 +631,9 @@ class Counters : public std::enable_shared_from_this<Counters> {
 
 #define HR(name, caption, min, max, num_buckets) Histogram name##_;
   HISTOGRAM_RANGE_LIST(HR)
+#if V8_ENABLE_DRUMBRAKE
+  HISTOGRAM_RANGE_LIST_SLOW(HR)
+#endif  // V8_ENABLE_DRUMBRAKE
 #undef HR
 
 #define HT(name, caption, max, res) NestedTimedHistogram name##_;

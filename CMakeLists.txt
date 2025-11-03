@@ -95,6 +95,9 @@ string(CONCAT is-x64 $<OR:
 
 option(V8_ENABLE_CONCURRENT_MARKING "Enable concurrent marking" ON)
 option(V8_ENABLE_I18N "Enable Internationalization support")
+option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
+option(V8_ENABLE_SPARKPLUG "Enable Sparkplug baseline JIT" ON)
+option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
 
 set(
   v8_defines
@@ -110,13 +113,18 @@ set(
   $<$<AND:${is-win},${is-x64}>:V8_OS_WIN_X64>
   $<$<BOOL:${V8_ENABLE_CONCURRENT_MARKING}>:V8_CONCURRENT_MARKING>
   $<${is-win}:V8_OS_WIN32>
+  V8_ENABLE_LEAPTIERING
+  V8_ENABLE_TURBOFAN
+  V8_ENABLE_MAGLEV
+  V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
+  $<$<BOOL:${V8_ENABLE_SPARKPLUG}>:V8_ENABLE_SPARKPLUG>
 )
 
 set(disable-exceptions
   $<$<CXX_COMPILER_ID:MSVC>:/EHs-c->
   $<$<CXX_COMPILER_ID:AppleClang>:-fno-exceptions>
   $<$<CXX_COMPILER_ID:Clang>:-fno-exceptions -Wno-invalid-offsetof -Wno-deprecated-non-prototype>
-  $<$<CXX_COMPILER_ID:GNU>:-fno-exceptions>
+  $<$<CXX_COMPILER_ID:GNU>:-fno-exceptions -Wno-error=changes-meaning -Wno-changes-meaning>
 )
 
 set(enable-exceptions
@@ -173,11 +181,20 @@ file(GLOB asmjs-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v
 file(GLOB ast-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/ast/*.cc)
 file(GLOB builtin-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/builtins/*.cc)
 file(GLOB baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/baseline/*.cc)
+if(NOT V8_ENABLE_SPARKPLUG)
+  # Exclude Sparkplug baseline sources when disabled
+  set(baseline-sources)
+endif()
 file(GLOB bigint-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/bigint/*.cc)
 file(GLOB codegen-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/codegen/*.cc)
 file(GLOB debug-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/debug/*.cc)
 file(GLOB deoptimizer-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/deoptimizer/*.cc)
 file(GLOB diagnostic-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/diagnostics/*.cc)
+# Drop Windows-only diagnostics on non-Windows hosts
+if(NOT WIN32)
+  # Exclude any Windows-only diagnostics sources on non-Windows
+  list(FILTER diagnostic-sources EXCLUDE REGEX ".*-win.*[.]cc$")
+endif()
 file(GLOB execution-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/execution/*.cc)
 file(GLOB extensions-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/extensions/*.cc)
 file(GLOB handles-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/handles/*.cc)
@@ -192,6 +209,8 @@ file(GLOB regexp-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS 
 file(GLOB runtime-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/runtime/*.cc)
 file(GLOB snapshot-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/snapshot/*.cc)
 file(GLOB strings-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/strings/*.cc)
+file(GLOB sandbox-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/sandbox/*.cc)
+file(GLOB maglev-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/maglev/*.cc)
 file(GLOB utils-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/utils/*.cc)
 file(GLOB wasm-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/*.cc)
 file(GLOB wasm-baseline-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/wasm/baseline/*.cc)
@@ -228,11 +247,21 @@ list(REMOVE_ITEM builtin-sources
   v8/src/builtins/builtins-intl-gen.cc
   v8/src/builtins/builtins-intl.cc
 )
+if(NOT V8_ENABLE_TEMPORAL)
+  list(REMOVE_ITEM builtin-sources v8/src/builtins/builtins-temporal.cc)
+endif()
 
 list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/unwinding-info-win64.cc)
 list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/etw-jit-win.cc)
+list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/etw-debug-win.cc)
 
 list(REMOVE_ITEM object-sources ${i18n-sources})
+if(NOT V8_ENABLE_TEMPORAL)
+  list(REMOVE_ITEM object-sources
+    v8/src/objects/js-temporal-objects.cc
+    v8/src/objects/js-temporal-zoneinfo64.cc
+  )
+endif()
 list(REMOVE_ITEM regexp-sources v8/src/regexp/gen-regexp-special-case.cc)
 list(REMOVE_ITEM runtime-sources v8/src/runtime/runtime-intl.cc)
 list(REMOVE_ITEM snapshot-sources
@@ -311,7 +340,7 @@ add_library(v8_base_without_compiler STATIC
   v8/src/ic/stub-cache.cc
   v8/src/init/bootstrapper.cc
   v8/src/init/icu_util.cc
-  v8/src/init/isolate-allocator.cc
+  v8/src/init/isolate-group.cc
   v8/src/init/startup-data-util.cc
   v8/src/init/v8.cc
   ${handles-sources}
@@ -323,6 +352,20 @@ add_library(v8_base_without_compiler STATIC
   ${parsing-sources}
   ${profiler-sources}
   ${regexp-sources}
+  ${sandbox-sources}
+  ${maglev-sources}
+  $<${is-x64}:v8/src/maglev/x64/maglev-assembler-x64.cc>
+  $<${is-x64}:v8/src/maglev/x64/maglev-ir-x64.cc>
+  $<${is-arm64}:v8/src/maglev/arm64/maglev-assembler-arm64.cc>
+  $<${is-arm64}:v8/src/maglev/arm64/maglev-ir-arm64.cc>
+  $<${is-arm}:v8/src/maglev/arm/maglev-assembler-arm.cc>
+  $<${is-arm}:v8/src/maglev/arm/maglev-ir-arm.cc>
+  $<${is-ppc}:v8/src/maglev/ppc/maglev-assembler-ppc.cc>
+  $<${is-ppc}:v8/src/maglev/ppc/maglev-ir-ppc.cc>
+  $<${is-s390}:v8/src/maglev/s390/maglev-assembler-s390.cc>
+  $<${is-s390}:v8/src/maglev/s390/maglev-ir-s390.cc>
+  $<${is-mips64}:v8/src/maglev/riscv/maglev-assembler-riscv.cc>
+  $<${is-mips64}:v8/src/maglev/riscv/maglev-ir-riscv.cc>
   v8/src/roots/roots.cc
   ${runtime-sources}
   v8/src/base/sanitizer/lsan-page-allocator.cc
@@ -331,14 +374,13 @@ add_library(v8_base_without_compiler STATIC
   v8/src/tasks/cancelable-task.cc
   v8/src/tasks/operations-barrier.cc
   v8/src/tasks/task-utils.cc
-  v8/src/third_party/siphash/halfsiphash.cc
+  v8/third_party/siphash/halfsiphash.cc
   v8/src/tracing/trace-event.cc
   v8/src/tracing/traced-value.cc
   v8/src/tracing/tracing-category-observer.cc
   v8/src/trap-handler/handler-inside.cc
   v8/src/trap-handler/handler-outside.cc
   v8/src/trap-handler/handler-shared.cc
-  v8/src/temporal/temporal-parser.cc
   ${utils-sources}
   ${wasm-sources}
   ${zone-sources}
@@ -358,6 +400,9 @@ target_include_directories(v8_base_without_compiler
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
     ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -370,6 +415,8 @@ target_link_libraries(
     v8_torque_generated
   PUBLIC
     v8-bytecodes-builtin-list
+    v8_simdutf
+    absl::raw_hash_set
 )
 
 #
@@ -380,6 +427,8 @@ file(GLOB_RECURSE compiler-sources
   CONFIGURE_DEPENDS v8/src/compiler/*.cc
 )
 list(FILTER compiler-sources EXCLUDE REGEX ".*backend/.*/.*[.]cc$")
+# Exclude the disabled Turbofan shim when building full compiler.
+list(REMOVE_ITEM compiler-sources v8/src/compiler/turbofan-disabled.cc)
 
 add_library(v8_compiler STATIC)
 target_sources(v8_compiler PRIVATE ${compiler-sources})
@@ -395,6 +444,9 @@ target_include_directories(v8_compiler
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
 )
 
@@ -440,7 +492,6 @@ add_library(
   v8/src/builtins/builtins-internal-gen.cc
   v8/src/builtins/builtins-interpreter-gen.cc
   v8/src/builtins/builtins-iterator-gen.cc
-  v8/src/builtins/builtins-lazy-gen.cc
   v8/src/builtins/builtins-microtask-queue-gen.cc
   v8/src/builtins/builtins-number-gen.cc
   v8/src/builtins/builtins-object-gen.cc
@@ -491,7 +542,7 @@ add_library(
   v8/src/init/setup-isolate-deserialize.cc
 )
 
-target_compile_definitions(v8_snapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+target_compile_definitions(v8_snapshot PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_snapshot PRIVATE ${disable-exceptions})
 if(enable-fPIC)
   target_compile_options(v8_snapshot PRIVATE ${enable-fpic})
@@ -680,6 +731,8 @@ target_include_directories(v8_libsampler
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
 )
 
 target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
@@ -695,12 +748,15 @@ target_link_libraries(v8_libsampler PRIVATE v8_libbase)
 #
 
 add_library(v8_libbase STATIC
+  v8/src/base/abort-mode.cc
   v8/src/base/bits.cc
   v8/src/base/bounded-page-allocator.cc
+  v8/src/base/emulated-virtual-address-subspace.cc
   v8/src/base/cpu.cc
   v8/src/base/debug/stack_trace.cc
   v8/src/base/division-by-constant.cc
   v8/src/base/file-utils.cc
+  v8/src/base/fpu.cc
   v8/src/base/ieee754.cc
   v8/src/base/logging.cc
   v8/src/base/once.cc
@@ -739,6 +795,7 @@ if(enable-fPIC)
   target_compile_options(v8_libbase PRIVATE ${enable-fpic})
 endif()
 target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
@@ -746,6 +803,9 @@ target_link_libraries(v8_libbase
     $<${is-linux}:rt>
     $<${is-win}:winmm>
     $<${is-win}:dbghelp>
+  PUBLIC
+    absl::synchronization
+    absl::str_format
 )
 
 #
@@ -764,6 +824,8 @@ if (NOT CMAKE_CROSSCOMPILING)
   target_include_directories(bytecode_builtins_list_generator
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/v8
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
   )
 
   target_link_libraries(bytecode_builtins_list_generator v8_libbase)
@@ -820,6 +882,11 @@ if(NOT V8_ENABLE_I18N)
     src/objects/js-segments.tq
   )
 endif()
+if(NOT V8_ENABLE_TEMPORAL)
+  list(REMOVE_ITEM torque_files
+    src/objects/js-temporal-objects.tq
+  )
+endif()
 
 list(TRANSFORM torque_files PREPEND v8/ OUTPUT_VARIABLE torque_files_abs)
 
@@ -872,7 +939,7 @@ add_library(
   ${torque_outputs}
 )
 
-target_compile_definitions(v8_torque_generated PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+target_compile_definitions(v8_torque_generated PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_torque_generated PRIVATE ${disable-exceptions})
 if(enable-fPIC)
   target_compile_options(v8_torque_generated PRIVATE ${enable-fpic})
@@ -884,6 +951,9 @@ target_include_directories(v8_torque_generated
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
 )
 
 # we use torque here
@@ -925,7 +995,12 @@ if (NOT CMAKE_CROSSCOMPILING)
   add_executable(torque)
   target_sources(torque PRIVATE ${torque-program-sources})
   target_compile_options(torque PRIVATE ${enable-exceptions})
-  target_include_directories(torque PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+  target_compile_definitions(torque PRIVATE ${v8_defines})
+  target_include_directories(torque PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+  )
   target_link_libraries(torque PRIVATE v8_libbase)
 endif()
 
@@ -942,12 +1017,13 @@ if (NOT CMAKE_CROSSCOMPILING)
     v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
     v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
     v8/src/snapshot/embedded/platform-embedded-file-writer-mac.cc
+    v8/src/snapshot/embedded/platform-embedded-file-writer-zos.cc
     v8/src/snapshot/embedded/platform-embedded-file-writer-win.cc
     v8/src/snapshot/mksnapshot.cc
     v8/src/snapshot/snapshot-empty.cc
   )
 
-  target_compile_definitions(mksnapshot PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
+  target_compile_definitions(mksnapshot PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
   target_compile_options(mksnapshot PRIVATE ${disable-exceptions})
   target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
   target_link_libraries(mksnapshot
@@ -978,3 +1054,10 @@ add_library(ch_contrib::v8_libbase               ALIAS v8_libbase              )
 add_library(ch_contrib::v8_libsampler            ALIAS v8_libsampler           )
 add_library(ch_contrib::v8_initializers          ALIAS v8_initializers         )
 add_library(ch_contrib::v8_torque_generated      ALIAS v8_torque_generated     )
+# Abseil (vendored via v8/third_party/abseil-cpp) is required by V8 >=14.
+add_subdirectory(v8/third_party/abseil-cpp EXCLUDE_FROM_ALL)
+
+# simdutf (vendored via v8/third_party/simdutf) provides base64 helpers used by V8 builtins.
+add_library(v8_simdutf STATIC v8/third_party/simdutf/simdutf.cpp)
+target_include_directories(v8_simdutf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/simdutf)
+set_property(TARGET v8_simdutf PROPERTY POSITION_INDEPENDENT_CODE ON)

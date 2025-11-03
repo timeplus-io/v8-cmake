@@ -30,6 +30,8 @@ class ResultDBIndicator(ProgressIndicator):
     # We need to recalculate the observed (but lost) test behaviour.
     # `result.has_unexpected_output` indicates that the run behaviour of the
     # test matches the expected behaviour irrespective of passing or failing.
+    if test.skip_rdb(result):
+      return
     result_expected = not result.has_unexpected_output
     test_should_pass = not test.is_fail
     run_passed = (result_expected == test_should_pass)
@@ -38,16 +40,15 @@ class ResultDBIndicator(ProgressIndicator):
         'status': 'PASS' if run_passed else 'FAIL',
         'expected': result_expected,
     }
-
     if result.output and result.output.duration:
-      rdb_result.update(duration=f'{result.output.duration}s')
+      rdb_result.update(duration=f'{result.output.duration:f}s')
 
     if result.has_unexpected_output:
-      formated_output = formatted_result_output(result,relative=True)
-      relative_cmd = result.cmd.to_string(relative=True)
+      formated_output = formatted_result_output(result)
+      cmd = result.cmd.to_string()
       artifacts = {
-        'output' : write_artifact(formated_output),
-        'cmd' : write_artifact(relative_cmd)
+          'output': write_artifact(formated_output),
+          'cmd': write_artifact(cmd)
       }
       rdb_result.update(artifacts=artifacts)
       summary = '<p><text-artifact artifact-id="output"></p>'
@@ -62,18 +63,12 @@ class ResultDBIndicator(ProgressIndicator):
 
     rdb_result.update(tags=extract_tags(record))
 
-    if not self.filter_result(rdb_result):
-      self.rpc.send(rdb_result)
+    self.rpc.send(rdb_result)
 
-  def filter_result(self, result):
-    """
-    Filter out expected results from test262.
-    TODO(liviurau): refactor class to be easier to test and add unittests.
-    """
-    return result['testId'].startswith('//test262/') and result['expected']
 
 def write_artifact(value):
-  with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+  with tempfile.NamedTemporaryFile(
+      mode='w', delete=False, encoding='utf-8') as tmp:
     tmp.write(value)
     return { 'filePath': tmp.name }
 
@@ -98,12 +93,17 @@ def strip_ascii_control_characters(unicode_string):
   return re.sub(r'[^\x20-\x7E]', '?', str(unicode_string))
 
 
+TESTING_SINK = None
+
+
 def rdb_sink():
   try:
     import requests
   except:
     log_instantiation_failure('Failed to import requests module.')
     return None
+  if TESTING_SINK:
+    return TESTING_SINK
   luci_context = os.environ.get('LUCI_CONTEXT')
   if not luci_context:
     log_instantiation_failure('No LUCI_CONTEXT found.')

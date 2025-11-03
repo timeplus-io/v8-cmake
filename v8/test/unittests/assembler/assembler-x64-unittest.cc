@@ -714,7 +714,7 @@ TEST_F(AssemblerX64Test, AssemblerMultiByteNop) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 
   auto f = GeneratedCode<F0>::FromCode(isolate, *code);
@@ -772,7 +772,7 @@ void DoSSE2(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
   CodeDesc desc;
   masm.GetCode(i_isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(i_isolate, desc, CodeKind::FOR_TESTING).Build();
 
   auto f = GeneratedCode<F0>::FromCode(i_isolate, *code);
@@ -834,11 +834,11 @@ TEST_F(AssemblerX64Test, AssemblerX64Extractps) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F3>::FromCode(isolate, *code);
@@ -869,11 +869,11 @@ TEST_F(AssemblerX64Test, AssemblerX64SSE) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F6>::FromCode(isolate, *code);
@@ -899,11 +899,11 @@ TEST_F(AssemblerX64Test, AssemblerX64SSE3) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F6>::FromCode(isolate, *code);
@@ -1120,11 +1120,11 @@ TEST_F(AssemblerX64Test, AssemblerX64FMA_sd) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F7>::FromCode(isolate, *code);
@@ -1342,11 +1342,11 @@ TEST_F(AssemblerX64Test, AssemblerX64FMA_ss) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F8>::FromCode(isolate, *code);
@@ -1415,11 +1415,11 @@ TEST_F(AssemblerX64Test, AssemblerX64SSE_ss) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F8>::FromCode(isolate, *code);
@@ -1499,11 +1499,11 @@ TEST_F(AssemblerX64Test, AssemblerX64AVX_ss) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F8>::FromCode(isolate, *code);
@@ -1737,11 +1737,11 @@ TEST_F(AssemblerX64Test, AssemblerX64AVX_sd) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F7>::FromCode(isolate, *code);
@@ -1927,11 +1927,11 @@ TEST_F(AssemblerX64Test, AssemblerX64BMI1) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F0>::FromCode(isolate, *code);
@@ -1985,11 +1985,11 @@ TEST_F(AssemblerX64Test, AssemblerX64LZCNT) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F0>::FromCode(isolate, *code);
@@ -2043,11 +2043,11 @@ TEST_F(AssemblerX64Test, AssemblerX64POPCNT) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F0>::FromCode(isolate, *code);
@@ -2304,11 +2304,11 @@ TEST_F(AssemblerX64Test, AssemblerX64BMI2) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F0>::FromCode(isolate, *code);
@@ -2347,10 +2347,10 @@ TEST_F(AssemblerX64Test, AssemblerX64JumpTables1) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
 
   auto f = GeneratedCode<F1>::FromCode(isolate, *code);
@@ -2394,10 +2394,10 @@ TEST_F(AssemblerX64Test, AssemblerX64JumpTables2) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
-  code->Print(std::cout);
+  Print(*code, std::cout);
 #endif
 
   auto f = GeneratedCode<F1>::FromCode(isolate, *code);
@@ -2449,11 +2449,11 @@ TEST_F(AssemblerX64Test, AssemblerX64vmovups) {
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
 #ifdef OBJECT_PRINT
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   auto f = GeneratedCode<F9>::FromCode(isolate, *code);
@@ -2478,6 +2478,7 @@ TEST_F(AssemblerX64Test, AssemblerX64Regmove256bit) {
   __ vmovapd(ymm0, ymm5);
   __ vmovupd(ymm6, Operand(r8, r9, times_4, 10000));
   __ vbroadcastss(ymm7, Operand(rbx, rcx, times_4, 10000));
+  __ vbroadcastsd(ymm6, Operand(rbx, rcx, times_4, 10000));
   __ vmovddup(ymm3, ymm2);
   __ vmovddup(ymm4, Operand(rbx, rcx, times_4, 10000));
   __ vmovshdup(ymm1, ymm2);
@@ -2485,10 +2486,10 @@ TEST_F(AssemblerX64Test, AssemblerX64Regmove256bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {
@@ -2517,6 +2518,8 @@ TEST_F(AssemblerX64Test, AssemblerX64Regmove256bit) {
 
       // vbroadcastss ymm7, DWORD PTR [rbx+rcx*4+0x2710]
       0xc4, 0xe2, 0x7d, 0x18, 0xbc, 0x8b, 0x10, 0x27, 0x00, 0x00,
+      // vbroadcastsd ymm6, QWORD PTR [rbx+rcx*4+0x2710]
+      0xc4, 0xe2, 0x7d, 0x19, 0xb4, 0x8b, 0x10, 0x27, 0x00, 0x00,
 
       // vmovddup ymm3, ymm2
       0xc5, 0xff, 0x12, 0xda,
@@ -2548,6 +2551,7 @@ TEST_F(AssemblerX64Test, AssemblerX64AVX2Op256bit) {
   __ vpalignr(ymm10, ymm11, ymm12, 4);
   __ vpalignr(ymm10, ymm11, Operand(rbx, rcx, times_4, 10000), 4);
   __ vbroadcastss(ymm7, xmm0);
+  __ vbroadcastsd(ymm6, xmm5);
   __ vpbroadcastb(ymm2, xmm1);
   __ vpbroadcastb(ymm3, Operand(rbx, rcx, times_4, 10000));
   __ vpbroadcastw(ymm15, xmm4);
@@ -2563,10 +2567,10 @@ TEST_F(AssemblerX64Test, AssemblerX64AVX2Op256bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {
@@ -2594,6 +2598,8 @@ TEST_F(AssemblerX64Test, AssemblerX64AVX2Op256bit) {
       0xC4, 0x63, 0x25, 0x0F, 0x94, 0x8B, 0x10, 0x27, 0x00, 0x00, 0x04,
       // vbroadcastss ymm7, xmm0
       0xc4, 0xe2, 0x7d, 0x18, 0xf8,
+      // vbroadcastsd ymm7, xmm0
+      0xc4, 0xe2, 0x7d, 0x19, 0xf5,
       // vpbroadcastb ymm2, xmm1
       0xc4, 0xe2, 0x7d, 0x78, 0xd1,
       // vpbroadcastb ymm3, BYTE PTR [rbx+rcx*4+0x2710]
@@ -2651,14 +2657,15 @@ TEST_F(AssemblerX64Test, AssemblerX64FloatingPoint256bit) {
   __ vcvtdq2pd(ymm1, Operand(rbx, rcx, times_4, 10000));
   __ vcvttps2dq(ymm3, ymm2);
   __ vcvttps2dq(ymm3, Operand256(rbx, rcx, times_4, 10000));
+  __ vperm2f128(ymm1, ymm2, ymm3, 2);
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {// vandpd ymm1, ymm3, ymm5
@@ -2709,7 +2716,9 @@ TEST_F(AssemblerX64Test, AssemblerX64FloatingPoint256bit) {
                         // vcvttps2dq ymm3, ymm2
                         0xC5, 0xFE, 0x5B, 0xDA,
                         // vcvttps2dq ymm3, YMMWORD PTR [rbx+rcx*4+0x2710]
-                        0xC5, 0xFE, 0x5B, 0x9C, 0x8B, 0x10, 0x27, 0x00, 0x00};
+                        0xC5, 0xFE, 0x5B, 0x9C, 0x8B, 0x10, 0x27, 0x00, 0x00,
+                        // vperm2f128 ymm1, ymm2, ymm3, 2
+                        0xc4, 0xe3, 0x6d, 0x06, 0xcb, 0x02};
   CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
 }
 
@@ -2759,10 +2768,10 @@ TEST_F(AssemblerX64Test, AssemblerX64Integer256bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {
@@ -2851,10 +2860,10 @@ TEST_F(AssemblerX64Test, AssemblerX64CmpOperations256bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {
@@ -2881,6 +2890,103 @@ TEST_F(AssemblerX64Test, AssemblerX64CmpOperations256bit) {
   CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
 }
 
+TEST_F(AssemblerX64Test, AssemblerX64FMA256bit) {
+  if (!CpuFeatures::IsSupported(AVX)) return;
+
+  auto buffer = AllocateAssemblerBuffer();
+  Isolate* isolate = i_isolate();
+  Assembler masm(AssemblerOptions{}, buffer->CreateView());
+  CpuFeatureScope fscope(&masm, FMA3);
+
+  __ vfmadd132ps(ymm1, ymm2, ymm4);
+  __ vfmadd213ps(ymm3, ymm5, ymm9);
+  __ vfmadd231ps(ymm1, ymm3, ymm5);
+  __ vfnmadd132ps(ymm1, ymm2, ymm4);
+  __ vfnmadd213ps(ymm3, ymm5, ymm9);
+  __ vfnmadd231ps(ymm1, ymm3, ymm5);
+
+  __ vfmadd132ps(ymm1, ymm2, Operand(rcx, rdx, times_4, 10000));
+  __ vfmadd213ps(ymm3, ymm5, Operand(r8, r11, times_8, 10000));
+  __ vfmadd231ps(ymm1, ymm3, Operand(r12, r11, times_4, 10000));
+  __ vfnmadd132ps(ymm1, ymm2, Operand(rcx, rdx, times_4, 10000));
+  __ vfnmadd213ps(ymm3, ymm5, Operand(r8, r11, times_8, 10000));
+  __ vfnmadd231ps(ymm1, ymm3, Operand(r12, r11, times_4, 10000));
+
+  __ vfmadd132pd(ymm1, ymm2, ymm4);
+  __ vfmadd213pd(ymm3, ymm5, ymm9);
+  __ vfmadd231pd(ymm1, ymm3, ymm5);
+  __ vfnmadd132pd(ymm1, ymm2, ymm4);
+  __ vfnmadd213pd(ymm3, ymm5, ymm9);
+  __ vfnmadd231pd(ymm1, ymm3, ymm5);
+
+  __ vfmadd132pd(ymm1, ymm2, Operand(rcx, rdx, times_4, 10000));
+  __ vfmadd213pd(ymm3, ymm5, Operand(r8, r11, times_8, 10000));
+  __ vfmadd231pd(ymm1, ymm3, Operand(r12, r11, times_4, 10000));
+  __ vfnmadd132pd(ymm1, ymm2, Operand(rcx, rdx, times_4, 10000));
+  __ vfnmadd213pd(ymm3, ymm5, Operand(r8, r11, times_8, 10000));
+  __ vfnmadd231pd(ymm1, ymm3, Operand(r12, r11, times_4, 10000));
+
+  CodeDesc desc;
+  masm.GetCode(isolate, &desc);
+#ifdef OBJECT_PRINT
+  DirectHandle<Code> code =
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
+  StdoutStream os;
+  Print(*code, os);
+#endif
+
+  uint8_t expected[] = {
+      // vfmadd132ps ymm1, ymm2, ymm4
+      0xC4, 0xE2, 0x6D, 0x98, 0xCC,
+      // vfmadd213ps ymm3, ymm5, ymm9
+      0xC4, 0xC2, 0x55, 0xA8, 0xD9,
+      // vfmadd231ps ymm1, ymm3, ymm5
+      0xC4, 0xE2, 0x65, 0xB8, 0xCD,
+      // vfnmadd132ps ymm1, ymm2, ymm4
+      0xC4, 0xE2, 0x6D, 0x9C, 0xCC,
+      // vfnmadd213ps ymm3, ymm5, ymm9
+      0xC4, 0xC2, 0x55, 0xAC, 0xD9,
+      // vfnmadd231ps ymm1, ymm3, ymm5
+      0xC4, 0xE2, 0x65, 0xBC, 0xCD,
+      // vfmadd132ps ymm1, ymm2, YMMWORD PTR [rcx+rdx*4+0x2710]
+      0xC4, 0xE2, 0x6D, 0x98, 0x8C, 0x91, 0x10, 0x27, 0x00, 0x00,
+      // vfmadd213ps ymm3, ymm5, YMMWORD PTR [r8+r11*8+0x2710]
+      0xC4, 0x82, 0x55, 0xA8, 0x9C, 0xD8, 0x10, 0x27, 0x00, 0x00,
+      // vfmadd231ps ymm1, ymm3, YMMWORD PTR [r12+r11*4+0x2710]
+      0xC4, 0x82, 0x65, 0xB8, 0x8C, 0x9C, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd132ps ymm1, ymm2, YMMWORD PTR [rcx+rdx*4+0x2710]
+      0xC4, 0xE2, 0x6D, 0x9C, 0x8C, 0x91, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd213ps ymm3, ymm5, YMMWORD PTR [r8+r11*8+0x2710]
+      0xC4, 0x82, 0x55, 0xAC, 0x9C, 0xD8, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd231ps ymm1, ymm3, YMMWORD PTR [r12+r11*4+0x2710]
+      0xC4, 0x82, 0x65, 0xBC, 0x8C, 0x9C, 0x10, 0x27, 0x00, 0x00,
+      // vfmadd132pd ymm1, ymm2, ymm4
+      0xC4, 0xE2, 0xED, 0x98, 0xCC,
+      // vfmadd213pd ymm3, ymm5, ymm9
+      0xC4, 0xC2, 0xD5, 0xA8, 0xD9,
+      // vfmadd231pd ymm1, ymm3, ymm5
+      0xC4, 0xE2, 0xE5, 0xB8, 0xCD,
+      // vfnmadd132pd ymm1, ymm2, ymm4
+      0xC4, 0xE2, 0xED, 0x9C, 0xCC,
+      // vfnmadd213pd ymm3, ymm5, ymm9
+      0xC4, 0xC2, 0xD5, 0xAC, 0xD9,
+      // vfnmadd231pd ymm1, ymm3, ymm5
+      0xC4, 0xE2, 0xE5, 0xBC, 0xCD,
+      // vfmadd132pd ymm1, ymm2, YMMWORD PTR [rcx+rdx*4+0x2710]
+      0xC4, 0xE2, 0xED, 0x98, 0x8C, 0x91, 0x10, 0x27, 0x00, 0x00,
+      // vfmadd213pd ymm3, ymm5, YMMWORD PTR [r8+r11*8+0x2710]
+      0xC4, 0x82, 0xD5, 0xA8, 0x9C, 0xD8, 0x10, 0x27, 0x00, 0x00,
+      // vfmadd231pd ymm1, ymm3, YMMWORD PTR [r12+r11*4+0x2710]
+      0xC4, 0x82, 0xE5, 0xB8, 0x8C, 0x9C, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd132pd ymm1, ymm2, YMMWORD PTR [rcx+rdx*4+0x2710]
+      0xC4, 0xE2, 0xED, 0x9C, 0x8C, 0x91, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd213pd ymm3, ymm5, YMMWORD PTR [r8+r11*8+0x2710]
+      0xC4, 0x82, 0xD5, 0xAC, 0x9C, 0xD8, 0x10, 0x27, 0x00, 0x00,
+      // vfnmadd231pd ymm1, ymm3, YMMWORD PTR [r12+r11*4+0x2710]
+      0xC4, 0x82, 0xE5, 0xBC, 0x8C, 0x9C, 0x10, 0x27, 0x00, 0x00};
+  CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
+}
+
 TEST_F(AssemblerX64Test, AssemblerX64ShiftImm128bit) {
   if (!CpuFeatures::IsSupported(AVX)) return;
 
@@ -2901,10 +3007,10 @@ TEST_F(AssemblerX64Test, AssemblerX64ShiftImm128bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {// vpsrlw xmm8,xmm2,0x4
@@ -2946,10 +3052,10 @@ TEST_F(AssemblerX64Test, AssemblerX64ShiftImm256bit) {
   CodeDesc desc;
   masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-  Handle<Code> code =
+  DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
   StdoutStream os;
-  code->Print(os);
+  Print(*code, os);
 #endif
 
   uint8_t expected[] = {// vpsrlw ymm0,ymm2,0x4
@@ -2998,10 +3104,10 @@ TEST_F(AssemblerX64Test, AssemblerX64BinOp256bit) {
     CodeDesc desc;
     masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-    Handle<Code> code =
+    DirectHandle<Code> code =
         Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
 
     uint8_t expected[] = {// vaddps ymm0,ymm1,ymm2
@@ -3052,10 +3158,10 @@ TEST_F(AssemblerX64Test, AssemblerX64BinOp256bit) {
     CodeDesc desc;
     masm.GetCode(isolate, &desc);
 #ifdef OBJECT_PRINT
-    Handle<Code> code =
+    DirectHandle<Code> code =
         Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
     StdoutStream os;
-    code->Print(os);
+    Print(*code, os);
 #endif
 
     uint8_t expected[] = {// vpaddb ymm6,ymm7,ymm8
@@ -3082,9 +3188,94 @@ TEST_F(AssemblerX64Test, AssemblerX64BinOp256bit) {
   }
 }
 
+TEST_F(AssemblerX64Test, F16C) {
+  if (!CpuFeatures::IsSupported(F16C)) return;
+
+  auto buffer = AllocateAssemblerBuffer();
+  Isolate* isolate = i_isolate();
+  Assembler masm(AssemblerOptions{}, buffer->CreateView());
+  CpuFeatureScope fscope(&masm, F16C);
+
+  __ vcvtph2ps(ymm0, xmm1);
+  __ vcvtph2ps(xmm2, xmm3);
+  __ vcvtps2ph(xmm4, ymm5, 0);
+  __ vcvtps2ph(xmm6, xmm7, 0);
+
+  CodeDesc desc;
+  masm.GetCode(isolate, &desc);
+
+  uint8_t expected[] = {// vcvtph2ps ymm0,xmm1,
+                        0xc4, 0xe2, 0x7d, 0x13, 0xc1,
+                        // vcvtph2ps xymm2,xmm3,
+                        0xc4, 0xe2, 0x79, 0x13, 0xd3,
+                        // vcvtps2ph xmm4,ymm5,0x0
+                        0xc4, 0xe3, 0x7d, 0x1d, 0xec, 0x00,
+                        // vcvtps2ph xmm6,xmm7,0x0
+                        0xc4, 0xe3, 0x79, 0x1d, 0xfe, 0x00};
+  CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
+}
+
+TEST_F(AssemblerX64Test, AssemblerX64AVXVNNI) {
+  if (!CpuFeatures::IsSupported(AVX_VNNI)) return;
+
+  auto buffer = AllocateAssemblerBuffer();
+  Isolate* isolate = i_isolate();
+  Assembler masm(AssemblerOptions{}, buffer->CreateView());
+  CpuFeatureScope fscope(&masm, AVX_VNNI);
+
+  __ vpdpbusd(xmm1, xmm2, xmm3);
+  __ vpdpbusd(ymm8, ymm11, ymm9);
+
+  CodeDesc desc;
+  masm.GetCode(isolate, &desc);
+#ifdef OBJECT_PRINT
+  DirectHandle<Code> code =
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
+  StdoutStream os;
+  Print(*code, os);
+#endif
+
+  uint8_t expected[] = {// vpdpbusd xmm1, xmm2, xmm3
+                        0xc4, 0xe2, 0x69, 0x50, 0xcb,
+                        // vpdpbusd ymm8, ymm11, ymm9
+                        0xc4, 0x42, 0x25, 0x50, 0xc1};
+  CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
+}
+
+TEST_F(AssemblerX64Test, AssemblerX64AVXVNNIINT8) {
+  if (!CpuFeatures::IsSupported(AVX_VNNI_INT8)) return;
+
+  auto buffer = AllocateAssemblerBuffer();
+  Isolate* isolate = i_isolate();
+  Assembler masm(AssemblerOptions{}, buffer->CreateView());
+  CpuFeatureScope fscope(&masm, AVX_VNNI_INT8);
+
+  __ vpdpbssd(xmm12, xmm13, xmm14);
+  __ vpdpbssd(ymm12, ymm13, ymm14);
+
+  CodeDesc desc;
+  masm.GetCode(isolate, &desc);
+#ifdef OBJECT_PRINT
+  DirectHandle<Code> code =
+      Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
+  StdoutStream os;
+  Print(*code, os);
+#endif
+
+  uint8_t expected[] = {// vpdpbssd xmm12, xmm13, xmm14
+                        0xc4, 0x42, 0x13, 0x50, 0xe6,
+                        // vpdpbssd ymm12, ymm13, ymm14
+                        0xc4, 0x42, 0x17, 0x50, 0xe6};
+  CHECK_EQ(0, memcmp(expected, desc.buffer, sizeof(expected)));
+}
+
 TEST_F(AssemblerX64Test, CpuFeatures_ProbeImpl) {
   // Support for a newer extension implies support for the older extensions.
   CHECK_IMPLIES(CpuFeatures::IsSupported(FMA3), CpuFeatures::IsSupported(AVX));
+  CHECK_IMPLIES(CpuFeatures::IsSupported(AVX_VNNI_INT8),
+                CpuFeatures::IsSupported(AVX));
+  CHECK_IMPLIES(CpuFeatures::IsSupported(AVX_VNNI),
+                CpuFeatures::IsSupported(AVX));
   CHECK_IMPLIES(CpuFeatures::IsSupported(AVX2), CpuFeatures::IsSupported(AVX));
   CHECK_IMPLIES(CpuFeatures::IsSupported(AVX),
                 CpuFeatures::IsSupported(SSE4_2));
@@ -3107,6 +3298,10 @@ TEST_F(AssemblerX64Test, CpuFeatures_ProbeImpl) {
                 !CpuFeatures::IsSupported(AVX));
   CHECK_IMPLIES(!CpuFeatures::IsSupported(AVX),
                 !CpuFeatures::IsSupported(AVX2));
+  CHECK_IMPLIES(!CpuFeatures::IsSupported(AVX),
+                !CpuFeatures::IsSupported(AVX_VNNI));
+  CHECK_IMPLIES(!CpuFeatures::IsSupported(AVX),
+                !CpuFeatures::IsSupported(AVX_VNNI_INT8));
   CHECK_IMPLIES(!CpuFeatures::IsSupported(AVX),
                 !CpuFeatures::IsSupported(FMA3));
 }

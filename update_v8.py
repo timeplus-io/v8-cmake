@@ -93,7 +93,12 @@ def update_all():
   # Now for some arbitrary code execution...
   what = '{}:DEPS'.format(v8['commit'])
   source = git('show', what, check_output=True, cwd=repodir(v8))
-  code = compile('def Var(k): return vars[k]\n' + source, 'DEPS', 'exec')
+  # Provide helpers used in DEPS files.
+  prelude = [
+      'def Var(k): return vars[k]',
+      'def Str(s): return str(s)',
+  ]
+  code = compile("\n".join(prelude) + "\n" + source, 'DEPS', 'exec')
   globls = {}
   eval(code, globls)
   v8_deps = globls['deps']
@@ -126,7 +131,11 @@ def update_all():
       update_one(dep)
 
   arg = '-n' if dry_run else '-q'
-  git('rm', arg, '-r', 'v8')
+  try:
+    git('rm', arg, '-r', 'v8')
+  except subprocess.CalledProcessError:
+    # Ignore if nothing to remove or already removed.
+    pass
 
   for dep in deps:
     cmd = '(cd {} && {} archive --format=tar --prefix=v8/{}/ {}) | {} x'.format(

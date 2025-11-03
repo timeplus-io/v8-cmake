@@ -31,6 +31,13 @@ void AstFunctionLiteralIdReindexer::VisitFunctionLiteral(FunctionLiteral* lit) {
   lit->set_function_literal_id(lit->function_literal_id() + delta_);
 }
 
+void AstFunctionLiteralIdReindexer::VisitCall(Call* expr) {
+  AstTraversalVisitor::VisitCall(expr);
+  if (expr->is_possibly_eval()) {
+    expr->adjust_eval_scope_info_index(delta_);
+  }
+}
+
 void AstFunctionLiteralIdReindexer::VisitClassLiteral(ClassLiteral* expr) {
   // Manually visit the class literal so that we can change the property walk.
   // This should be kept in-sync with AstTraversalVisitor::VisitClassLiteral.
@@ -63,11 +70,12 @@ void AstFunctionLiteralIdReindexer::VisitClassLiteral(ClassLiteral* expr) {
   for (int i = 0; i < props->length(); ++i) {
     ClassLiteralProperty* prop = props->at(i);
 
-    // Public fields with computed names have their key
-    // and value present in instance_members_initializer_function, so they will
+    // Public fields and auto accessors with computed names have their key and
+    // value present in instance_members_initializer_function, so they will
     // already have been visited.
     if (prop->is_computed_name() &&
-        prop->kind() == ClassLiteralProperty::Kind::FIELD) {
+        (prop->kind() == ClassLiteralProperty::Kind::FIELD ||
+         (prop->kind() == ClassLiteralProperty::Kind::AUTO_ACCESSOR))) {
       if (!prop->key()->IsLiteral()) {
         CheckVisited(prop->key());
       }
@@ -77,6 +85,10 @@ void AstFunctionLiteralIdReindexer::VisitClassLiteral(ClassLiteral* expr) {
         Visit(prop->key());
       }
       Visit(prop->value());
+    }
+    if (prop->kind() == ClassLiteralProperty::Kind::AUTO_ACCESSOR) {
+      Visit(prop->auto_accessor_info()->generated_getter());
+      Visit(prop->auto_accessor_info()->generated_setter());
     }
   }
 }

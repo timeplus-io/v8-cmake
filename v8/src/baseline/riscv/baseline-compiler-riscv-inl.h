@@ -23,8 +23,7 @@ void BaselineCompiler::Prologue() {
   // Enter the frame here, since CallBuiltin will override lr.
   __ masm()->EnterFrame(StackFrame::BASELINE);
   DCHECK_EQ(kJSFunctionRegister, kJavaScriptCallTargetRegister);
-  int max_frame_size =
-      bytecode_->frame_size() + max_call_args_ * kSystemPointerSize;
+  int max_frame_size = bytecode_->max_frame_size();
   CallBuiltin<Builtin::kBaselineOutOfLinePrologue>(
       kContextRegister, kJSFunctionRegister, kJavaScriptCallArgCountRegister,
       max_frame_size, kJavaScriptCallNewTargetRegister, bytecode_);
@@ -72,11 +71,10 @@ void BaselineCompiler::PrologueFillFrame() {
 
 void BaselineCompiler::VerifyFrameSize() {
   ASM_CODE_COMMENT(&masm_);
-  __ masm()->AddWord(kScratchReg, sp,
+  __ masm()->AddWord(t0, sp,
                      Operand(InterpreterFrameConstants::kFixedFrameSizeFromFp +
                              bytecode_->frame_size()));
-  __ masm()->Assert(eq, AbortReason::kUnexpectedStackPointer, kScratchReg,
-                    Operand(fp));
+  __ masm()->Assert(eq, AbortReason::kUnexpectedStackPointer, t0, Operand(fp));
 }
 
 #undef __
