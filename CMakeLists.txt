@@ -49,6 +49,7 @@ include(GNUInstallDirs)
 
 include(CheckPythonModuleExists)
 include(GenerateBuiltinsList)
+include(CheckLibraryExists)
 
 check_python_module_exists(PYTHON_HAVE_MARKUPSAFE markupsafe)
 
@@ -58,7 +59,7 @@ set(CMAKE_CXX_STANDARD 20)
 # endif()
 
 if (NOT CMAKE_C_STANDARD)
-  set(CMAKE_C_STANDARD 90)
+set(CMAKE_C_STANDARD 90)
 endif()
 
 set(is-freebsd $<PLATFORM_ID:FreeBSD>)
@@ -99,6 +100,13 @@ option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
 option(V8_ENABLE_SPARKPLUG "Enable Sparkplug baseline JIT" ON)
 option(V8_ENABLE_TEMPORAL "Enable Temporal API support" OFF)
 option(V8_ENABLE_WEBASSEMBLY "Enable WebAssembly support" OFF)
+
+# Detect presence of libatomic in the current toolchain/sysroot. Some
+# hermetic toolchains omit it; in that case, avoid linking -latomic.
+set(V8_HAVE_LIBATOMIC 0)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  check_library_exists(atomic __atomic_fetch_add_8 "" V8_HAVE_LIBATOMIC)
+endif()
 
 set(
   v8_defines
@@ -178,6 +186,10 @@ target_include_directories(v8-i18n-support
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/src/objects
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
 )
+
+# Always use Proton's Abseil headers to avoid mismatches with vendored copy.
+set(V8_ABSEIL_INCLUDE_DIR "${proton_SOURCE_DIR}/contrib/abseil-cpp")
+message(STATUS "Force using Proton Abseil headers: ${V8_ABSEIL_INCLUDE_DIR}")
 
 file(GLOB api-sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS v8/src/api/*.cc)
 if(V8_ENABLE_WEBASSEMBLY)
@@ -419,17 +431,24 @@ if(enable-fPIC)
   target_compile_options(v8_base_without_compiler PRIVATE ${enable-fpic})
 endif()
 
-target_include_directories(v8_base_without_compiler
-  PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
-    $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
+  target_include_directories(v8_base_without_compiler
+    PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/v8/include>
+      $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8
+      ${V8_ABSEIL_INCLUDE_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/zlib
+      ${CMAKE_CURRENT_BINARY_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/shims
+  )
+
+  # Ensure compatibility shims are visible in C++ TUs for this lib.
+  target_compile_options(v8_base_without_compiler PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-include>
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/shims/compat_all.h>
+  )
 
 target_link_libraries(
   v8_base_without_compiler
@@ -484,7 +503,7 @@ target_include_directories(v8_compiler
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${V8_ABSEIL_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:v8-bytecodes-builtin-list,INTERFACE_INCLUDE_DIRECTORIES>>
@@ -767,13 +786,13 @@ target_link_libraries(v8_libplatform PRIVATE v8_libbase)
 
 add_library(v8_libsampler STATIC v8/src/libsampler/sampler.cc)
 
-target_include_directories(v8_libsampler
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
-)
+  target_include_directories(v8_libsampler
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+      ${V8_ABSEIL_INCLUDE_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
+  )
 
 target_compile_definitions(v8_libsampler PRIVATE $<${is-msvc}:_HAS_EXCEPTIONS=0>)
 target_compile_options(v8_libsampler PRIVATE ${disable-exceptions})
@@ -835,15 +854,16 @@ if(enable-fPIC)
   target_compile_options(v8_libbase PRIVATE ${enable-fpic})
 endif()
 target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
-target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp)
+target_include_directories(v8_libbase PRIVATE ${V8_ABSEIL_INCLUDE_DIR})
 target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src)
+target_include_directories(v8_libbase PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shims)
 target_sources(v8_libbase PRIVATE v8/third_party/highway/src/hwy/abort.cc)
 target_link_libraries(v8_libbase
   PRIVATE
     Threads::Threads
     $<${is-linux}:${CMAKE_DL_LIBS}>
     $<${is-linux}:rt>
-    $<${is-linux}:atomic>
+    $<$<AND:${is-linux},$<BOOL:${V8_HAVE_LIBATOMIC}>>:atomic>
     $<${is-win}:winmm>
     $<${is-win}:dbghelp>
   PUBLIC
@@ -868,7 +888,7 @@ if (NOT CMAKE_CROSSCOMPILING)
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/v8
       ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+      ${V8_ABSEIL_INCLUDE_DIR}
   )
 
   target_link_libraries(bytecode_builtins_list_generator v8_libbase)
@@ -1000,15 +1020,15 @@ if(enable-fPIC)
 endif()
 target_link_libraries(v8_torque_generated PRIVATE v8-bytecodes-builtin-list)
 
-target_include_directories(v8_torque_generated
-  PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
-)
+  target_include_directories(v8_torque_generated
+    PUBLIC
+      ${CMAKE_CURRENT_BINARY_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8
+      ${V8_ABSEIL_INCLUDE_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/highway/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/fp16/src/include
+  )
 
 # we use torque here
 set(_torque_cc_deps ${torque_dirs} ${torque_files_abs})
@@ -1053,7 +1073,7 @@ if (NOT CMAKE_CROSSCOMPILING)
   target_include_directories(torque PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/v8
     ${CMAKE_CURRENT_SOURCE_DIR}/v8/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/v8/third_party/abseil-cpp
+    ${V8_ABSEIL_INCLUDE_DIR}
   )
   target_link_libraries(torque PRIVATE v8_libbase)
 endif()
@@ -1109,7 +1129,12 @@ add_library(ch_contrib::v8_libsampler            ALIAS v8_libsampler           )
 add_library(ch_contrib::v8_initializers          ALIAS v8_initializers         )
 add_library(ch_contrib::v8_torque_generated      ALIAS v8_torque_generated     )
 # Abseil (vendored via v8/third_party/abseil-cpp) is required by V8 >=14.
-add_subdirectory(v8/third_party/abseil-cpp EXCLUDE_FROM_ALL)
+# Proton must provide Abseil; do not build V8's vendored copy to avoid
+# duplicate targets and API drift.
+if (NOT TARGET absl::core_headers)
+  message(FATAL_ERROR "Proton Abseil targets not found (absl::core_headers). Ensure contrib/abseil-cpp-cmake is included before v8-cmake.")
+endif()
+message(STATUS "Using Proton Abseil targets; skipping v8/third_party/abseil-cpp")
 
 # simdutf (vendored via v8/third_party/simdutf) provides base64 helpers used by V8 builtins.
 add_library(v8_simdutf STATIC v8/third_party/simdutf/simdutf.cpp)

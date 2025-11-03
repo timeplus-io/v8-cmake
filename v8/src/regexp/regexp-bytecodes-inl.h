@@ -51,7 +51,7 @@ static constexpr int kBytecodeAlignment = 4;
 // offset 1. All other operands are aligned to their own size if
 // they are "basic" types.
 template <RegExpBytecodeOperandType... operand_types>
-consteval auto CalculatePackedOffsets() {
+constexpr auto CalculatePackedOffsets() {
   constexpr int N = sizeof...(operand_types);
   constexpr std::array<uint8_t, N> kOperandSizes = {
       RegExpOperandTypeTraits<operand_types>::kSize...};
@@ -118,14 +118,14 @@ class RegExpBytecodeOperandsBase {
   using Traits = RegExpBytecodeOperandsTraits<OpTypes...>;
   static constexpr int kCount = Traits::kOperandCount;
   static constexpr int kTotalSize = Traits::kSize;
-  static consteval int Index(Operand op) { return static_cast<uint8_t>(op); }
-  static consteval int Size(Operand op) {
+  static constexpr int Index(Operand op) { return static_cast<uint8_t>(op); }
+  static constexpr int Size(Operand op) {
     return Traits::kOperandSizes[Index(op)];
   }
-  static consteval int Offset(Operand op) {
+  static constexpr int Offset(Operand op) {
     return Traits::kOperandOffsets[Index(op)];
   }
-  static consteval RegExpBytecodeOperandType Type(Operand op) {
+  static constexpr RegExpBytecodeOperandType Type(Operand op) {
     return Traits::kOperandTypes[Index(op)];
   }
 
