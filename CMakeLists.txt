@@ -623,6 +623,7 @@ if (NOT CMAKE_CROSSCOMPILING)
 endif()
 add_custom_command(
   COMMAND
+    MSAN_OPTIONS=report_umrs=0:halt_on_error=0
     ASAN_OPTIONS=detect_container_overflow=0
     ${V8_MKSNAPSHOT}
     --embedded_src ${CMAKE_CURRENT_BINARY_DIR}/embedded.S
@@ -1100,6 +1101,11 @@ if (NOT CMAKE_CROSSCOMPILING)
   target_compile_definitions(mksnapshot PRIVATE ${v8_defines} $<${is-msvc}:_HAS_EXCEPTIONS=0>)
   target_compile_options(mksnapshot PRIVATE ${disable-exceptions})
   target_include_directories(mksnapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/v8)
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # mksnapshot is a host build tool; disable MSan instrumentation to avoid false positives
+    target_compile_options(mksnapshot PRIVATE -fno-sanitize=memory)
+    target_link_options(mksnapshot PRIVATE -fno-sanitize=memory)
+  endif()
   target_link_libraries(mksnapshot
     PRIVATE
       v8_libbase
