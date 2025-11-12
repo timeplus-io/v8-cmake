@@ -43,11 +43,9 @@ def EnsurePortIsAvailable(addr=SOCKET_ADDR):
   # a race condition because an unrelated process could bind the port after we
   # unbind.
   sock = socket.socket()
-  try:
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
-    sock.bind(addr)
-  finally:
-    sock.close()
+  sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+  sock.bind(addr)
+  sock.close()
 
 def RspChecksum(data):
   checksum = 0
@@ -73,17 +71,17 @@ class GdbRspConnection(object):
       sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
       try:
         sock.connect(addr)
-        return sock
       except socket.error:
         # Retry after a delay.
-        sock.close()
         time.sleep(poll_time_in_seconds)
+      else:
+        return sock
     raise Exception('Could not connect to the debug stub in %i seconds'
                     % timeout_in_seconds)
 
   def _GetReply(self):
-    reply = b''
-    message_finished = re.compile(b'#[0-9a-fA-F]{2}')
+    reply = ''
+    message_finished = re.compile('#[0-9a-fA-F]{2}')
     while True:
       data = self._socket.recv(1024)
       if len(data) == 0:
@@ -92,23 +90,23 @@ class GdbRspConnection(object):
       reply += data
       if message_finished.match(reply[-3:]):
         break
-    match = re.match(br'\+?\$([^#]*)#([0-9a-fA-F]{2})$', reply)
+    match = re.match('\+?\$([^#]*)#([0-9a-fA-F]{2})$', reply)
     if match is None:
       raise AssertionError('Unexpected reply message: %r' % reply)
-    reply_body = match.group(1).decode('ascii')
-    checksum = match.group(2).decode('ascii')
+    reply_body = match.group(1)
+    checksum = match.group(2)
     expected_checksum = '%02x' % RspChecksum(reply_body)
     if checksum != expected_checksum:
       raise AssertionError('Bad RSP checksum: %r != %r' %
                            (checksum, expected_checksum))
     # Send acknowledgement.
-    self._socket.send(b'+')
+    self._socket.send('+')
     return reply_body
 
   # Send an rsp message, but don't wait for or expect a reply.
   def RspSendOnly(self, data):
     msg = '$%s#%02x' % (data, RspChecksum(data))
-    return self._socket.send(msg.encode('ascii'))
+    return self._socket.send(msg)
 
   def RspRequest(self, data):
     self.RspSendOnly(data)
@@ -143,19 +141,15 @@ def KillProcess(process):
 class LaunchDebugStub(object):
   def __init__(self, command):
     self._proc = PopenDebugStub(command)
-    self._connection = None
 
   def __enter__(self):
     try:
-      self._connection = GdbRspConnection()
-      return self._connection
+      return GdbRspConnection()
     except:
       KillProcess(self._proc)
       raise
 
   def __exit__(self, exc_type, exc_value, traceback):
-    if self._connection:
-      self._connection.Close()
     KillProcess(self._proc)
 
 
@@ -213,15 +207,14 @@ def GetLoadedModules(connection):
     AssertEquals(library.tag, 'library')
     section = library.find('section')
     address = section.get('address')
-    if address is not None:
-      assert int(address) > 0
-      modules[int(address)] = library.get('name')
+    assert long(address) > 0
+    modules[long(address)] = library.get('name')
   return modules
 
 def GetLoadedModuleAddress(connection):
   modules = GetLoadedModules(connection)
   assert len(modules) > 0
-  return list(modules.keys())[0]
+  return modules.keys()[0]
 
 def ReadCodeMemory(connection, address, size):
   reply = connection.RspRequest('m%x,%x' % (address, size))

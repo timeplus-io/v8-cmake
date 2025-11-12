@@ -214,16 +214,18 @@ static Maybe<bool> UnscopableLookup(LookupIterator* it, bool is_with_context) {
   if (!is_with_context || found.IsNothing() || !found.FromJust()) return found;
 
   DirectHandle<Object> unscopables;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, unscopables,
       JSReceiver::GetProperty(isolate, Cast<JSReceiver>(it->GetReceiver()),
-                              isolate->factory()->unscopables_symbol()));
+                              isolate->factory()->unscopables_symbol()),
+      Nothing<bool>());
   if (!IsJSReceiver(*unscopables)) return Just(true);
   DirectHandle<Object> blocklist;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, blocklist,
       JSReceiver::GetProperty(isolate, Cast<JSReceiver>(unscopables),
-                              it->name()));
+                              it->name()),
+      Nothing<bool>());
   return Just(!Object::BooleanValue(*blocklist, isolate));
 }
 
@@ -460,9 +462,9 @@ Handle<Object> Context::Lookup(Handle<Context> context, Handle<String> name,
         IsEphemeronHashTable(isolate->heap()->locals_block_list_cache())) {
       DirectHandle<ScopeInfo> scope_info =
           direct_handle(context->scope_info(), isolate);
-      Tagged<UnionOf<TheHole, StringSet>> maybe_outer_block_list =
+      Tagged<Object> maybe_outer_block_list =
           isolate->LocalsBlockListCacheGet(scope_info);
-      if (!IsTheHole(maybe_outer_block_list) &&
+      if (IsStringSet(maybe_outer_block_list) &&
           Cast<StringSet>(maybe_outer_block_list)->Has(isolate, name)) {
         if (v8_flags.trace_contexts) {
           PrintF(" - name is blocklisted. Aborting.\n");
@@ -525,7 +527,7 @@ DirectHandle<Object> Context::Get(DirectHandle<Context> context, int index,
                                   Isolate* isolate) {
   DirectHandle<Object> value =
       handle(context->get(index, kRelaxedLoad), isolate);
-  if (IsTheHole(*value) || !Is<ContextCell>(value)) {
+  if (!Is<ContextCell>(value)) {
     return value;
   }
   DCHECK(context->HasContextCells());
@@ -535,9 +537,6 @@ DirectHandle<Object> Context::Get(DirectHandle<Context> context, int index,
     case ContextCell::kSmi:
       return handle(cell->tagged_value(), isolate);
     case ContextCell::kInt32:
-      if (Smi::IsValid(cell->int32_value())) {
-        return handle(Smi::FromInt(cell->int32_value()), isolate);
-      }
       return isolate->factory()->NewHeapNumber(
           static_cast<double>(cell->int32_value()));
     case ContextCell::kFloat64:

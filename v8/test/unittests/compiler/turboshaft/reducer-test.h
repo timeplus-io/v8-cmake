@@ -24,10 +24,6 @@ class TestInstance {
 
     bool IsEmpty() const { return generated_output.empty(); }
 
-    bool Is(OpIndex index) const {
-      return generated_output.size() == 1 && generated_output.contains(index);
-    }
-
     template <typename Op>
     bool Contains() const {
       for (OpIndex o : generated_output) {
@@ -67,27 +63,11 @@ class TestInstance {
     // Generate a function prolog
     Block* start_block = instance.Asm().NewBlock();
     instance.Asm().Bind(start_block);
+    instance.Asm().Parameter(3, RegisterRepresentation::Tagged(), "%context");
+    instance.Asm().Parameter(0, RegisterRepresentation::Tagged(), "%this");
     for (int i = 0; i < parameter_count; ++i) {
       instance.parameters_.push_back(
-          instance.Asm().Parameter(i, RegisterRepresentation::Tagged()));
-    }
-    builder(instance);
-    return instance;
-  }
-
-  template <typename Builder>
-  static TestInstance CreateFromGraph(
-      PipelineData* data,
-      base::Vector<const RegisterRepresentation> parameter_reps,
-      const Builder& builder, Isolate* isolate, Zone* zone) {
-    auto graph = std::make_unique<Graph>(zone);
-    TestInstance instance(data, std::move(graph), isolate, zone);
-    // Generate a function prolog
-    Block* start_block = instance.Asm().NewBlock();
-    instance.Asm().Bind(start_block);
-    for (size_t i = 0; i < parameter_reps.size(); ++i) {
-      instance.parameters_.push_back(
-          instance.Asm().Parameter(static_cast<int>(i), parameter_reps[i]));
+          instance.Asm().Parameter(1 + i, RegisterRepresentation::Tagged()));
     }
     builder(instance);
     return instance;
@@ -123,12 +103,9 @@ class TestInstance {
     }
   }
 
-  template <typename T = Object>
-  V<T> GetParameter(int index) {
+  V<Object> GetParameter(int index) {
     DCHECK_LE(0, index);
     DCHECK_LT(index, parameters_.size());
-    DCHECK(v_traits<T>::allows_representation(
-        graph_->Get(parameters_[index]).Cast<ParameterOp>().rep));
     return parameters_[index];
   }
   OpIndex BuildFrameState() {
@@ -212,9 +189,6 @@ class TestInstance {
     }
     PrintTurboshaftGraphForTurbolizer(*stream_, graph(), phase_name, nullptr,
                                       zone_);
-    // Flush the output stream to get a proper file even when the test crashes
-    // afterwards.
-    stream_->flush();
   }
 
  private:
@@ -238,19 +212,9 @@ class TestInstance {
 
 class ReducerTest : public TestWithNativeContextAndZone {
  public:
-  using Assembler = TestInstance::Assembler;
-
   template <typename Builder>
   TestInstance CreateFromGraph(int parameter_count, const Builder& builder) {
     return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_count,
-                                         builder, isolate(), zone());
-  }
-
-  template <typename Builder>
-  TestInstance CreateFromGraph(
-      base::Vector<const RegisterRepresentation> parameter_reps,
-      const Builder& builder) {
-    return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_reps,
                                          builder, isolate(), zone());
   }
 

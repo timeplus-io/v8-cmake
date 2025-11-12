@@ -272,6 +272,26 @@ struct WasmExport {
   uint32_t index = 0;         // index into the respective space.
 };
 
+enum class WasmCompilationHintStrategy : uint8_t {
+  kDefault = 0,
+  kLazy = 1,
+  kEager = 2,
+  kLazyBaselineEagerTopTier = 3,
+};
+
+enum class WasmCompilationHintTier : uint8_t {
+  kDefault = 0,
+  kBaseline = 1,
+  kOptimized = 2,
+};
+
+// Static representation of a wasm compilation hint
+struct WasmCompilationHint {
+  WasmCompilationHintStrategy strategy;
+  WasmCompilationHintTier baseline_tier;
+  WasmCompilationHintTier top_tier;
+};
+
 #define SELECT_WASM_COUNTER(counters, origin, prefix, suffix)     \
   ((origin) == kWasmOrigin ? (counters)->prefix##_wasm_##suffix() \
                            : (counters)->prefix##_asm_##suffix())
@@ -642,12 +662,6 @@ struct WasmTable {
   bool is_table64() const { return address_type == AddressType::kI64; }
 };
 
-struct CompilationPriority {
-  uint32_t compilation_priority;
-  int optimization_priority;
-};
-using CompilationPriorities = std::unordered_map<uint32_t, CompilationPriority>;
-
 // Static representation of a module.
 struct V8_EXPORT_PRIVATE WasmModule {
   // ================ Fields ===================================================
@@ -707,8 +721,8 @@ struct V8_EXPORT_PRIVATE WasmModule {
   std::vector<WasmTag> tags;
   std::vector<WasmStringRefLiteral> stringref_literals;
   std::vector<WasmElemSegment> elem_segments;
+  std::vector<WasmCompilationHint> compilation_hints;
   BranchHintInfo branch_hints;
-  CompilationPriorities compilation_priorities;
   // Pairs of module offsets and mark id.
   std::vector<std::pair<uint32_t, uint32_t>> inst_traces;
 
@@ -835,7 +849,9 @@ struct V8_EXPORT_PRIVATE WasmModule {
 
   CanonicalTypeIndex canonical_sig_id(ModuleTypeIndex index) const {
     DCHECK(has_signature(index));
-    return canonical_type_id(index);
+    size_t num_types = isorecursive_canonical_type_ids.size();
+    V8_ASSUME(index.index < num_types);
+    return isorecursive_canonical_type_ids[index.index];
   }
 
   uint64_t signature_hash(const TypeCanonicalizer*,
@@ -926,13 +942,6 @@ struct V8_EXPORT_PRIVATE WasmModule {
 
   base::Vector<const WasmFunction> declared_functions() const {
     return base::VectorOf(functions) + num_imported_functions;
-  }
-
-  std::optional<CompilationPriority> GetCompilationPriority(
-      uint32_t func_index) const {
-    auto iterator = compilation_priorities.find(func_index);
-    if (iterator == compilation_priorities.end()) return {};
-    return iterator->second;
   }
 
 #if V8_ENABLE_DRUMBRAKE

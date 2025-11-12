@@ -32,7 +32,6 @@ static_assert(0 == ToZeroBasedIndex(NumericKind::kI32));
 
 }  // namespace value_type_impl
 
-static_assert(kWasmVoid.is_void());
 static_assert(kWasmBottom.is_bottom());
 static_assert(kWasmTop.is_top());
 
@@ -236,13 +235,12 @@ const wasm::FunctionSig* GetI32Sig(Zone* zone, const wasm::FunctionSig* sig) {
   return ReplaceTypeInSig(zone, sig, wasm::kWasmI64, wasm::kWasmI32, 2);
 }
 
-const CanonicalSig* CanonicalSig::Builder::Get(CanonicalTypeIndex index) const {
+CanonicalSig* CanonicalSig::Builder::Get() const {
   CanonicalSig* sig =
-      static_cast<const SignatureBuilder<CanonicalSig, CanonicalValueType>*>(
-          this)
+      reinterpret_cast<
+          const SignatureBuilder<CanonicalSig, CanonicalValueType>*>(this)
           ->Get();
   sig->signature_hash_ = wasm::SignatureHasher::Hash(sig);
-  sig->index_ = index;
   return sig;
 }
 

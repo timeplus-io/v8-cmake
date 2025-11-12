@@ -453,17 +453,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::BinaryOperation(Token::Value op,
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::Add_StringConstant_Internalize(
-    Token::Value op, Register reg, int feedback_slot,
-    AddStringConstantAndInternalizeVariant as_variant) {
+BytecodeArrayBuilder& BytecodeArrayBuilder::Add_LhsIsStringConstant_Internalize(
+    Token::Value op, Register reg, int feedback_slot) {
   DCHECK_EQ(op, Token::kAdd);
-#ifdef DEBUG
-  using ASVariant = AddStringConstantAndInternalizeVariant;
-  DCHECK(as_variant == ASVariant::kLhsIsStringConstant ||
-         as_variant == ASVariant::kRhsIsStringConstant);
-#endif  // DEBUG
-  OutputAdd_StringConstant_Internalize(reg, feedback_slot,
-                                       static_cast<uint8_t>(as_variant));
+  OutputAdd_LhsIsStringConstant_Internalize(reg, feedback_slot);
   return *this;
 }
 
@@ -761,12 +754,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::MoveRegister(Register from,
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::SetPrototypeProperties(
-    size_t index_obj) {
-  OutputSetPrototypeProperties(index_obj);
-  return *this;
-}
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(const AstRawString* name,
                                                        int feedback_slot,
                                                        TypeofMode typeof_mode) {
@@ -944,14 +931,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadIteratorProperty(
 BytecodeArrayBuilder& BytecodeArrayBuilder::GetIterator(
     Register object, int load_feedback_slot, int call_feedback_slot) {
   OutputGetIterator(object, load_feedback_slot, call_feedback_slot);
-  return *this;
-}
-
-BytecodeArrayBuilder& BytecodeArrayBuilder::ForOfNext(Register object,
-                                                      Register next,
-                                                      RegisterList value_done) {
-  DCHECK_EQ(2, value_done.register_count());
-  OutputForOfNext(object, next, value_done);
   return *this;
 }
 

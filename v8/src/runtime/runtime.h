@@ -313,13 +313,11 @@ constexpr bool CanTriggerGC(T... properties) {
   F(TerminateExecution, 0, 1)                              \
   F(Typeof, 1, 1, RuntimeCallProperty::kCannotTriggerGC)   \
   F(UnwindAndFindExceptionHandler, 0, 1)                   \
-  I(AddLhsIsStringConstantInternalize, 4, 1)               \
-  I(AddRhsIsStringConstantInternalize, 4, 1)
+  I(AddLhsIsStringConstantInternalize, 4, 1)
 
 #define FOR_EACH_INTRINSIC_LITERALS(F, I) \
   F(CreateArrayLiteral, 4, 1)             \
   F(CreateObjectLiteral, 4, 1)            \
-  F(SetPrototypeProperties, 2, 1)         \
   F(CreateRegExpLiteral, 4, 1)
 
 #define FOR_EACH_INTRINSIC_MODULE(F, I)    \
@@ -511,7 +509,6 @@ constexpr bool CanTriggerGC(T... properties) {
   F(InternalizeString, 1, 1)                         \
   F(StringAdd, 2, 1)                                 \
   F(StringAdd_LhsIsStringConstant_Internalize, 4, 1) \
-  F(StringAdd_RhsIsStringConstant_Internalize, 4, 1) \
   F(StringBuilderConcat, 3, 1)                       \
   F(StringCharCodeAt, 2, 1)                          \
   F(StringCodePointAt, 2, 1)                         \
@@ -538,7 +535,7 @@ constexpr bool CanTriggerGC(T... properties) {
   F(SymbolIsPrivate, 1, 1)
 
 #define FOR_EACH_INTRINSIC_TEST(F, I)                                    \
-  F(Abort, 1, 1)                                                         \
+  F(Abort, 1, 1, RuntimeCallProperty::kCannotTriggerGC)                  \
   F(AbortCSADcheck, 1, 1)                                                \
   F(AbortJS, 1, 1)                                                       \
   F(ActiveTierIsIgnition, 1, 1)                                          \
@@ -731,8 +728,6 @@ constexpr bool CanTriggerGC(T... properties) {
   F(WasmArrayNewSegment, 5, 1)                \
   F(WasmArrayInitSegment, 6, 1)               \
   F(WasmAllocateSuspender, 0, 1)              \
-  F(WasmAllocateContinuation, 2, 1)           \
-  F(ClearWasmSuspenderResumeField, 1, 1)      \
   F(WasmCastToSpecialPrimitiveArray, 2, 1)    \
   F(WasmStringNewSegmentWtf8, 5, 1)           \
   F(WasmStringNewWtf8, 5, 1)                  \
@@ -751,15 +746,13 @@ constexpr bool CanTriggerGC(T... properties) {
   F(WasmStringViewWtf8Slice, 3, 1)            \
   F(WasmStringFromCodePoint, 1, 1)            \
   F(WasmStringHash, 1, 1)                     \
-  F(WasmSubstring, 3, 1)                      \
-  F(WasmConfigureAllPrototypes, 4, 1)         \
-  F(WasmConfigureAllPrototypesOpt, 3, 1)      \
-  F(DebugCollectWasmCoverage, 0, 1)
+  F(WasmSubstring, 3, 1)
 
 #define FOR_EACH_INTRINSIC_WASM_TEST(F, I)                      \
   F(BuildRefTypeBitfield, 2, 1)                                 \
   F(CheckIsOnCentralStack, 0, 1)                                \
   F(CountUnoptimizedWasmToJSWrapper, 1, 1)                      \
+  F(DeserializeWasmModule, 2, 1)                                \
   F(DisallowWasmCodegen, 1, 1)                                  \
   F(FlushLiftoffCode, 0, 1)                                     \
   F(WasmTriggerCodeGC, 0, 1)                                    \
@@ -772,12 +765,14 @@ constexpr bool CanTriggerGC(T... properties) {
   F(HasUnoptimizedWasmToJSWrapper, 1, 1)                        \
   F(IsAsmWasmCode, 1, 1)                                        \
   F(IsLiftoffFunction, 1, 1)                                    \
+  F(IsThreadInWasm, 0, 1)                                       \
   F(IsTurboFanFunction, 1, 1)                                   \
   F(IsUncompiledWasmFunction, 1, 1)                             \
   F(IsWasmCode, 1, 1)                                           \
   F(IsWasmDebugFunction, 1, 1)                                  \
   F(IsWasmPartialOOBWriteNoop, 0, 1)                            \
   F(IsWasmTrapHandlerEnabled, 0, 1)                             \
+  F(SerializeWasmModule, 1, 1)                                  \
   F(SetWasmCompileControls, 2, 1)                               \
   F(SetWasmImportedStringsEnabled, 1, 1)                        \
   F(SetWasmInstantiateControls, 0, 1)                           \
@@ -789,6 +784,7 @@ constexpr bool CanTriggerGC(T... properties) {
   IF_V8_WASM_RANDOM_FUZZERS(F, WasmGenerateRandomModule, -1, 1) \
   F(WasmGetNumberOfInstances, 1, 1)                             \
   F(WasmLeaveDebugging, 0, 1)                                   \
+  F(WasmNull, 0, 1)                                             \
   F(WasmNumCodeSpaces, 1, 1)                                    \
   F(WasmStruct, 0, 1)                                           \
   F(WasmSwitchToTheCentralStackCount, 0, 1)                     \
@@ -796,7 +792,6 @@ constexpr bool CanTriggerGC(T... properties) {
   F(WasmTraceEnter, 0, 1)                                       \
   F(WasmTraceExit, 1, 1)                                        \
   F(WasmTraceMemory, 1, 1)                                      \
-  F(WasmTraceGlobal, 1, 1)                                      \
   F(WasmTriggerTierUpForTesting, 1, 1)
 
 #define FOR_EACH_INTRINSIC_WASM_DRUMBRAKE_TEST(F, I) \
@@ -1097,27 +1092,28 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, Runtime::FunctionId);
 enum class OptimizationStatus {
   kIsFunction = 1 << 0,
   kNeverOptimize = 1 << 1,
-  kMaybeDeopted = 1 << 2,
-  kOptimized = 1 << 3,
-  kMaglevved = 1 << 4,
-  kTurboFanned = 1 << 5,
-  kInterpreted = 1 << 6,
-  kMarkedForOptimization = 1 << 7,
-  kMarkedForConcurrentOptimization = 1 << 8,
-  kOptimizingConcurrently = 1 << 9,
-  kIsExecuting = 1 << 10,
-  kTopmostFrameIsTurboFanned = 1 << 11,
-  kLiteMode = 1 << 12,
-  kMarkedForDeoptimization = 1 << 13,
-  kBaseline = 1 << 14,
-  kTopmostFrameIsInterpreted = 1 << 15,
-  kTopmostFrameIsBaseline = 1 << 16,
-  kIsLazy = 1 << 17,
-  kTopmostFrameIsMaglev = 1 << 18,
-  kOptimizeOnNextCallOptimizesToMaglev = 1 << 19,
-  kOptimizeMaglevOptimizesToTurbofan = 1 << 20,
-  kMarkedForMaglevOptimization = 1 << 21,
-  kMarkedForConcurrentMaglevOptimization = 1 << 22,
+  kAlwaysOptimize = 1 << 2,
+  kMaybeDeopted = 1 << 3,
+  kOptimized = 1 << 4,
+  kMaglevved = 1 << 5,
+  kTurboFanned = 1 << 6,
+  kInterpreted = 1 << 7,
+  kMarkedForOptimization = 1 << 8,
+  kMarkedForConcurrentOptimization = 1 << 9,
+  kOptimizingConcurrently = 1 << 10,
+  kIsExecuting = 1 << 11,
+  kTopmostFrameIsTurboFanned = 1 << 12,
+  kLiteMode = 1 << 13,
+  kMarkedForDeoptimization = 1 << 14,
+  kBaseline = 1 << 15,
+  kTopmostFrameIsInterpreted = 1 << 16,
+  kTopmostFrameIsBaseline = 1 << 17,
+  kIsLazy = 1 << 18,
+  kTopmostFrameIsMaglev = 1 << 19,
+  kOptimizeOnNextCallOptimizesToMaglev = 1 << 20,
+  kOptimizeMaglevOptimizesToTurbofan = 1 << 21,
+  kMarkedForMaglevOptimization = 1 << 22,
+  kMarkedForConcurrentMaglevOptimization = 1 << 23,
 };
 
 // The number of isolates used for testing in d8.

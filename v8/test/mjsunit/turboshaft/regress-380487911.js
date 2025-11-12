@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --allow-natives-syntax --turboshaft-string-concat-escape-analysis
-// Flags: --turbofan
+// Flags: --turbofan --no-always-turbofan
 
 // This test ensures that string concat escape analysis does not try to create a
 // FrameState with more inputs that the maximum number of inputs allowed in

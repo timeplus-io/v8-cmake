@@ -43,10 +43,6 @@ class WasmImportWrapperCache {
   class CacheKeyHash {
    public:
     size_t operator()(const CacheKey& key) const {
-#if V8_HASHES_COLLIDE
-      if (v8_flags.hashes_collide) return base::kCollidingHash;
-#endif  // V8_HASHES_COLLIDE
-
       return base::hash_combine(static_cast<uint8_t>(key.kind),
                                 key.type_index.index, key.expected_arity);
     }
@@ -76,20 +72,18 @@ class WasmImportWrapperCache {
   void Free(std::vector<WasmCode*>& wrappers);
 
   V8_EXPORT_PRIVATE std::shared_ptr<WasmImportWrapperHandle> Get(
-      Isolate* isolate, ImportCallKind kind, int expected_arity,
-      Suspend suspend, const wasm::CanonicalSig* sig);
+      Isolate* isolate, ImportCallKind kind, CanonicalTypeIndex type_index,
+      int expected_arity, Suspend suspend, const wasm::CanonicalSig* sig);
 
   V8_EXPORT_PRIVATE
   std::shared_ptr<WasmImportWrapperHandle> GetCompiled(
-      Isolate* isolate, ImportCallKind kind, int expected_arity,
-      Suspend suspend, const wasm::CanonicalSig* sig);
+      Isolate* isolate, ImportCallKind kind, CanonicalTypeIndex type_index,
+      int expected_arity, Suspend suspend, const wasm::CanonicalSig* sig);
 
-#ifdef V8_ENABLE_TURBOFAN
   V8_EXPORT_PRIVATE
   std::shared_ptr<WasmImportWrapperHandle> CompileWasmJsFastCallWrapper(
       Isolate* isolate, DirectHandle<JSReceiver> callable,
       const wasm::CanonicalSig* sig);
-#endif
 
   WasmCode* Lookup(Address pc) const;
 
@@ -138,9 +132,11 @@ class WasmImportWrapperHandle {
   ~WasmImportWrapperHandle();
 
   WasmCodePointer code_pointer() const { return code_pointer_; }
-  const WasmCode* code() const { return code_.load(std::memory_order_acquire); }
+  const WasmCode& code() const {
+    return *code_.load(std::memory_order_relaxed);
+  }
   bool has_code() const {
-    return code_.load(std::memory_order_acquire) != nullptr;
+    return code_.load(std::memory_order_relaxed) != nullptr;
   }
 
  private:

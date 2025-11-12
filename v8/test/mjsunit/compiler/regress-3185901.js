@@ -25,7 +25,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Inlined function call in a test context.
+// Inlined function call in a test context.  Should never crash even
+// with --always-turbofan.
 var x;
 
 function f() { if (g()) { } }

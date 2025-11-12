@@ -353,7 +353,7 @@ class JSToWasmWrapperFrameConstants : public TypedFrameConstants {
 
 // Fixed frame slots used by the ReturnPromiseOnSuspendAsm wrapper
 // and the WasmResume wrapper.
-class WasmJspiFrameConstants : public JSToWasmWrapperFrameConstants {
+class StackSwitchFrameConstants : public JSToWasmWrapperFrameConstants {
  public:
   //  StackSwitching stack layout
   //  ------+-----------------+----------------------

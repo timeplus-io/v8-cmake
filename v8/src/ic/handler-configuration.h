@@ -61,8 +61,7 @@ V8_OBJECT class LoadHandler final : public DataHandler {
     kSlow,
     kProxy,
     kNonExistent,
-    kModuleExport,
-    kGeneric,  // Used for keyed loads with "1 map, many property names".
+    kModuleExport
   };
   using KindBits = base::BitField<Kind, 0, 4>;
 
@@ -160,9 +159,7 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   static inline Handle<Smi> LoadInterceptor(Isolate* isolate);
 
   // Creates a Smi-handler for loading a property from an object.
-  static inline Handle<Smi> LoadSlow(Isolate* isolate);     // Runtime call.
-  static inline Handle<Smi> LoadGeneric(Isolate* isolate);  // Generic stub.
-  static inline Tagged<Smi> LoadGeneric();
+  static inline Handle<Smi> LoadSlow(Isolate* isolate);
 
   // Creates a Smi-handler for loading a field from fast object.
   static inline Handle<Smi> LoadField(Isolate* isolate, FieldIndex field_index);
@@ -264,7 +261,6 @@ V8_OBJECT class StoreHandler final : public DataHandler {
     kInterceptor,
     kSlow,
     kProxy,
-    kGeneric,     // Used for keyed stores with "1 map, many property names".
     kKindsNumber  // Keep last
   };
   using KindBits = base::BitField<Kind, 0, 4>;
@@ -370,12 +366,9 @@ V8_OBJECT class StoreHandler final : public DataHandler {
       Isolate* isolate, KeyedAccessStoreMode mode);
 
   // Creates a Smi-handler for storing a property.
-  // "Slow" calls the runtime, "Generic" uses the generic KeyedStore builtin.
   static inline Handle<Smi> StoreSlow(
       Isolate* isolate,
       KeyedAccessStoreMode store_mode = KeyedAccessStoreMode::kInBounds);
-  static inline Handle<Smi> StoreGeneric(Isolate* isolate);
-  static inline Tagged<Smi> StoreGeneric();
 
   // Creates a Smi-handler for storing a property on a proxy.
   static inline Handle<Smi> StoreProxy(Isolate* isolate);

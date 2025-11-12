@@ -355,12 +355,7 @@ std::optional<BailoutReason> InstructionSelectionPhase::Run(
           : InstructionSelector::kDisableRootsRelativeAddressing,
       data->info()->trace_turbo_json()
           ? InstructionSelector::kEnableTraceTurboJson
-          : InstructionSelector::kDisableTraceTurboJson,
-      // For now only ensure a deterministic NaN pattern for Wasm code. The spec
-      // does not mandate it, but we want it for differential fuzzing.
-      // TODO(353475584): This will have to be refined for Wasm-in-JS inlining.
-      data->is_wasm() ? InstructionSelector::kEnsureDeterministicNan
-                      : InstructionSelector::kNoDeterministicNan);
+          : InstructionSelector::kDisableTraceTurboJson);
   if (std::optional<BailoutReason> bailout = selector.SelectInstructions()) {
     return bailout;
   }

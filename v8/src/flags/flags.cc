@@ -1113,6 +1113,10 @@ void FlagList::ResolveContradictionsWhenFuzzing() {
       CONTRADICTION(always_osr_from_maglev, lite_mode),
       CONTRADICTION(always_osr_from_maglev, turbofan),
       CONTRADICTION(always_osr_from_maglev, turboshaft),
+      CONTRADICTION(always_turbofan, disable_optimizing_compilers),
+      CONTRADICTION(always_turbofan, jitless),
+      CONTRADICTION(always_turbofan, lite_mode),
+      CONTRADICTION(always_turbofan, turboshaft),
       CONTRADICTION(assert_types, stress_concurrent_inlining),
       CONTRADICTION(assert_types, stress_concurrent_inlining_attach_code),
       CONTRADICTION(disable_optimizing_compilers, maglev_future),
@@ -1122,7 +1126,6 @@ void FlagList::ResolveContradictionsWhenFuzzing() {
       CONTRADICTION(disable_optimizing_compilers, stress_maglev),
       CONTRADICTION(disable_optimizing_compilers,
                     turboshaft_wasm_in_js_inlining),
-      CONTRADICTION(jit_fuzzing, max_lazy),
       CONTRADICTION(jitless, maglev_future),
       CONTRADICTION(jitless, stress_concurrent_inlining),
       CONTRADICTION(jitless, stress_concurrent_inlining_attach_code),
@@ -1145,12 +1148,6 @@ void FlagList::ResolveContradictionsWhenFuzzing() {
       // List of flags that shouldn't be used when --fuzzing or
       // --correctness-fuzzer-suppressions is passed. These flags will be reset
       // to their defaults.
-
-      // https://crbug.com/419424082
-      RESET_WHEN_CORRECTNESS_FUZZING(default_to_experimental_regexp_engine),
-      RESET_WHEN_CORRECTNESS_FUZZING(enable_experimental_regexp_engine),
-      RESET_WHEN_CORRECTNESS_FUZZING(
-          experimental_regexp_engine_capture_group_opt),
 
       // https://crbug.com/369652671
       RESET_WHEN_CORRECTNESS_FUZZING(stress_lazy_compilation),

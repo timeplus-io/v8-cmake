@@ -145,6 +145,7 @@ TEST_F(FeedbackVectorTest, VectorICMetadata) {
 
 TEST_F(FeedbackVectorTest, VectorCallICStates) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -173,6 +174,7 @@ TEST_F(FeedbackVectorTest, VectorCallICStates) {
 // Test the Call IC states transfer with Function.prototype.apply
 TEST_F(FeedbackVectorTest, VectorCallICStateApply) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -212,6 +214,7 @@ TEST_F(FeedbackVectorTest, VectorCallICStateApply) {
 
 TEST_F(FeedbackVectorTest, VectorCallFeedback) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -241,6 +244,7 @@ TEST_F(FeedbackVectorTest, VectorCallFeedback) {
 
 TEST_F(FeedbackVectorTest, VectorPolymorphicCallFeedback) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
   v8_flags.lazy_feedback_allocation = false;
 
@@ -271,6 +275,7 @@ TEST_F(FeedbackVectorTest, VectorPolymorphicCallFeedback) {
 
 TEST_F(FeedbackVectorTest, VectorCallFeedbackForArray) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -299,6 +304,7 @@ TEST_F(FeedbackVectorTest, VectorCallFeedbackForArray) {
 
 TEST_F(FeedbackVectorTest, VectorCallCounts) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -329,6 +335,7 @@ TEST_F(FeedbackVectorTest, VectorCallCounts) {
 
 TEST_F(FeedbackVectorTest, VectorConstructCounts) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -361,6 +368,7 @@ TEST_F(FeedbackVectorTest, VectorConstructCounts) {
 
 TEST_F(FeedbackVectorTest, VectorSpeculationMode) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -395,6 +403,7 @@ TEST_F(FeedbackVectorTest, VectorSpeculationMode) {
 TEST_F(FeedbackVectorTest, VectorCallSpeculationModeAndFeedbackContent) {
   if (!i::v8_flags.use_ic) return;
   if (!i::v8_flags.turbofan) return;
+  if (i::v8_flags.always_turbofan) return;
   if (i::v8_flags.jitless) return;
   v8_flags.allow_natives_syntax = true;
 
@@ -428,6 +437,7 @@ TEST_F(FeedbackVectorTest, VectorCallSpeculationModeAndFeedbackContent) {
 
 TEST_F(FeedbackVectorTest, VectorLoadICStates) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -480,6 +490,7 @@ TEST_F(FeedbackVectorTest, VectorLoadICStates) {
 
 TEST_F(FeedbackVectorTest, VectorLoadGlobalICSlotSharing) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -523,6 +534,7 @@ TEST_F(FeedbackVectorTest, VectorLoadGlobalICSlotSharing) {
 
 TEST_F(FeedbackVectorTest, VectorLoadICOnSmi) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -578,6 +590,7 @@ TEST_F(FeedbackVectorTest, VectorLoadICOnSmi) {
 
 TEST_F(FeedbackVectorTest, ReferenceContextAllocatesNoSlots) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -721,6 +734,7 @@ TEST_F(FeedbackVectorTest, ReferenceContextAllocatesNoSlots) {
 
 TEST_F(FeedbackVectorTest, VectorStoreICBasic) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());
@@ -746,6 +760,7 @@ TEST_F(FeedbackVectorTest, VectorStoreICBasic) {
 
 TEST_F(FeedbackVectorTest, DefineNamedOwnIC) {
   if (!i::v8_flags.use_ic) return;
+  if (i::v8_flags.always_turbofan) return;
   v8_flags.allow_natives_syntax = true;
 
   v8::HandleScope scope(v8_isolate());

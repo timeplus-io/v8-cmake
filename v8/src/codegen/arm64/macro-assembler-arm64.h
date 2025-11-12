@@ -620,10 +620,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
     autib1716();
   }
 
-  // MOPS
-  inline void Cpy(const Register& rd, const Register& rs, const Register& rn);
-  inline void Set(const Register& rd, const Register& rn, const Register& rs);
-
   inline void Dmb(BarrierDomain domain, BarrierType type);
   inline void Dsb(BarrierDomain domain, BarrierType type);
   inline void Isb();
@@ -1044,11 +1040,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadFeedbackVector(Register dst, Register closure, Register scratch,
                           Label* fbv_undef);
 
-  void LoadInterpreterDataBytecodeArray(Register destination,
-                                        Register interpreter_data);
-  void LoadInterpreterDataInterpreterTrampoline(Register destination,
-                                                Register interpreter_data);
-
   inline void Fmov(VRegister fd, VRegister fn);
   inline void Fmov(VRegister fd, Register rn);
   // Provide explicit double and float interfaces for FP immediate moves, rather
@@ -1265,14 +1256,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   inline void Abs(const Register& rd, const Register& rn);
   inline void Cnt(const Register& rd, const Register& rn);
   inline void Ctz(const Register& rd, const Register& rn);
-  inline void Smax(const Register& rd, const Register& rn,
-                   const Operand& operand);
-  inline void Smin(const Register& rd, const Register& rn,
-                   const Operand& operand);
-  inline void Umax(const Register& rd, const Register& rn,
-                   const Operand& operand);
-  inline void Umin(const Register& rd, const Register& rn,
-                   const Operand& operand);
 
   // Poke 'src' onto the stack. The offset is in bytes. The stack pointer must
   // be 16 byte aligned.
@@ -1666,14 +1649,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // pointer table. Otherwise they are regular tagged fields.
   void LoadTrustedPointerField(Register destination, MemOperand field_operand,
                                IndirectPointerTag tag);
-  // As above, but for kUnknownIndirectPointerTag. The type of the loaded object
-  // is unknown, so this helper will check for a series of expected types and
-  // jump to the given labels if the loaded object has a matching type. If the
-  // object has none of the expected types, the destination register will be
-  // zeroed and execution continues as fall-through.
-  void LoadTrustedUnknownPointerField(
-      Register destination, MemOperand field_operand, Register scratch,
-      const std::initializer_list<std::tuple<InstanceType, Label*>>& cases);
   // Store a trusted pointer field.
   void StoreTrustedPointerField(Register value, MemOperand dst_field_operand);
 

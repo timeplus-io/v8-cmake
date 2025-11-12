@@ -25,7 +25,6 @@
 #include "src/objects/js-objects.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/maybe-object.h"
-#include "src/objects/objects.h"
 #include "src/objects/oddball.h"
 #include "src/objects/property.h"
 #include "src/objects/transitions-inl.h"
@@ -189,6 +188,9 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     case OBJECT_TEMPLATE_INFO_TYPE:
       return kVisitStruct;
 
+    case JS_PROXY_TYPE:
+      return kVisitStruct;
+
     case SYMBOL_TYPE:
       return kVisitSymbol;
 
@@ -300,6 +302,7 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     case JS_TEMPORAL_PLAIN_MONTH_DAY_TYPE:
     case JS_TEMPORAL_PLAIN_TIME_TYPE:
     case JS_TEMPORAL_PLAIN_YEAR_MONTH_TYPE:
+    case JS_TEMPORAL_TIME_ZONE_TYPE:
     case JS_TEMPORAL_ZONED_DATE_TIME_TYPE:
 #endif  // V8_TEMPORAL_SUPPORT
     case JS_TYPED_ARRAY_PROTOTYPE_TYPE:
@@ -461,6 +464,8 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
       return kVisitWasmStruct;
     case WASM_DESCRIPTOR_OPTIONS_TYPE:
       return kVisitWasmDescriptorOptions;
+    case WASM_SUSPENDER_OBJECT_TYPE:
+      return kVisitWasmSuspenderObject;
     case WASM_CONTINUATION_OBJECT_TYPE:
       return kVisitWasmContinuationObject;
     case WASM_SUSPENDING_OBJECT_TYPE:
@@ -710,13 +715,11 @@ Tagged<Map> Map::FindRootMap(PtrComprCageBase cage_base) const {
   while (true) {
     Tagged<Map> parent;
     if (!result->TryGetBackPointer(cage_base, &parent)) {
-#if DEBUG
-      if (IsJSObjectMap(result)) {
-        DCHECK_LE(result->NumberOfOwnDescriptors(),
-                  result->instance_descriptors(cage_base, kRelaxedLoad)
-                      ->number_of_descriptors());
-      }
-#endif
+      // Initial map must not contain descriptors in the descriptors array
+      // that do not belong to the map.
+      DCHECK_LE(result->NumberOfOwnDescriptors(),
+                result->instance_descriptors(cage_base, kRelaxedLoad)
+                    ->number_of_descriptors());
       return result;
     }
     result = parent;
@@ -1939,9 +1942,8 @@ bool CanHoldValue(Tagged<DescriptorArray> descriptors, InternalIndex descriptor,
   PropertyDetails details = descriptors->GetDetails(descriptor);
   if (details.location() == PropertyLocation::kField) {
     if (details.kind() == PropertyKind::kData) {
-      if (!IsGeneralizableTo(constness, details.constness())) return false;
-      if (IsUninitializedHole(value)) return true;
-      return Object::FitsRepresentation(value, details.representation()) &&
+      return IsGeneralizableTo(constness, details.constness()) &&
+             Object::FitsRepresentation(value, details.representation()) &&
              FieldType::NowContains(descriptors->GetFieldType(descriptor),
                                     value);
     } else {
@@ -2006,7 +2008,9 @@ DirectHandle<Map> Map::TransitionToDataProperty(
 
   DCHECK(IsUniqueName(*name));
   DCHECK(!map->is_dictionary_map());
-  CHECK(!map->is_deprecated());
+
+  // Migrate to the newest map before storing the property.
+  map = Update(isolate, map);
 
   MaybeHandle<Map> maybe_transition = TransitionsAccessor::SearchTransition(
       isolate, map, *name, PropertyKind::kData, attributes);
@@ -2433,7 +2437,7 @@ Handle<UnionOf<Smi, Cell>> Map::GetOrCreatePrototypeChainValidityCell(
     Tagged<Map> holder_map;
     if (!TryGetValidityCellHolderMap(*map, isolate, &holder_map)) {
       // Prototype value is not a JSObject.
-      return handle(Map::kNoValidityCellSentinel, isolate);
+      return handle(Map::kPrototypeChainValidSmi, isolate);
     }
     validity_cell_holder_map = direct_handle(holder_map, isolate);
   }
@@ -2451,23 +2455,28 @@ Handle<UnionOf<Smi, Cell>> Map::GetOrCreatePrototypeChainValidityCell(
         validity_cell_holder_map->prototype_validity_cell(kRelaxedLoad);
 
     // Return existing cell if it's still valid.
-    if (maybe_cell != Map::kNoValidityCellSentinel) {
+    if (IsCell(maybe_cell)) {
       Tagged<Cell> cell = Cast<Cell>(maybe_cell);
-      if (cell->maybe_value() != Map::kPrototypeChainInvalid) {
+      if (cell->value() == Map::kPrototypeChainValidSmi) {
         return handle(cell, isolate);
       }
     }
   }
   // Otherwise create a new cell.
-  Handle<Cell> cell = isolate->factory()->NewCell();
-  {
-    Tagged<Map> meta_map = validity_cell_holder_map->map();
-    DCHECK(IsMapMap(meta_map));
-    Tagged<NativeContext> native_context = meta_map->native_context();
-    cell->set_maybe_value(MakeWeak(native_context));
-  }
+  Handle<Cell> cell = isolate->factory()->NewCell(Map::kPrototypeChainValidSmi);
   validity_cell_holder_map->set_prototype_validity_cell(*cell, kRelaxedStore);
   return cell;
+}
+
+// static
+bool Map::IsPrototypeChainInvalidated(Tagged<Map> map) {
+  DCHECK(map->is_prototype_map());
+  Tagged<Object> maybe_cell = map->prototype_validity_cell(kRelaxedLoad);
+  if (IsCell(maybe_cell)) {
+    Tagged<Cell> cell = Cast<Cell>(maybe_cell);
+    return cell->value() != Map::kPrototypeChainValidSmi;
+  }
+  return true;
 }
 
 // static

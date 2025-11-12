@@ -967,7 +967,7 @@ void LiveEdit::PatchScript(Isolate* isolate, Handle<Script> script,
     start_position_to_unchanged_id[mapping.second->start_position()] =
         mapping.second->function_literal_id();
 
-    if (sfi->HasUncompiledDataWithPreparseData(isolate)) {
+    if (sfi->HasUncompiledDataWithPreparseData()) {
       sfi->ClearPreparseData(isolate);
     }
 

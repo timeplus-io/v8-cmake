@@ -4,7 +4,6 @@
 
 #include "src/compiler/bytecode-analysis.h"
 
-#include <algorithm>
 #include <utility>
 
 #include "src/compiler/bytecode-liveness-map.h"
@@ -464,7 +463,6 @@ class BytecodeAnalysis::BytecodeAnalysisImpl {
       : res_(res),
         zone_(zone),
         bytecode_array_(bytecode_array),
-        loop_infos_(zone),
         loop_stack_(zone),
         loop_end_index_queue_(zone),
         iterator_(bytecode_array, zone) {}
@@ -480,21 +478,23 @@ class BytecodeAnalysis::BytecodeAnalysisImpl {
     DCHECK_LT(loop_header, loop_end);
     DCHECK_LT(loop_stack_.top().header_offset, loop_header);
     DCHECK_EQ(res_.end_to_header_.find(loop_end), res_.end_to_header_.end());
-    DCHECK_EQ(
-        std::ranges::find(loop_infos_, loop_header, &LoopInfo::loop_start),
-        loop_infos_.end());
+    DCHECK_EQ(res_.header_to_info_.find(loop_header),
+              res_.header_to_info_.end());
 
     int parent_offset = loop_stack_.top().header_offset;
 
     res_.end_to_header_.insert({loop_end, loop_header});
-    loop_infos_.emplace_back(parent_offset, loop_header, loop_end,
-                             bytecode_array()->parameter_count(),
-                             bytecode_array()->register_count(), zone());
+    auto it = res_.header_to_info_.insert(
+        {loop_header, LoopInfo(parent_offset, loop_header, loop_end,
+                               bytecode_array()->parameter_count(),
+                               bytecode_array()->register_count(), zone())});
+    // Get the loop info pointer from the output of insert.
+    LoopInfo* loop_info = &it.first->second;
 
-    if (loop_stack_.top().header_offset >= 0) {
-      loop_infos_[loop_stack_.top().loop_info_index].mark_not_innermost();
+    if (loop_stack_.top().loop_info) {
+      loop_stack_.top().loop_info->mark_not_innermost();
     }
-    loop_stack_.push({loop_header, static_cast<int>(loop_infos_.size() - 1)});
+    loop_stack_.push({loop_header, loop_info});
   }
 
 #if DEBUG
@@ -514,16 +514,12 @@ class BytecodeAnalysis::BytecodeAnalysisImpl {
 
   struct LoopStackEntry {
     int header_offset;
-    int loop_info_index;
+    LoopInfo* loop_info;
   };
 
   BytecodeAnalysis& res_;
   Zone* zone_;
   Handle<BytecodeArray> const bytecode_array_;
-  // LoopInfos stored in visit order (reverse order of loop ends). Will be
-  // re-sorted after analysis and passed to the BytecodeAnalysis in loop start
-  // order.
-  ZoneVector<LoopInfo> loop_infos_;
   ZoneStack<LoopStackEntry> loop_stack_;
   ZoneVector<int> loop_end_index_queue_;
   interpreter::BytecodeArrayRandomIterator iterator_;
@@ -550,7 +546,7 @@ void BytecodeAnalysis::BytecodeAnalysisImpl::Analyze() {
   DCHECK_EQ(res_.bytecode_count_, -1);
   res_.bytecode_count_ = iterator_.size();
 
-  loop_stack_.push({-1, -1});
+  loop_stack_.push({-1, nullptr});
 
   BytecodeLivenessState* next_bytecode_in_liveness = nullptr;
   int osr_loop_end_offset_ = res_.osr_bailout_id_.ToInt();
@@ -595,7 +591,7 @@ void BytecodeAnalysis::BytecodeAnalysisImpl::Analyze() {
 
     if (in_loop) {
       LoopStackEntry& current_loop = loop_stack_.top();
-      LoopInfo* current_loop_info = &loop_infos_[current_loop.loop_info_index];
+      LoopInfo* current_loop_info = current_loop.loop_info;
 
       // TODO(leszeks): Ideally, we'd only set values that were assigned in
       // the loop *and* are live when the loop exits. However, this requires
@@ -617,8 +613,7 @@ void BytecodeAnalysis::BytecodeAnalysisImpl::Analyze() {
         loop_stack_.pop();
         if (loop_stack_.size() > 1) {
           // If there is still an outer loop, propagate inner loop assignments.
-          LoopInfo* parent_loop_info =
-              &loop_infos_[loop_stack_.top().loop_info_index];
+          LoopInfo* parent_loop_info = loop_stack_.top().loop_info;
 
           if (current_loop_info->resumable()) {
             parent_loop_info->mark_resumable();
@@ -681,11 +676,6 @@ void BytecodeAnalysis::BytecodeAnalysisImpl::Analyze() {
                            iterator_, bytecode_array(), liveness_map(), zone());
     }
   }
-
-  // Now that we've collected all the loops, re-sort them by loop start and pass
-  // along to the analysis result.
-  std::ranges::sort(loop_infos_, {}, &LoopInfo::loop_start);
-  res_.loop_infos_ = std::move(loop_infos_).Release();
 
   DCHECK_EQ(loop_stack_.size(), 1u);
   DCHECK_EQ(loop_stack_.top().header_offset, -1);
@@ -764,9 +754,7 @@ void BytecodeAnalysis::BytecodeAnalysisImpl::Analyze() {
 }
 
 bool BytecodeAnalysis::IsLoopHeader(int offset) const {
-  auto it =
-      std::ranges::lower_bound(loop_infos_, offset, {}, &LoopInfo::loop_start);
-  return it != loop_infos_.end() && it->loop_start() == offset;
+  return header_to_info_.find(offset) != header_to_info_.end();
 }
 
 int BytecodeAnalysis::GetLoopOffsetFor(int offset) const {
@@ -797,10 +785,9 @@ int BytecodeAnalysis::GetLoopOffsetFor(int offset) const {
   //   |
   //   `- end
   // We just return the parent of the next loop (might be -1).
-  auto it =
-      std::ranges::upper_bound(loop_infos_, offset, {}, &LoopInfo::loop_start);
-  DCHECK_NE(it, loop_infos_.end());
-  return it->parent_offset();
+  DCHECK(header_to_info_.upper_bound(offset) != header_to_info_.end());
+
+  return header_to_info_.upper_bound(offset)->second.parent_offset();
 }
 
 int BytecodeAnalysis::GetLoopEndOffsetForInnermost(int header_offset) const {
@@ -813,18 +800,13 @@ int BytecodeAnalysis::GetLoopEndOffsetForInnermost(int header_offset) const {
 const LoopInfo& BytecodeAnalysis::GetLoopInfoFor(int header_offset) const {
   DCHECK(IsLoopHeader(header_offset));
 
-  auto it = std::ranges::lower_bound(loop_infos_, header_offset, {},
-                                     &LoopInfo::loop_start);
-  DCHECK_EQ(it->loop_start(), header_offset);
-  return *it;
+  return header_to_info_.find(header_offset)->second;
 }
 
 const LoopInfo* BytecodeAnalysis::TryGetLoopInfoFor(int header_offset) const {
-  auto it = std::ranges::lower_bound(loop_infos_, header_offset, {},
-                                     &LoopInfo::loop_start);
-  if (it == loop_infos_.end() || it->loop_start() != header_offset)
-    return nullptr;
-  return &*it;
+  auto it = header_to_info_.find(header_offset);
+  if (it == header_to_info_.end()) return nullptr;
+  return &it->second;
 }
 
 const BytecodeLivenessState* BytecodeAnalysis::GetInLivenessFor(
@@ -884,12 +866,13 @@ bool BytecodeAnalysis::BytecodeAnalysisImpl::ResumeJumpTargetsAreValid() {
       valid = false;
     }
     // Check loops.
-    for (const auto& loop_info : res_.loop_infos_) {
-      if (!loop_info.resume_jump_targets().empty()) {
+    for (const std::pair<const int, LoopInfo>& loop_info :
+         res_.header_to_info_) {
+      if (!loop_info.second.resume_jump_targets().empty()) {
         PrintF(stderr,
                "Found %zu resume targets at loop at offset %d, but no resume "
                "switch\n",
-               loop_info.resume_jump_targets().size(), loop_info.loop_start());
+               loop_info.second.resume_jump_targets().size(), loop_info.first);
         valid = false;
       }
     }
@@ -918,9 +901,9 @@ bool BytecodeAnalysis::BytecodeAnalysisImpl::ResumeJumpTargetsAreValid() {
     valid = false;
   }
   // Check loops.
-  for (const auto& loop_info : res_.loop_infos_) {
+  for (const std::pair<const int, LoopInfo>& loop_info : res_.header_to_info_) {
     if (!ResumeJumpTargetLeavesResolveSuspendIds(
-            loop_info.loop_start(), loop_info.resume_jump_targets(),
+            loop_info.first, loop_info.second.resume_jump_targets(),
             &unresolved_suspend_ids)) {
       valid = false;
     }
@@ -1186,6 +1169,7 @@ BytecodeAnalysis::BytecodeAnalysis(Handle<BytecodeArray> bytecode_array,
       analyze_liveness_(analyze_liveness),
       resume_jump_targets_(zone),
       end_to_header_(zone),
+      header_to_info_(zone),
       osr_entry_point_(-1) {
   BytecodeAnalysisImpl analysis(*this, bytecode_array, zone);
   analysis.Analyze();

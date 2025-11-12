@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --allow-natives-syntax --turboshaft-string-concat-escape-analysis
-// Flags: --turbofan
+// Flags: --turbofan --no-always-turbofan
 
 
 function foo(str, c) {

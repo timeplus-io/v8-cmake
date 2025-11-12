@@ -72,7 +72,7 @@ void ExternalEntityTable<Entry, size>::Initialize() {
             kInternalReadOnlySegmentsOffset);
 
   if constexpr (Base::kUseSegmentPool) {
-    Base::FillSegmentsPool(false);
+    this->FillSegmentsPool(false);
   }
 }
 
@@ -168,12 +168,8 @@ void ExternalEntityTable<Entry, size>::SealReadOnlySegments() {
 
 template <typename Entry, size_t size>
 uint32_t ExternalEntityTable<Entry, size>::AllocateEntry(Space* space) {
-  static constexpr size_t kAllocationTries = 2;
-  for (size_t i = 0; i < kAllocationTries; ++i) {
-    if (auto res = TryAllocateEntry(space)) {
-      return *res;
-    }
-    OnCriticalMemoryPressure();
+  if (auto res = TryAllocateEntry(space)) {
+    return *res;
   }
   V8::FatalProcessOutOfMemory(nullptr, "ExternalEntityTable::AllocateEntry");
 }

@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --expose-gc --stress-flush-code
-// Flags: --no-lazy-feedback-allocation --always-osr --osr-to-tierup=200
-// Flags: --invocation-count-for-turbofan=1
+// Flags: --always-turbofan --always-osr --osr-to-tierup=200
 
 function main() {
   function f0() {

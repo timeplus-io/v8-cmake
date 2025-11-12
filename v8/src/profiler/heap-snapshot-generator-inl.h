@@ -56,7 +56,8 @@ Isolate* HeapEntry::isolate() const { return snapshot_->profiler()->isolate(); }
 uint32_t HeapSnapshotJSONSerializer::StringHash(const void* string) {
   const char* s = reinterpret_cast<const char*>(string);
   int len = static_cast<int>(strlen(s));
-  return StringHasher::HashSequentialString(s, len, HashSeed::Default());
+  return StringHasher::HashSequentialString(s, len,
+                                            v8::internal::kZeroHashSeed);
 }
 
 int HeapSnapshotJSONSerializer::to_node_index(const HeapEntry* e) {

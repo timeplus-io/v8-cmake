@@ -19,7 +19,6 @@
 #include "src/heap/memory-allocator.h"
 #include "src/heap/memory-chunk-metadata.h"
 #include "src/heap/read-only-heap.h"
-#include "src/objects/heap-object.h"
 #include "src/objects/objects-inl.h"
 #include "src/snapshot/snapshot-data.h"
 #include "src/snapshot/snapshot-utils.h"
@@ -142,27 +141,19 @@ ReadOnlyPageMetadata::ReadOnlyPageMetadata(Heap* heap, BaseSpace* space,
                                            Address area_start, Address area_end,
                                            VirtualMemory reservation)
     : MemoryChunkMetadata(heap, space, chunk_size, area_start, area_end,
-                          std::move(reservation),
-                          Executability::NOT_EXECUTABLE) {
+                          std::move(reservation)) {
   allocated_bytes_ = 0;
-  set_never_evacuate();
 }
 
 MemoryChunk::MainThreadFlags ReadOnlyPageMetadata::InitialFlags() const {
-  MemoryChunk::MainThreadFlags flags = MemoryChunk::READ_ONLY_HEAP;
-#if V8_ENABLE_STICKY_MARK_BITS_BOOL
-  if constexpr (v8_flags.sticky_mark_bits.value()) {
-    flags |= MemoryChunk::STICKY_MARK_BIT_CONTAINS_ONLY_OLD;
-  }
-#endif  // V8_ENABLE_STICKY_MARK_BITS_BOOL
-  return flags;
+  return MemoryChunk::NEVER_EVACUATE | MemoryChunk::READ_ONLY_HEAP |
+         MemoryChunk::CONTAINS_ONLY_OLD;
 }
 
-void ReadOnlyPageMetadata::MakeHeaderRelocatableAndMarkAsSealed() {
+void ReadOnlyPageMetadata::MakeHeaderRelocatable() {
   heap_ = nullptr;
   owner_ = nullptr;
   reservation_.Reset();
-  set_is_sealed_ro_space();
 }
 
 void ReadOnlySpace::SetPermissionsForPages(MemoryAllocator* memory_allocator,
@@ -206,11 +197,11 @@ void ReadOnlySpace::Seal(SealMode ro_mode) {
 
   if (ro_mode != SealMode::kDoNotDetachFromHeap) {
     heap_ = nullptr;
-    for (ReadOnlyPageMetadata* ro_page : pages_) {
+    for (ReadOnlyPageMetadata* p : pages_) {
       if (ro_mode == SealMode::kDetachFromHeapAndUnregisterMemory) {
-        memory_allocator->UnregisterReadOnlyPage(ro_page);
+        memory_allocator->UnregisterReadOnlyPage(p);
       }
-      ro_page->MakeHeaderRelocatableAndMarkAsSealed();
+      p->MakeHeaderRelocatable();
     }
   }
 
@@ -248,8 +239,8 @@ class ReadOnlySpaceObjectIterator : public ObjectIterator {
       const int obj_size = obj->Size();
       cur_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(obj_size);
       DCHECK_LE(cur_addr_, cur_end_);
-      if (IsAnyHole(obj) || !IsFreeSpaceOrFiller(obj)) {
-        DCHECK_VALID_REGULAR_OBJECT_SIZE(obj_size);
+      if (!IsFreeSpaceOrFiller(obj)) {
+        DCHECK_OBJECT_SIZE(obj_size);
         return obj;
       }
     }
@@ -310,7 +301,7 @@ void ReadOnlySpace::VerifyCounters(Heap* heap) const {
     size_t real_allocated = 0;
     for (Tagged<HeapObject> object = it.Next(); !object.is_null();
          object = it.Next()) {
-      if (IsAnyHole(object) || !IsFreeSpaceOrFiller(object)) {
+      if (!IsFreeSpaceOrFiller(object)) {
         real_allocated += object->Size();
       }
     }
@@ -509,7 +500,7 @@ void ReadOnlySpace::ShrinkPages() {
   heap()->CreateFillerObjectAt(top_, static_cast<int>(limit_ - top_));
 
   for (ReadOnlyPageMetadata* page : pages_) {
-    DCHECK(page->never_evacuate());
+    DCHECK(page->Chunk()->IsFlagSet(MemoryChunk::NEVER_EVACUATE));
     size_t unused = page->ShrinkToHighWaterMark();
     capacity_ -= unused;
     accounting_stats_.DecreaseCapacity(static_cast<intptr_t>(unused));

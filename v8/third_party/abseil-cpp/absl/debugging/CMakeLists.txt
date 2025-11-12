@@ -42,7 +42,6 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::dynamic_annotations
-    absl::malloc_internal
     absl::raw_logging_internal
   PUBLIC
 )

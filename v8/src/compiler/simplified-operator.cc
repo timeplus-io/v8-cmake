@@ -883,7 +883,6 @@ bool operator==(AssertNotNullParameters const& lhs,
   V(ChangeTaggedToUint32, Operator::kNoProperties, 1, 0)                     \
   V(ChangeTaggedToFloat64, Operator::kNoProperties, 1, 0)                    \
   V(ChangeTaggedToTaggedSigned, Operator::kNoProperties, 1, 0)               \
-  V(ChangeNumberOrHoleToFloat64, Operator::kNoProperties, 1, 0)              \
   V(ChangeFloat64ToTaggedPointer, Operator::kNoProperties, 1, 0)             \
   V(ChangeFloat64HoleToTagged, Operator::kNoProperties, 1, 0)                \
   V(ChangeFloat64OrUndefinedOrHoleToTagged, Operator::kNoProperties, 1, 0)   \
@@ -899,8 +898,7 @@ bool operator==(AssertNotNullParameters const& lhs,
   V(ChangeUint64ToBigInt, Operator::kNoProperties, 1, 0)                     \
   V(TruncateTaggedToBit, Operator::kNoProperties, 1, 0)                      \
   V(TruncateTaggedPointerToBit, Operator::kNoProperties, 1, 0)               \
-  V(TruncateNumberOrOddballToWord32, Operator::kNoProperties, 1, 0)          \
-  V(TruncateNumberOrOddballOrHoleToWord32, Operator::kNoProperties, 1, 0)    \
+  V(TruncateTaggedToWord32, Operator::kNoProperties, 1, 0)                   \
   V(TruncateTaggedToFloat64, Operator::kNoProperties, 1, 0)                  \
   V(TruncateTaggedToFloat64PreserveUndefined, Operator::kNoProperties, 1, 0) \
   V(ObjectIsArrayBufferView, Operator::kNoProperties, 1, 0)                  \
@@ -934,7 +932,6 @@ bool operator==(AssertNotNullParameters const& lhs,
   V(StringEqual, Operator::kCommutative, 2, 0)                               \
   V(StringLessThan, Operator::kNoProperties, 2, 0)                           \
   V(StringLessThanOrEqual, Operator::kNoProperties, 2, 0)                    \
-  V(StringOrOddballStrictEqual, Operator::kCommutative, 2, 0)                \
   V(ToBoolean, Operator::kNoProperties, 1, 0)                                \
   V(NewConsString, Operator::kNoProperties, 3, 0)                            \
   V(Unsigned32Divide, Operator::kNoProperties, 2, 0)
@@ -987,28 +984,26 @@ bool operator==(AssertNotNullParameters const& lhs,
   V(CheckedInt64Div, 2, 1)                \
   V(CheckedInt64Mod, 2, 1)
 
-#define CHECKED_WITH_FEEDBACK_OP_LIST(V)     \
-  V(CheckNumber, 1, 1)                       \
-  V(CheckNumberFitsInt32, 1, 1)              \
-  V(CheckNumberOrUndefined, 1, 1)            \
-  V(CheckSmi, 1, 1)                          \
-  V(CheckString, 1, 1)                       \
-  V(CheckStringOrStringWrapper, 1, 1)        \
-  V(CheckStringOrOddball, 1, 1)              \
-  V(CheckBigInt, 1, 1)                       \
-  V(CheckedBigIntToBigInt64, 1, 1)           \
-  V(CheckedInt32ToTaggedSigned, 1, 1)        \
-  V(CheckedInt64ToInt32, 1, 1)               \
-  V(CheckedInt64ToTaggedSigned, 1, 1)        \
-  V(CheckedInt64ToAdditiveSafeInteger, 1, 1) \
-  V(CheckedTaggedToArrayIndex, 1, 1)         \
-  V(CheckedTaggedSignedToInt32, 1, 1)        \
-  V(CheckedTaggedToTaggedPointer, 1, 1)      \
-  V(CheckedTaggedToTaggedSigned, 1, 1)       \
-  V(CheckedUint32ToInt32, 1, 1)              \
-  V(CheckedUint32ToTaggedSigned, 1, 1)       \
-  V(CheckedUint64ToInt32, 1, 1)              \
-  V(CheckedUint64ToInt64, 1, 1)              \
+#define CHECKED_WITH_FEEDBACK_OP_LIST(V) \
+  V(CheckNumber, 1, 1)                   \
+  V(CheckNumberFitsInt32, 1, 1)          \
+  V(CheckNumberOrUndefined, 1, 1)        \
+  V(CheckSmi, 1, 1)                      \
+  V(CheckString, 1, 1)                   \
+  V(CheckStringOrStringWrapper, 1, 1)    \
+  V(CheckBigInt, 1, 1)                   \
+  V(CheckedBigIntToBigInt64, 1, 1)       \
+  V(CheckedInt32ToTaggedSigned, 1, 1)    \
+  V(CheckedInt64ToInt32, 1, 1)           \
+  V(CheckedInt64ToTaggedSigned, 1, 1)    \
+  V(CheckedTaggedToArrayIndex, 1, 1)     \
+  V(CheckedTaggedSignedToInt32, 1, 1)    \
+  V(CheckedTaggedToTaggedPointer, 1, 1)  \
+  V(CheckedTaggedToTaggedSigned, 1, 1)   \
+  V(CheckedUint32ToInt32, 1, 1)          \
+  V(CheckedUint32ToTaggedSigned, 1, 1)   \
+  V(CheckedUint64ToInt32, 1, 1)          \
+  V(CheckedUint64ToInt64, 1, 1)          \
   V(CheckedUint64ToTaggedSigned, 1, 1)
 
 #define CHECKED_BOUNDS_OP_LIST(V) \
@@ -1075,26 +1070,12 @@ struct SimplifiedOperatorGlobalCache final {
   CHECKED_BOUNDS_OP_LIST(CHECKED_BOUNDS)
   CHECKED_BOUNDS(CheckBounds)
   // For IrOpcode::kCheckBounds, we allow additional flags:
-  CheckBoundsOperator kCheckBoundsAllow64BitBounds = {
-      FeedbackSource(), CheckBoundsFlag::kAllow64BitBounds};
-  CheckBoundsOperator kCheckBoundsAbortingAndAllow64BitBounds = {
-      FeedbackSource(), CheckBoundsFlag::kAbortOnOutOfBounds |
-                            CheckBoundsFlag::kAllow64BitBounds};
   CheckBoundsOperator kCheckBoundsConverting = {
       FeedbackSource(), CheckBoundsFlag::kConvertStringAndMinusZero};
-  CheckBoundsOperator kCheckBoundsConvertingAndAllow64BitBounds = {
-      FeedbackSource(), CheckBoundsFlag::kConvertStringAndMinusZero |
-                            CheckBoundsFlag::kAllow64BitBounds};
   CheckBoundsOperator kCheckBoundsAbortingAndConverting = {
       FeedbackSource(),
       CheckBoundsFlags(CheckBoundsFlag::kAbortOnOutOfBounds) |
           CheckBoundsFlags(CheckBoundsFlag::kConvertStringAndMinusZero)};
-  CheckBoundsOperator kCheckBoundsAbortingAndConvertingAndAllow64BitBounds = {
-      FeedbackSource(),
-      CheckBoundsFlags(CheckBoundsFlag::kAbortOnOutOfBounds) |
-          CheckBoundsFlags(CheckBoundsFlag::kConvertStringAndMinusZero) |
-          CheckBoundsFlags(CheckBoundsFlag::kAllow64BitBounds)};
-
 #undef CHECKED_BOUNDS
 
   template <DeoptimizeReason kDeoptimizeReason>
@@ -1105,7 +1086,7 @@ struct SimplifiedOperatorGlobalCache final {
               "CheckIf", 1, 1, 1, 0, 1, 0,
               CheckIfParameters(kDeoptimizeReason, FeedbackSource())) {}
   };
-#define CHECK_IF(Name, message, ...) \
+#define CHECK_IF(Name, message) \
   CheckIfOperator<DeoptimizeReason::k##Name> kCheckIf##Name;
   DEOPTIMIZE_REASON_LIST(CHECK_IF)
 #undef CHECK_IF
@@ -1567,31 +1548,15 @@ const Operator* SimplifiedOperatorBuilder::CheckBounds(
   if (!feedback.IsValid()) {
     if (flags & CheckBoundsFlag::kAbortOnOutOfBounds) {
       if (flags & CheckBoundsFlag::kConvertStringAndMinusZero) {
-        if (flags & CheckBoundsFlag::kAllow64BitBounds) {
-          return &cache_.kCheckBoundsAbortingAndConvertingAndAllow64BitBounds;
-        } else {
-          return &cache_.kCheckBoundsAbortingAndConverting;
-        }
+        return &cache_.kCheckBoundsAbortingAndConverting;
       } else {
-        if (flags & CheckBoundsFlag::kAllow64BitBounds) {
-          return &cache_.kCheckBoundsAbortingAndAllow64BitBounds;
-        } else {
-          return &cache_.kCheckBoundsAborting;
-        }
+        return &cache_.kCheckBoundsAborting;
       }
     } else {
       if (flags & CheckBoundsFlag::kConvertStringAndMinusZero) {
-        if (flags & CheckBoundsFlag::kAllow64BitBounds) {
-          return &cache_.kCheckBoundsConvertingAndAllow64BitBounds;
-        } else {
-          return &cache_.kCheckBoundsConverting;
-        }
+        return &cache_.kCheckBoundsConverting;
       } else {
-        if (flags & CheckBoundsFlag::kAllow64BitBounds) {
-          return &cache_.kCheckBoundsAllow64BitBounds;
-        } else {
-          return &cache_.kCheckBounds;
-        }
+        return &cache_.kCheckBounds;
       }
     }
   }
@@ -1817,10 +1782,10 @@ const Operator* SimplifiedOperatorBuilder::CheckIf(
     DeoptimizeReason reason, const FeedbackSource& feedback) {
   if (!feedback.IsValid()) {
     switch (reason) {
-#define CHECK_IF(Name, message, ...) \
-  case DeoptimizeReason::k##Name:    \
+#define CHECK_IF(Name, message)   \
+  case DeoptimizeReason::k##Name: \
     return &cache_.kCheckIf##Name;
-      DEOPTIMIZE_REASON_LIST(CHECK_IF)
+    DEOPTIMIZE_REASON_LIST(CHECK_IF)
 #undef CHECK_IF
     }
   }

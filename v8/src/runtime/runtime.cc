@@ -64,8 +64,8 @@ struct IntrinsicFunctionIdentifier {
   }
 
   uint32_t Hash() {
-    return StringHasher::HashSequentialString<uint8_t>(data_, length_,
-                                                       HashSeed::Default());
+    return StringHasher::HashSequentialString<uint8_t>(
+        data_, length_, v8::internal::kZeroHashSeed);
   }
 
   const unsigned char* data_;
@@ -256,7 +256,8 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
   }
 
   // Runtime functions disabled for all/most types of fuzzing.
-  // These are mainly functions that are not fuzzing-safe and therefore would
+  // Reasons for a function to be in this list include that it is not useful
+  // for fuzzing (e.g. %DebugPrint) or not fuzzing-safe and therefore would
   // cause false-positive crashes (e.g. %AbortJS).
   switch (id) {
     case Runtime::kAbort:
@@ -265,7 +266,7 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
     case Runtime::kSystemBreak:
     case Runtime::kBenchMaglev:
     case Runtime::kBenchTurbofan:
-    case Runtime::kDebugPrintPtr:
+    case Runtime::kDebugPrint:
     case Runtime::kDisassembleFunction:
     case Runtime::kGetFunctionForCurrentFrame:
     case Runtime::kGetCallable:
@@ -278,10 +279,11 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
     case Runtime::kWasmTraceEnter:
     case Runtime::kWasmTraceExit:
     case Runtime::kWasmTraceMemory:
-    case Runtime::kWasmTraceGlobal:
     case Runtime::kCheckIsOnCentralStack:
     case Runtime::kSetWasmInstantiateControls:
+    case Runtime::kWasmNull:
     case Runtime::kFreezeWasmLazyCompilation:
+    case Runtime::kDeserializeWasmModule:
 #endif  // V8_ENABLE_WEBASSEMBLY
     // TODO(353685107): investigate whether these should be exposed to fuzzers.
     case Runtime::kConstructDouble:

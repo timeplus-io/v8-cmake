@@ -17,13 +17,11 @@
 
 namespace {
 
-constexpr v8::EmbedderDataTypeTag kPerContextDataTag = 1;
-
 v8::Local<v8::String> v8_str(const char* x) {
   return v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), x).ToLocalChecked();
 }
 
-struct WrapperTypeInfo : v8::Object::WrapperTypeInfo {
+struct WrapperTypeInfo {
   uint16_t embedder_id;
 };
 
@@ -32,18 +30,16 @@ struct PerContextData {
   std::map<WrapperTypeInfo*, v8::Global<v8::ObjectTemplate>> object_templates;
 };
 
-class ManagedWrappableBase : public v8::Object::Wrappable {
+class ManagedWrappableBase
+    : public cppgc::GarbageCollected<ManagedWrappableBase> {
  public:
+  virtual WrapperTypeInfo* GetWrapperTypeInfo() = 0;
 
   void SetWrapper(v8::Isolate* isolate, v8::Local<v8::Value> value) {
     wrapper_.Reset(isolate, value);
   }
 
-  const char* GetHumanReadableName() const override {
-    return "ManagedWrappableBase";
-  }
-  virtual void Trace(cppgc::Visitor* visitor) const override {
-    v8::Object::Wrappable::Trace(visitor);
+  virtual void Trace(cppgc::Visitor* visitor) const {
     visitor->Trace(wrapper_);
   }
 
@@ -55,20 +51,16 @@ class ManagedWrappableValue : public ManagedWrappableBase {
  public:
   static WrapperTypeInfo wrapper_type_info;
 
-  const v8::Object::WrapperTypeInfo* GetWrapperTypeInfo() const override {
-    return &wrapper_type_info;
-  }
+  WrapperTypeInfo* GetWrapperTypeInfo() override { return &wrapper_type_info; }
 };
 WrapperTypeInfo ManagedWrappableValue::wrapper_type_info{
-    {}, v8::benchmarking::kEmbedderId};
+    v8::benchmarking::kEmbedderId};
 
 class ManagedGlobalWrappable : public ManagedWrappableBase {
  public:
   static WrapperTypeInfo wrapper_type_info;
 
-  const WrapperTypeInfo* GetWrapperTypeInfo() const override {
-    return &wrapper_type_info;
-  }
+  WrapperTypeInfo* GetWrapperTypeInfo() override { return &wrapper_type_info; }
 
   ManagedWrappableValue* GetWrappableValue(
       cppgc::AllocationHandle& allocation_Handle) {
@@ -79,7 +71,7 @@ class ManagedGlobalWrappable : public ManagedWrappableBase {
   uint16_t GetSmiNumber() { return 17; }
 };
 WrapperTypeInfo ManagedGlobalWrappable::wrapper_type_info{
-    {}, v8::benchmarking::kEmbedderId};
+    v8::benchmarking::kEmbedderId};
 
 class UnmanagedWrappableBase {
  public:
@@ -114,7 +106,7 @@ class UnmanagedWrappableValue : public UnmanagedWrappableBase {
   WrapperTypeInfo* GetWrapperTypeInfo() override { return &wrapper_type_info; }
 };
 WrapperTypeInfo UnmanagedWrappableValue::wrapper_type_info{
-    {}, v8::benchmarking::kEmbedderId};
+    v8::benchmarking::kEmbedderId};
 
 class UnmanagedGlobalWrappable : public UnmanagedWrappableBase {
  public:
@@ -129,7 +121,7 @@ class UnmanagedGlobalWrappable : public UnmanagedWrappableBase {
   uint16_t GetSmiNumber() { return 17; }
 };
 WrapperTypeInfo UnmanagedGlobalWrappable::wrapper_type_info{
-    {}, v8::benchmarking::kEmbedderId};
+    v8::benchmarking::kEmbedderId};
 
 template <typename WrappableValueType>
 v8::Local<v8::ObjectTemplate> GetInstanceTemplateForContext(
@@ -215,8 +207,7 @@ class BindingsBenchmarkBase : public v8::benchmarking::BenchmarkWithIsolate {
 
     auto* per_context_data = new PerContextData{allocation_handle(), {}};
 
-    context->SetAlignedPointerInEmbedderData(0, per_context_data,
-                                             kPerContextDataTag);
+    context->SetAlignedPointerInEmbedderData(0, per_context_data);
 
     auto* global_wrappable =
         ConcreteBindings::CreateGlobalWrappable(per_context_data);
@@ -294,9 +285,7 @@ class UnmanagedBindings : public BindingsBenchmarkBase<UnmanagedBindings> {
     int indices[] = {v8::benchmarking::kTypeOffset,
                      v8::benchmarking::kInstanceOffset};
     void* values[] = {info, wrappable};
-    START_ALLOW_USE_DEPRECATED()
     v8_wrapper->SetAlignedPointerInInternalFields(2, indices, values);
-    END_ALLOW_USE_DEPRECATED()
     // Set C++ to V8 reference.
     wrappable->SetWrapper(isolate, v8_wrapper);
   }

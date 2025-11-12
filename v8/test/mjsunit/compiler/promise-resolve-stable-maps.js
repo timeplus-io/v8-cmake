@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --turbofan
+// Flags: --allow-natives-syntax --turbofan --noalways-turbofan
+
 // Test that JSResolvePromise takes a proper stability dependency
 // on the resolutions map if the infer receiver maps are unreliable
 // (as is the case for HeapConstants).

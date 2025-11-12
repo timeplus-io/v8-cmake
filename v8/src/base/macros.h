@@ -80,48 +80,6 @@ template <typename T, size_t N>
 char (&ArraySizeHelper(const T (&array)[N]))[N];
 #endif
 
-// Clang/GCC helpfully warn us about dangling else in nested if statements. This
-// dangling is intentional for the way some macros work, so we can suppress the
-// warning with Pragmas. Clang and GCC helpfully disagree on where the warning
-// is (on the if or the else), so they need separate macros.
-// NOLINTBEGIN
-#if defined(__clang__)
-#define SUPPRESSED_DANGLING_ELSE_WARNING_IF(...) if (__VA_ARGS__)
-#define SUPPRESSED_DANGLING_ELSE_WARNING_ELSE                             \
-  _Pragma("GCC diagnostic push")                                          \
-      _Pragma("GCC diagnostic ignored \"-Wdangling-else\"") else _Pragma( \
-          "GCC diagnostic pop")
-#elif defined(__GNUC__)
-#define SUPPRESSED_DANGLING_ELSE_WARNING_IF(...)                             \
-  _Pragma("GCC diagnostic push")                                             \
-      _Pragma("GCC diagnostic ignored \"-Wdangling-else\"") if (__VA_ARGS__) \
-          _Pragma("GCC diagnostic pop")
-#define SUPPRESSED_DANGLING_ELSE_WARNING_ELSE else
-#else
-#define SUPPRESSED_DANGLING_ELSE_WARNING_IF(...) if (__VA_ARGS__)
-#define SUPPRESSED_DANGLING_ELSE_WARNING_ELSE else
-#endif
-// NOLINTEND
-
-// Macro magic for the syntax:
-//   SCOPED_VARIABLE(FooScope x) {
-//     // x is alive here.
-//   }
-//   // x is dead here.
-//
-// This is a little macro trick: C++17 onwards allows `if` conditions to have an
-// initializer, whose value is alive in both the true and false branches of
-// the `if`. We can therefore create a variable declaration that is scoped to
-// the next block (or single statement) by declaring it in this if. To avoid
-// accidentally making `SCOPED_VARIABLE(init) {} else {}` valid syntax, we make
-// the block be part of the else branch of the if.
-//
-// This is particularly useful for macros that want to internally define some
-// variables, and be followed by a block.
-#define SCOPED_VARIABLE(init)                         \
-  SUPPRESSED_DANGLING_ELSE_WARNING_IF(init; false) {} \
-  SUPPRESSED_DANGLING_ELSE_WARNING_ELSE
-
 // This is an equivalent to C++20's std::bit_cast<>(), but with additional
 // warnings. It morally does what `*reinterpret_cast<Dest*>(&source)` does, but
 // the cast/deref pair is undefined behavior, while bit_cast<>() isn't.
@@ -588,18 +546,5 @@ bool is_inbounds(float_t v) {
 // Disable FRIEND_TEST macro in Google3.
 #define FRIEND_TEST(test_case_name, test_name)
 #endif
-
-// Enable/disable -Wsign-* warnings in code.
-// See http://crbug.com/441221573 for detail.
-#if defined(__clang__)
-#define START_PROHIBIT_SIGN_CONVERSION()                      \
-  _Pragma("clang diagnostic push")                            \
-      _Pragma("clang diagnostic error \"-Wsign-conversion\"") \
-          _Pragma("clang diagnostic error \"-Wsign-compare\"")
-#define END_PROHIBIT_SIGN_CONVERSION() _Pragma("clang diagnostic pop")
-#else
-#define START_PROHIBIT_SIGN_CONVERSION()
-#define END_PROHIBIT_SIGN_CONVERSION()
-#endif  // defined(__clang__)
 
 #endif  // V8_BASE_MACROS_H_

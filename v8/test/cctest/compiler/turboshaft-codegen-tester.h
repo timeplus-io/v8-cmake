@@ -72,7 +72,8 @@ class RawMachineAssemblerTester : public HandleAndZoneScope,
  public:
   template <typename... ParamMachTypes>
   explicit RawMachineAssemblerTester(ParamMachTypes... p)
-      : CallHelper<ReturnType>(
+      : HandleAndZoneScope(kCompressGraphZone),
+        CallHelper<ReturnType>(
             main_isolate(),
             CSignature::New(main_zone(), MachineTypeForC<ReturnType>(), p...)),
         DataHolder(main_isolate(), main_zone(), MachineTypeForC<ReturnType>(),
@@ -84,7 +85,8 @@ class RawMachineAssemblerTester : public HandleAndZoneScope,
 
   template <typename... ParamMachTypes>
   RawMachineAssemblerTester(CodeKind kind, ParamMachTypes... p)
-      : CallHelper<ReturnType>(
+      : HandleAndZoneScope(kCompressGraphZone),
+        CallHelper<ReturnType>(
             main_isolate(),
             CSignature::New(main_zone(), MachineTypeForC<ReturnType>(), p...)),
         DataHolder(main_isolate(), main_zone(), MachineTypeForC<ReturnType>(),

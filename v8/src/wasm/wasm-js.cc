@@ -195,9 +195,9 @@ GET_FIRST_ARGUMENT_AS(Tag)
 
 #undef GET_FIRST_ARGUMENT_AS
 
-base::OwnedVector<const uint8_t> GetAndCopyFirstArgumentAsBytes(
+base::Vector<const uint8_t> GetFirstArgumentAsBytes(
     const v8::FunctionCallbackInfo<v8::Value>& info, size_t max_length,
-    ErrorThrower* thrower) {
+    ErrorThrower* thrower, bool* is_shared) {
   const uint8_t* start = nullptr;
   size_t length = 0;
   v8::Local<v8::Value> source = info[0];
@@ -208,6 +208,7 @@ base::OwnedVector<const uint8_t> GetAndCopyFirstArgumentAsBytes(
 
     start = reinterpret_cast<const uint8_t*>(backing_store->Data());
     length = backing_store->ByteLength();
+    *is_shared = buffer->IsSharedArrayBuffer();
   } else if (source->IsTypedArray()) {
     // A TypedArray was passed.
     Local<TypedArray> array = Local<TypedArray>::Cast(source);
@@ -218,6 +219,7 @@ base::OwnedVector<const uint8_t> GetAndCopyFirstArgumentAsBytes(
     start = reinterpret_cast<const uint8_t*>(backing_store->Data()) +
             array->ByteOffset();
     length = array->ByteLength();
+    *is_shared = buffer->IsSharedArrayBuffer();
   } else {
     thrower->TypeError("Argument 0 must be a buffer source");
     return {};
@@ -235,11 +237,25 @@ base::OwnedVector<const uint8_t> GetAndCopyFirstArgumentAsBytes(
     return {};
   }
 
+  return base::VectorOf(start, length);
+}
+
+base::OwnedVector<const uint8_t> GetAndCopyFirstArgumentAsBytes(
+    const v8::FunctionCallbackInfo<v8::Value>& info, size_t max_length,
+    ErrorThrower* thrower) {
+  bool is_shared = false;
+  base::Vector<const uint8_t> bytes =
+      GetFirstArgumentAsBytes(info, max_length, thrower, &is_shared);
+  if (bytes.empty()) {
+    return {};
+  }
+
   // Use relaxed reads (and writes, which is unnecessary here) to avoid TSan
   // reports in case the buffer is shared and is being modified concurrently.
-  auto result = base::OwnedVector<uint8_t>::NewForOverwrite(length);
+  auto result = base::OwnedVector<uint8_t>::NewForOverwrite(bytes.size());
   base::Relaxed_Memcpy(reinterpret_cast<base::Atomic8*>(result.begin()),
-                       reinterpret_cast<const base::Atomic8*>(start), length);
+                       reinterpret_cast<const base::Atomic8*>(bytes.data()),
+                       bytes.size());
   return result;
 }
 
@@ -486,7 +502,7 @@ constexpr char AsyncInstantiateCompileResultResolver::kGlobalImportsHandle[];
 std::string ToString(const char* name) { return std::string(name); }
 
 std::string ToString(const i::DirectHandle<i::String> name) {
-  return std::string("Property '") + name->ToStdString() + "'";
+  return std::string("Property '") + name->ToCString().get() + "'";
 }
 
 // Web IDL: '[EnforceRange] unsigned long'
@@ -601,6 +617,9 @@ CompileTimeImports ArgumentToCompileOptions(
                                        i::Object::GetProperty(&it), {});
       if (i::IsString(*value)) {
         i::Tagged<i::String> builtin = i::Cast<i::String>(*value);
+        // TODO(jkummerow): We could make other string comparisons to known
+        // constants in this file more efficient by migrating them to this
+        // style (rather than `...->StringEquals(v8_str(...))`).
         if (builtin->IsEqualTo(base::CStrVector("js-string"))) {
           result.Add(CompileTimeImport::kJsString);
           continue;
@@ -612,13 +631,6 @@ CompileTimeImports ArgumentToCompileOptions(
           }
           if (builtin->IsEqualTo(base::CStrVector("text-decoder"))) {
             result.Add(CompileTimeImport::kTextDecoder);
-            continue;
-          }
-        }
-        if (enabled_features.has_custom_descriptors() &&
-            i::v8_flags.experimental_wasm_js_interop) {
-          if (builtin->IsEqualTo(base::CStrVector("js-prototypes"))) {
-            result.Add(CompileTimeImport::kJsPrototypes);
             continue;
           }
         }
@@ -876,10 +888,9 @@ void WebAssemblyValidateImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
   auto [isolate, i_isolate, thrower] = js_api_scope.isolates_and_thrower();
   v8::ReturnValue<v8::Value> return_value = info.GetReturnValue();
 
-  // Always copy. Even if the buffer isn't shared, {ArgumentToCompileOptions}
-  // could detach it.
-  base::OwnedVector<const uint8_t> bytes = GetAndCopyFirstArgumentAsBytes(
-      info, i::wasm::max_module_size(), &thrower);
+  bool bytes_are_shared = false;
+  base::Vector<const uint8_t> bytes = GetFirstArgumentAsBytes(
+      info, i::wasm::max_module_size(), &thrower, &bytes_are_shared);
   if (bytes.empty()) {
     js_api_scope.AssertException();
     // Propagate anything except wasm exceptions.
@@ -900,9 +911,23 @@ void WebAssemblyValidateImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return;
   }
 
-  bool validated = i::wasm::GetWasmEngine()->SyncValidate(
-      i_isolate, enabled_features, std::move(compile_imports),
-      bytes.as_vector());
+  bool validated = false;
+  if (bytes_are_shared) {
+    // Make a copy of the wire bytes to avoid concurrent modification.
+    // Use relaxed reads (and writes, which is unnecessary here) to avoid TSan
+    // reports in case the buffer is shared and is being modified concurrently.
+    auto bytes_copy = base::OwnedVector<uint8_t>::NewForOverwrite(bytes.size());
+    base::Relaxed_Memcpy(reinterpret_cast<base::Atomic8*>(bytes_copy.begin()),
+                         reinterpret_cast<const base::Atomic8*>(bytes.data()),
+                         bytes.size());
+    validated = i::wasm::GetWasmEngine()->SyncValidate(
+        i_isolate, enabled_features, std::move(compile_imports),
+        bytes_copy.as_vector());
+  } else {
+    // The wire bytes are not shared, OK to use them directly.
+    validated = i::wasm::GetWasmEngine()->SyncValidate(
+        i_isolate, enabled_features, std::move(compile_imports), bytes);
+  }
 
   return_value.Set(validated);
 }
@@ -1803,10 +1828,6 @@ void WebAssemblyGlobalImpl(const v8::FunctionCallbackInfo<v8::Value>& info) {
       return js_api_scope.AssertException();
     }
     is_mutable = value->BooleanValue(isolate);
-    if (is_mutable) {
-      i_isolate->CountUsage(
-          v8::Isolate::UseCounterFeature::kWasmMutableGlobals);
-    }
   }
 
   // The descriptor's type, called 'value'. It is called 'value' because this
@@ -2240,7 +2261,7 @@ i::DirectHandle<i::JSFunction> NewPromisingWasmExportedFunction(
     implicit_arg = trusted_instance_data;
   } else {
     implicit_arg = i_isolate->factory()->NewWasmImportData(
-        direct_handle(i::TrustedCast<i::WasmImportData>(
+        direct_handle(i::Cast<i::WasmImportData>(
                           trusted_instance_data->dispatch_table_for_imports()
                               ->implicit_arg(func_index)),
                       i_isolate),
@@ -2254,7 +2275,7 @@ i::DirectHandle<i::JSFunction> NewPromisingWasmExportedFunction(
   i::DirectHandle<i::WasmFuncRef> func_ref =
       i_isolate->factory()->NewWasmFuncRef(internal, rtt, kShared);
   if (func_index < num_imported_functions) {
-    i::TrustedCast<i::WasmImportData>(implicit_arg)->set_call_origin(*internal);
+    i::Cast<i::WasmImportData>(implicit_arg)->set_call_origin(*internal);
   }
 
   i::DirectHandle<i::JSFunction> result = i::WasmExportedFunction::New(
@@ -2397,7 +2418,7 @@ void WebAssemblyPromising(const v8::FunctionCallbackInfo<v8::Value>& info) {
   i::DirectHandle<i::WasmExportedFunctionData> data(
       wasm_exported_function->shared()->wasm_exported_function_data(),
       i_isolate);
-  if (i::wasm::is_asmjs_module(data->instance_data()->module())) {
+  if (data->instance_data()->module_object()->is_asm_js()) {
     thrower.TypeError("Argument 0 must be a WebAssembly exported function");
     return;
   }
@@ -3690,8 +3711,7 @@ void WasmJs::Install(Isolate* isolate) {
     InstallMemoryControl(isolate, native_context, webassembly);
   }
 
-  if (enabled_features.has_custom_descriptors() &&
-      i::v8_flags.experimental_wasm_js_interop) {
+  if (enabled_features.has_custom_descriptors()) {
     InstallCustomDescriptors(isolate, native_context, webassembly);
   }
 

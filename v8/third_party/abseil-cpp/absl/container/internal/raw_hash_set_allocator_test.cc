@@ -180,7 +180,7 @@ struct Policy {
 
   static slot_type& element(slot_type* slot) { return *slot; }
 
-  template <class Hash, bool kIsDefault>
+  template <class Hash>
   static constexpr HashSlotFn get_hash_slot_fn() {
     return nullptr;
   }
@@ -436,14 +436,13 @@ TEST_F(NoPropagateOnMove, MoveAssignmentWithDifferentAlloc) {
 }
 
 TEST_F(PropagateOnAll, Swap) {
-  t1.insert(0);
+  auto it = t1.insert(0).first;
   Table u(0, a2);
   u.swap(t1);
   EXPECT_EQ(a1, u.get_allocator());
   EXPECT_EQ(a2, t1.get_allocator());
   EXPECT_EQ(1, a1.num_allocs());
   EXPECT_EQ(0, a2.num_allocs());
-  auto it = u.begin();
   EXPECT_EQ(0, it->num_moves());
   EXPECT_EQ(0, it->num_copies());
 }

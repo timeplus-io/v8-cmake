@@ -102,10 +102,6 @@ class PredictablePlatform final : public Platform {
     return platform_->GetTracingController();
   }
 
-  v8::ThreadIsolatedAllocator* GetThreadIsolatedAllocator() override {
-    return platform_->GetThreadIsolatedAllocator();
-  }
-
   Platform* platform() const { return platform_.get(); }
 
  private:
@@ -207,10 +203,6 @@ class DelayedTasksPlatform final : public Platform {
 
   v8::TracingController* GetTracingController() override {
     return platform_->GetTracingController();
-  }
-
-  v8::ThreadIsolatedAllocator* GetThreadIsolatedAllocator() override {
-    return platform_->GetThreadIsolatedAllocator();
   }
 
  private:

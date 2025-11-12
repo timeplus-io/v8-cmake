@@ -18,7 +18,6 @@
 #include "src/base/platform/time.h"
 #include "src/base/small-vector.h"
 #include "src/base/vector.h"
-#include "test/fuzzer/fuzzer-support.h"
 #include "test/inspector/frontend-channel.h"
 #include "test/inspector/isolate-data.h"
 #include "test/inspector/task-runner.h"
@@ -636,11 +635,6 @@ void FuzzInspector(const uint8_t* data, size_t size) {
 }  // namespace
 }  // namespace internal
 }  // namespace v8
-
-V8_SYMBOL_USED extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv) {
-  v8_fuzzer::FuzzerSupport::InitializeFuzzerSupport(argc, argv);
-  return 0;
-}
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   v8::internal::FuzzInspector(data, size);

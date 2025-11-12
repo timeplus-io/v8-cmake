@@ -50,9 +50,7 @@ class TypeCanonicalizer {
  public:
   static constexpr CanonicalTypeIndex kPredefinedArrayI8Index{0};
   static constexpr CanonicalTypeIndex kPredefinedArrayI16Index{1};
-  static constexpr CanonicalTypeIndex kPredefinedArrayExternRefIndex{2};
-  static constexpr CanonicalTypeIndex kPredefinedArrayFuncRefIndex{3};
-  static constexpr uint32_t kNumberOfPredefinedTypes = 4;
+  static constexpr uint32_t kNumberOfPredefinedTypes = 2;
 
   TypeCanonicalizer();
 
@@ -122,6 +120,8 @@ class TypeCanonicalizer {
   bool IsHeapSubtype(CanonicalTypeIndex sub, CanonicalTypeIndex super) const;
   bool IsCanonicalSubtype_Locked(CanonicalTypeIndex sub_index,
                                  CanonicalTypeIndex super_index) const;
+
+  CanonicalTypeIndex FindIndex_Slow(const CanonicalSig* sig) const;
 
 #if DEBUG
   // Check whether a supposedly-canonicalized function signature does indeed
@@ -252,13 +252,14 @@ class TypeCanonicalizer {
 
     void Add(CanonicalValueType value_type) {
       if (value_type.has_index() && recgroup.Contains(value_type.ref_index())) {
-        // For relative indexed types, add the relative index and the other bits
-        // separately.
+        // For relative indexed types, add their nullability, exactness, and
+        // the relative index to the hash.
         // Shift the relative index by {kMaxCanonicalTypes} to map it to a
         // different index space (note that collisions in hashing are OK
         // though).
         static_assert(kMaxCanonicalTypes <= kMaxUInt32 / 2);
-        hasher.Add(value_type.all_bits_without_index());
+        // TODO(403372470): Add the 'exact' bit.
+        hasher.Add((value_type.is_exact() << 1) | value_type.is_nullable());
         hasher.Add((value_type.ref_index().index - recgroup.first.index) +
                    kMaxCanonicalTypes);
       } else {
@@ -294,12 +295,7 @@ class TypeCanonicalizer {
       }
     }
 
-    size_t hash() const {
-#if V8_HASHES_COLLIDE
-      if (v8_flags.hashes_collide) return base::kCollidingHash;
-#endif  // V8_HASHES_COLLIDE
-      return hasher.hash();
-    }
+    size_t hash() const { return hasher.hash(); }
   };
 
   // Support for equality checking of recursion groups, where type indexes have
@@ -504,6 +500,27 @@ class TypeCanonicalizer {
       }
     }
 
+    const CanonicalTypeIndex FindIndex_Slow(const CanonicalSig* sig) const {
+      for (uint32_t i = 0; i < kNumSegments; ++i) {
+        Segment* segment = segments_[i].load(std::memory_order_relaxed);
+        // If callers have a CanonicalSig* to pass into this function, the
+        // type canonicalizer must know about this sig, hence we must find it
+        // before hitting a `nullptr` segment.
+        DCHECK_NOT_NULL(segment);
+        for (uint32_t k = 0; k < kSegmentSize; ++k) {
+          const CanonicalType* type = (*segment)[k];
+          // Again: We expect to find the signature before hitting uninitialized
+          // slots.
+          DCHECK_NOT_NULL(type);
+          if (type->kind == CanonicalType::kFunction &&
+              type->function_sig == sig) {
+            return CanonicalTypeIndex{i * kSegmentSize + k};
+          }
+        }
+      }
+      UNREACHABLE();
+    }
+
    private:
     class Segment {
      public:
@@ -530,14 +547,16 @@ class TypeCanonicalizer {
   CanonicalTypeIndex FindCanonicalGroup(const CanonicalGroup&) const;
   CanonicalTypeIndex FindCanonicalGroup(const CanonicalSingletonGroup&) const;
 
-  // Canonicalize the module-specific type at `recgroup_start +
-  // offset_in_recgroup` within the recursion group starting at
-  // `recgroup_start`, using `canonical_recgroup_start` as the start offset of
-  // types within the recursion group.
-  CanonicalType CanonicalizeTypeDef(const WasmModule* module,
-                                    ModuleTypeIndex recgroup_start,
-                                    CanonicalTypeIndex canonical_recgroup_start,
-                                    uint32_t offset_in_recgroup);
+  // Canonicalize the module-specific type at `module_type_idx` within the
+  // recursion group starting at `recursion_group_start`, using
+  // `canonical_recgroup_start` as the start offset of types within the
+  // recursion group.
+  CanonicalType CanonicalizeTypeDef(
+      const WasmModule* module, ModuleTypeIndex module_type_idx,
+      ModuleTypeIndex recgroup_start,
+      CanonicalTypeIndex canonical_recgroup_start);
+
+  void CheckMaxCanonicalIndex() const;
 
   std::vector<CanonicalTypeIndex> canonical_supertypes_;
   // Set of all known canonical recgroups of size >=2.

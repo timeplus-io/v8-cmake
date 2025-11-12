@@ -20,16 +20,17 @@ namespace internal {
 
 OBJECT_CONSTRUCTORS_IMPL(TrustedObject, HeapObject)
 
-template <typename T>
-Tagged<T> TrustedObject::ReadProtectedPointerField(int offset) const {
-  return TaggedField<T, 0, TrustedSpaceCompressionScheme>::load(*this, offset);
+Tagged<TrustedObject> TrustedObject::ReadProtectedPointerField(
+    int offset) const {
+  return TaggedField<TrustedObject, 0, TrustedSpaceCompressionScheme>::load(
+      *this, offset);
 }
 
-template <typename T>
-Tagged<T> TrustedObject::ReadProtectedPointerField(int offset,
-                                                   AcquireLoadTag) const {
-  return TaggedField<T, 0, TrustedSpaceCompressionScheme>::Acquire_Load(*this,
-                                                                        offset);
+Tagged<TrustedObject> TrustedObject::ReadProtectedPointerField(
+    int offset, AcquireLoadTag) const {
+  return TaggedField<TrustedObject, 0,
+                     TrustedSpaceCompressionScheme>::Acquire_Load(*this,
+                                                                  offset);
 }
 
 void TrustedObject::WriteProtectedPointerField(int offset,
@@ -103,31 +104,6 @@ IndirectPointerHandle ExposedTrustedObject::self_indirect_pointer_handle()
     const {
 #ifdef V8_ENABLE_SANDBOX
   return Relaxed_ReadField<IndirectPointerHandle>(kSelfIndirectPointerOffset);
-#else
-  UNREACHABLE();
-#endif
-}
-
-void ExposedTrustedObjectLayout::init_self_indirect_pointer(Isolate* isolate) {
-#ifdef V8_ENABLE_SANDBOX
-  InitSelfIndirectPointerField(&self_indirect_pointer_, isolate,
-                               isolate->trusted_pointer_publishing_scope());
-#endif
-}
-
-void ExposedTrustedObjectLayout::init_self_indirect_pointer(
-    LocalIsolate* isolate) {
-#ifdef V8_ENABLE_SANDBOX
-  // Background threads using LocalIsolates don't use
-  // TrustedPointerPublishingScopes.
-  InitSelfIndirectPointerField(&self_indirect_pointer_, isolate, nullptr);
-#endif
-}
-
-IndirectPointerHandle ExposedTrustedObjectLayout::self_indirect_pointer_handle()
-    const {
-#ifdef V8_ENABLE_SANDBOX
-  return self_indirect_pointer_.load(std::memory_order::relaxed);
 #else
   UNREACHABLE();
 #endif

@@ -19,61 +19,57 @@
 namespace v8 {
 namespace internal {
 
-int FreeSpace::size(RelaxedLoadTag) const {
-  return size_in_tagged_.Relaxed_Load().value() * kTaggedSize;
-}
+#include "torque-generated/src/objects/free-space-tq-inl.inc"
+
+TQ_OBJECT_CONSTRUCTORS_IMPL(FreeSpace)
+
+RELAXED_SMI_ACCESSORS(FreeSpace, size, kSizeOffset)
 
 // static
 inline void FreeSpace::SetSize(const WritableFreeSpace& writable_free_space,
                                int size, RelaxedStoreTag tag) {
-  // For size <= 2 * kTaggedSize, we expect to use one/two pointer filler maps.
-  DCHECK_GT(size, 2 * kTaggedSize);
-  DCHECK_EQ(size % kTaggedSize, 0);
-  writable_free_space
-      .WriteHeaderSlot<Smi, offsetof(FreeSpace, size_in_tagged_)>(
-          Smi::FromInt(size / kTaggedSize), tag);
+  writable_free_space.WriteHeaderSlot<Smi, kSizeOffset>(Smi::FromInt(size),
+                                                        tag);
 }
 
 int FreeSpace::Size() { return size(kRelaxedLoad); }
 
 Tagged<FreeSpace> FreeSpace::next() const {
-  DCHECK(IsValid(Isolate::Current()->heap()));
+  DCHECK(IsValid());
 #ifdef V8_EXTERNAL_CODE_SPACE
-  intptr_t diff_to_next{next_.Relaxed_Load().value()};
+  intptr_t diff_to_next =
+      static_cast<intptr_t>(TaggedField<Smi, kNextOffset>::load(*this).value());
   if (diff_to_next == 0) {
-    return {};
+    return FreeSpace();
   }
   Address next_ptr = ptr() + diff_to_next * kObjectAlignment;
   return UncheckedCast<FreeSpace>(Tagged<Object>(next_ptr));
 #else
-  return next_.Relaxed_Load();
+  return UncheckedCast<FreeSpace>(
+      TaggedField<Object, kNextOffset>::load(*this));
 #endif  // V8_EXTERNAL_CODE_SPACE
 }
 
-void FreeSpace::SetNext(const Heap* heap,
-                        const WritableFreeSpace& writable_free_space,
+void FreeSpace::SetNext(const WritableFreeSpace& writable_free_space,
                         Tagged<FreeSpace> next) {
-  DCHECK(IsValid(heap));
+  DCHECK(IsValid());
 
 #ifdef V8_EXTERNAL_CODE_SPACE
   if (next.is_null()) {
-    writable_free_space.WriteHeaderSlot<Smi, offsetof(FreeSpace, next_)>(
-        Smi::zero(), kRelaxedStore);
+    writable_free_space.WriteHeaderSlot<Smi, kNextOffset>(Smi::zero(),
+                                                          kRelaxedStore);
     return;
   }
   intptr_t diff_to_next = next.ptr() - ptr();
   DCHECK(IsAligned(diff_to_next, kObjectAlignment));
-  writable_free_space.WriteHeaderSlot<Smi, offsetof(FreeSpace, next_)>(
+  writable_free_space.WriteHeaderSlot<Smi, kNextOffset>(
       Smi::FromIntptr(diff_to_next / kObjectAlignment), kRelaxedStore);
 #else
-  writable_free_space.WriteHeaderSlot<Object, offsetof(FreeSpace, next_)>(
-      next, kRelaxedStore);
+  writable_free_space.WriteHeaderSlot<Object, kNextOffset>(next, kRelaxedStore);
 #endif  // V8_EXTERNAL_CODE_SPACE
 }
 
-bool FreeSpace::IsValid(const Heap* heap) const {
-  return heap->IsFreeSpaceValid(this);
-}
+bool FreeSpace::IsValid() const { return Heap::IsFreeSpaceValid(*this); }
 
 }  // namespace internal
 }  // namespace v8

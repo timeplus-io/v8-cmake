@@ -531,7 +531,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   // Unused on this architecture.
   void MaybeEmitOutOfLineConstantPool() {}
-  void ClearInternalState() {}
 
   // Read/Modify the code target in the relative branch/call instruction at pc.
   // On the x64 architecture, we use relative jumps with a 32-bit displacement
@@ -661,8 +660,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   // Aligns code to something that's optimal for a jump target for the platform.
   void CodeTargetAlign();
-  void SwitchTargetAlign() { CodeTargetAlign(); }
-  void BranchTargetAlign() {}
   void LoopHeaderAlign();
 
   // Stack
@@ -1109,6 +1106,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // {pc_offset() + kIntraSegmentJmpInstrSize}).
   static constexpr int kIntraSegmentJmpInstrSize = 5;
   void near_call(intptr_t disp, RelocInfo::Mode rmode);
+  void near_call(Builtin buitin, RelocInfo::Mode rmode);
   void near_jmp(intptr_t disp, RelocInfo::Mode rmode);
   void near_j(Condition cc, intptr_t disp, RelocInfo::Mode rmode);
 
@@ -2450,11 +2448,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void lfence();
   void pause();
 
-  // Pkey support.
-  // Registers rcx and rdx must be zero, rax is the input/output value.
-  void rdpkru();
-  void wrpkru();
-
   // Check the code size generated from label to here.
   int SizeOfCodeGeneratedSince(Label* label) {
     return pc_offset() - label->pos();
@@ -3063,7 +3056,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   bool is_optimizable_farjmp(int idx);
 
-  void PatchInHeapNumberRequest(Address pc, Handle<HeapNumber> object) override;
+  void AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate);
 
   int WriteCodeComments();
   int WriteBuiltinJumpTableInfos();

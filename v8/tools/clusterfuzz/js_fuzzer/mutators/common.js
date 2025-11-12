@@ -246,15 +246,6 @@ function availableFunctionNames(path) {
   return available;
 }
 
-function availableVariableNames(path) {
-  const available = new Set([]);
-  for (const name of _availableIdentifierNamesGen(
-      path, isVariableIdentifier)) {
-    available.add(name);
-  }
-  return available;
-}
-
 function randomVariable(path) {
   return random.single(availableVariables(path));
 }
@@ -473,7 +464,6 @@ module.exports = {
   concatPrograms: concatPrograms,
   containsYield: containsYield,
   availableVariables: availableVariables,
-  availableVariableNames: availableVariableNames,
   availableFunctions: availableFunctions,
   availableFunctionNames: availableFunctionNames,
   randomFunction: randomFunction,

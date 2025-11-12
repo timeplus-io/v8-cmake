@@ -146,14 +146,6 @@ void VerifyPointersVisitor::VisitMapPointer(Tagged<HeapObject> host) {
 void VerifyPointersVisitor::VerifyHeapObjectImpl(
     Tagged<HeapObject> heap_object) {
   CHECK(IsValidHeapObject(heap_, heap_object));
-#if V8_STATIC_ROOTS_BOOL
-  // In static roots builds, holes are unmapped in RO space -- skip verifying
-  // them beyond the RO space check.
-  if (SafeIsAnyHole(heap_object)) {
-    CHECK(HeapLayout::InReadOnlySpace(heap_object));
-    return;
-  }
-#endif
   CHECK(IsMap(heap_object->map(cage_base())));
   // Heap::InToPage() is not available with sticky mark-bits.
   CHECK_IMPLIES(
@@ -415,13 +407,10 @@ void HeapVerification::VerifyPage(const MemoryChunkMetadata* chunk_metadata) {
   const MemoryChunk* chunk = chunk_metadata->Chunk();
 
   CHECK(!current_chunk_.has_value());
-#ifndef V8_ENABLE_STICKY_MARK_BITS_BOOL
-  CHECK(!chunk->IsFromPage());
-#endif
-  CHECK(!chunk_metadata->will_be_promoted());
-  CHECK(!chunk_metadata->is_quarantined());
-  CHECK_EQ(chunk_metadata->is_evacuation_candidate(),
-           chunk->IsEvacuationCandidate());
+  CHECK(!chunk->IsFlagSet(MemoryChunk::PAGE_NEW_OLD_PROMOTION));
+  CHECK(!chunk->IsFlagSet(MemoryChunk::FROM_PAGE));
+  CHECK(!chunk->IsFlagSet(MemoryChunk::WILL_BE_PROMOTED));
+  CHECK(!chunk->IsQuarantined());
   if (chunk->InReadOnlySpace()) {
     CHECK_NULL(chunk_metadata->owner());
   } else {
@@ -501,7 +490,7 @@ void HeapVerification::VerifyObjectMap(Tagged<HeapObject> object) {
     // The object should not be code or a map.
     CHECK(!IsMap(object, cage_base_));
     CHECK(!IsAbstractCode(object, cage_base_));
-  } else if (current_space_identity() == RO_SPACE && !IsAnyHole(object)) {
+  } else if (current_space_identity() == RO_SPACE) {
     CHECK(!IsExternalString(object));
     CHECK(!IsJSArrayBuffer(object));
   }
@@ -784,7 +773,7 @@ void HeapVerification::VerifyRememberedSetFor(Tagged<HeapObject> object) {
       &trusted_to_shared_trusted);
   old_to_shared_visitor.Visit(object);
 
-  if (!MemoryChunk::FromHeapObject(object)->Metadata()->is_trusted()) {
+  if (!MemoryChunk::FromHeapObject(object)->IsTrusted()) {
     CHECK_NULL(chunk->slot_set<TRUSTED_TO_TRUSTED>());
     CHECK_NULL(chunk->slot_set<TRUSTED_TO_SHARED_TRUSTED>());
   }
@@ -866,7 +855,7 @@ void HeapVerifier::VerifyObjectLayoutChange(Heap* heap,
                                             Tagged<HeapObject> object,
                                             Tagged<Map> new_map) {
   // Object layout changes are currently not supported on background threads.
-  CHECK(LocalHeap::Current()->is_main_thread());
+  CHECK_NULL(LocalHeap::Current());
 
   if (!v8_flags.verify_heap) return;
 

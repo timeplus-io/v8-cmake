@@ -29,9 +29,10 @@ uint8_t CreateObjectLiteralFlags::Encode(int runtime_flags,
 }
 
 // static
-uint8_t CreateClosureFlags::Encode(bool pretenure, bool is_function_scope) {
+uint8_t CreateClosureFlags::Encode(bool pretenure, bool is_function_scope,
+                                   bool might_always_turbofan) {
   uint8_t result = PretenuredBit::encode(pretenure);
-  if (!pretenure && is_function_scope) {
+  if (!might_always_turbofan && !pretenure && is_function_scope) {
     result |= FastNewClosureBit::encode(true);
   }
   return result;

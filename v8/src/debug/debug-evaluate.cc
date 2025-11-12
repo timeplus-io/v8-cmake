@@ -267,7 +267,7 @@ DebugEvaluate::ContextBuilder::ContextBuilder(Isolate* isolate,
       // blocklist.
       DirectHandle<ScopeInfo> function_scope_info(
           frame_inspector_.GetFunction()->shared()->scope_info(), isolate_);
-      DirectHandle<UnionOf<TheHole, StringSet>> block_list(
+      DirectHandle<Object> block_list(
           isolate_->LocalsBlockListCacheGet(function_scope_info), isolate_);
       CHECK(IsStringSet(*block_list));
       isolate_->LocalsBlockListCacheSet(scope_info, Handle<ScopeInfo>::null(),
@@ -579,7 +579,6 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kArrayPrototypeFlat:
     case Builtin::kArrayPrototypeFlatMap:
     case Builtin::kArrayPrototypeJoin:
-    case Builtin::kArrayPrototypeJoinImpl:
     case Builtin::kArrayPrototypeKeys:
     case Builtin::kArrayPrototypeLastIndexOf:
     case Builtin::kArrayPrototypeSlice:
@@ -1261,7 +1260,6 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtin caller,
     case Builtin::kJoinStackPush:
       switch (caller) {
         case Builtin::kArrayPrototypeJoin:
-        case Builtin::kArrayPrototypeJoinImpl:
         case Builtin::kArrayPrototypeToLocaleString:
         case Builtin::kTypedArrayPrototypeJoin:
         case Builtin::kTypedArrayPrototypeToLocaleString:

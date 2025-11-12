@@ -25,7 +25,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc
+// Flags: --allow-natives-syntax --expose-gc --noalways-turbofan
+
 function isHoley(obj) {
   if (%HasHoleyElements(obj)) return true;
   return false;

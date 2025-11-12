@@ -1,9 +1,9 @@
 [
   {
     "url": "https://chromium.googlesource.com/v8/v8.git",
-    "commit": "ad8af0fc661d278e87627fcaa3a7cf795ee80dd8",
+    "commit": "2cf29af8b61d31484479756ef6c0590373469ec1",
     "/* comment */": "Dependency v8 must be first.",
-    "branch": "tags/14.1.146.11",
+    "branch": "tags/13.8.258.38",
     "path": ""
   },
   {
@@ -20,31 +20,31 @@
   },
   {
     "url": "https://chromium.googlesource.com/external/github.com/google/googletest.git",
-    "commit": "244cec869d12e53378fa0efb610cd4c32a454ec8",
+    "commit": "09ffd0015395354774c059a17d9f5bee36177ff9",
     "branch": "master",
     "path": "third_party/googletest/src"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/jinja2.git",
-    "commit": "c3027d884967773057bf74b957e3fea87e5df4d7",
+    "commit": "5e1ee241ab04b38889f8d517f2da8b3df7cfbd9a",
     "branch": "master",
     "path": "third_party/jinja2"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib.git",
-    "commit": "caf4afa1afc92e16fef429f182444bed98a46a6c",
+    "commit": "a1f2fe223f55b6ec6dd3c20796727604ed5ec74a",
     "branch": "master",
     "path": "third_party/zlib"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp.git",
-    "commit": "5141e83267542f8869adf18b5bd6440440d6801e",
+    "commit": "2401283880a451e9ea10787920117fb67695abb4",
     "branch": "master",
     "path": "third_party/abseil-cpp"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/markupsafe.git",
-    "commit": "4256084ae14175d38a3ff7d739dca83ae49ccec6",
+    "commit": "9f8efc8637f847ab1ba984212598e6fb9cf1b3d4",
     "branch": "master",
     "path": "third_party/markupsafe"
   },
@@ -56,13 +56,13 @@
   },
   {
     "url": "https://chromium.googlesource.com/external/github.com/Maratyszcza/FP16.git",
-    "commit": "b3720617faf1a4581ed7e6787cc51722ec7751f0",
+    "commit": "0a92994d729ff76a58f692d3028ca1b64b145d91",
     "branch": "master",
     "path": "third_party/fp16/src"
   },
   {
     "url": "https://chromium.googlesource.com/chromium/src/third_party/simdutf",
-    "commit": "acd71a451c1bcb808b7c3a77e0242052909e381e",
+    "commit": "9d3e4d7c1afb30ed528443d73afab23f22443434",
     "branch": "master",
     "path": "third_party/simdutf"
   },

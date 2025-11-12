@@ -104,7 +104,6 @@ class V8_NODISCARD PerThreadAssertScope
 #define PER_ISOLATE_ASSERT_SCOPE_DECLARATION(ScopeType)              \
   class V8_NODISCARD ScopeType {                                     \
    public:                                                           \
-    V8_EXPORT_PRIVATE ScopeType();                                   \
     V8_EXPORT_PRIVATE explicit ScopeType(Isolate* isolate);          \
     ScopeType(const ScopeType&) = delete;                            \
     ScopeType& operator=(const ScopeType&) = delete;                 \
@@ -151,7 +150,6 @@ PER_ISOLATE_CHECK_TYPE(PER_ISOLATE_ASSERT_DISABLE_SCOPE, false)
 #define PER_ISOLATE_DCHECK_DISABLE_SCOPE(EnableType, DisableType, field, _) \
   class DisableType##DebugOnly : public DisableType {                       \
    public:                                                                  \
-    DisableType##DebugOnly() : DisableType() {}                             \
     explicit DisableType##DebugOnly(Isolate* isolate)                       \
         : DisableType(isolate) {}                                           \
   };
@@ -159,7 +157,6 @@ PER_ISOLATE_CHECK_TYPE(PER_ISOLATE_ASSERT_DISABLE_SCOPE, false)
 #define PER_ISOLATE_DCHECK_DISABLE_SCOPE(EnableType, DisableType, field, _) \
   class V8_NODISCARD DisableType##DebugOnly {                               \
    public:                                                                  \
-    DisableType##DebugOnly() {}                                             \
     explicit DisableType##DebugOnly(Isolate* isolate) {}                    \
   };
 #endif

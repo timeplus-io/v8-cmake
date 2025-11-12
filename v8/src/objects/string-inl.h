@@ -11,7 +11,7 @@
 #include <optional>
 #include <type_traits>
 
-#include "absl/functional/overload.h"
+#include "src/base/template-utils.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate-utils.h"
@@ -84,7 +84,8 @@ class V8_NODISCARD SharedStringAccessGuardIfNeeded {
 
   static bool IsNeeded(Tagged<String> str, bool check_local_heap = true) {
     if (check_local_heap) {
-      if (LocalHeap::Current()->is_main_thread()) {
+      LocalHeap* local_heap = LocalHeap::Current();
+      if (!local_heap || local_heap->is_main_thread()) {
         // Don't acquire the lock for the main thread.
         return false;
       }
@@ -122,9 +123,6 @@ class V8_NODISCARD SharedStringAccessGuardIfNeeded {
       DCHECK(ReadOnlyHeap::Contains(str));
       return nullptr;
     }
-    // TODO(431584880): Replace `GetIsolateFromHeapObject` by
-    // `Isolate::Current()`.
-    DCHECK_EQ(isolate, Isolate::TryGetCurrent());
     return isolate;
   }
 
@@ -560,7 +558,7 @@ Char FlatStringReader::Get(uint32_t index) const {
 template <typename Char>
 class SequentialStringKey final : public StringTableKey {
  public:
-  SequentialStringKey(base::Vector<const Char> chars, const HashSeed seed,
+  SequentialStringKey(base::Vector<const Char> chars, uint64_t seed,
                       bool convert = false)
       : SequentialStringKey(StringHasher::HashSequentialString<Char>(
                                 chars.begin(), chars.length(), seed),
@@ -708,12 +706,6 @@ bool String::IsEqualTo(base::Vector<const Char> str, Isolate* isolate) const {
                                 SharedStringAccessGuardIfNeeded::NotNeeded());
 }
 
-template <String::EqualityType kEqType>
-bool String::IsEqualTo(std::string_view str, Isolate* isolate) const {
-  return IsEqualTo<kEqType>(base::Vector<const char>(str.data(), str.size()),
-                            isolate);
-}
-
 template <String::EqualityType kEqType, typename Char>
 bool String::IsEqualTo(base::Vector<const Char> str) const {
   DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(this));
@@ -751,7 +743,7 @@ bool String::IsEqualToImpl(
   Tagged<String> string = this;
   const Char* data = str.data();
   while (true) {
-    auto ret = string->DispatchToSpecificType(absl::Overload{
+    auto ret = string->DispatchToSpecificType(base::overloaded{
         [&](Tagged<SeqOneByteString> s) {
           return CompareCharsEqual(
               s->GetChars(no_gc, access_guard) + slice_offset, data, len);
@@ -1000,7 +992,7 @@ std::optional<String::FlatContent> String::TryGetFlatContentFromDirectString(
     const SharedStringAccessGuardIfNeeded& access_guard) {
   DCHECK_LE(offset + length, string->length());
 
-  return string->DispatchToSpecificType(absl::Overload{
+  return string->DispatchToSpecificType(base::overloaded{
       [&](Tagged<SeqOneByteString> s) {
         return FlatContent(s->GetChars(no_gc, access_guard) + offset, length,
                            no_gc);
@@ -1055,14 +1047,13 @@ String::FlatContent::~FlatContent() {
 
 #ifdef ENABLE_SLOW_DCHECKS
 uint32_t String::FlatContent::ComputeChecksum() const {
+  constexpr uint64_t hashseed = 1;
   uint32_t hash;
   if (state_ == ONE_BYTE) {
-    hash = StringHasher::HashSequentialString(onebyte_start, length_,
-                                              HashSeed::Default());
+    hash = StringHasher::HashSequentialString(onebyte_start, length_, hashseed);
   } else {
     DCHECK_EQ(TWO_BYTE, state_);
-    hash = StringHasher::HashSequentialString(twobyte_start, length_,
-                                              HashSeed::Default());
+    hash = StringHasher::HashSequentialString(twobyte_start, length_, hashseed);
   }
   DCHECK_NE(kChecksumVerificationDisabled, hash);
   return hash;
@@ -1176,7 +1167,7 @@ Tagged<ConsString> String::VisitFlat(
   DCHECK_LE(offset, length);
   while (true) {
     std::optional<Tagged<ConsString>> ret =
-        string->DispatchToSpecificType(absl::Overload{
+        string->DispatchToSpecificType(base::overloaded{
             [&](Tagged<SeqOneByteString> s) {
               visitor->VisitOneByteString(
                   s->GetChars(no_gc, access_guard) + slice_offset,
@@ -1449,7 +1440,7 @@ void ExternalString::VisitExternalPointers(ObjectVisitor* visitor) {
 }
 
 Address ExternalString::resource_as_address() const {
-  IsolateForSandbox isolate = GetCurrentIsolateForSandbox();
+  IsolateForSandbox isolate = GetIsolateForSandbox(this);
   return resource_.load(isolate);
 }
 
@@ -1650,16 +1641,6 @@ class StringCharacterStream {
   inline void VisitOneByteString(const uint8_t* chars, int length);
   inline void VisitTwoByteString(const uint16_t* chars, int length);
 
-  // Counts the number of UTF-8 bytes for `length` characters,
-  // advancing the stream
-  inline size_t CountUtf8Bytes(uint32_t n_chars);
-  // Counts the number of UTF-8 bytes for `length` characters,
-  // advancing the stream
-  //
-  // Returns the number of UTF-8 bytes written
-  inline size_t WriteUtf8Bytes(uint32_t n_chars, char* output,
-                               size_t output_capacity);
-
  private:
   ConsStringIterator iter_;
   bool is_one_byte_;
@@ -1724,47 +1705,6 @@ void StringCharacterStream::VisitTwoByteString(const uint16_t* chars,
   is_one_byte_ = false;
   buffer16_ = chars;
   end_ = reinterpret_cast<const uint8_t*>(chars + length);
-}
-
-inline size_t StringCharacterStream::CountUtf8Bytes(uint32_t n_chars) {
-  size_t utf8_bytes = 0;
-  uint32_t remaining_chars = n_chars;
-  uint16_t last = unibrow::Utf16::kNoPreviousCharacter;
-  while (HasMore() && remaining_chars-- != 0) {
-    uint16_t character = GetNext();
-    utf8_bytes += unibrow::Utf8::Length(character, last);
-    last = character;
-  }
-  return utf8_bytes;
-}
-
-inline size_t StringCharacterStream::WriteUtf8Bytes(uint32_t n_chars,
-                                                    char* output,
-                                                    size_t output_capacity) {
-  size_t pos = 0;
-  uint32_t remaining_chars = n_chars;
-  uint16_t last = unibrow::Utf16::kNoPreviousCharacter;
-  while (HasMore() && remaining_chars-- != 0) {
-    uint16_t character = GetNext();
-    if (character == 0) {
-      character = ' ';
-    }
-
-    // Ensure that there's sufficient space for this character.
-    //
-    // This should normally always be the case, unless there is
-    // in-sandbox memory corruption.
-    // Alternatively, we could also over-allocate the output buffer by three
-    // bytes (the maximum we can write OOB) or consider allocating it inside
-    // the sandbox, but it's not clear if that would be worth the effort as the
-    // performance overhead of this check appears to be negligible in practice.
-    SBXCHECK_LE(unibrow::Utf8::Length(character, last), output_capacity - pos);
-
-    pos += unibrow::Utf8::Encode(output + pos, character, last);
-
-    last = character;
-  }
-  return pos;
 }
 
 bool String::AsArrayIndex(uint32_t* index) {

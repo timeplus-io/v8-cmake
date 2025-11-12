@@ -66,12 +66,6 @@ uint32_t BuiltinsConstantsTableBuilder::AddObject(Handle<Object> object) {
   }
 }
 
-bool BuiltinsConstantsTableBuilder::HasObject(Handle<Object> object) const {
-  base::MutexGuard guard(&mutex_);
-  auto find_result = map_.Find(object);
-  return find_result != nullptr;
-}
-
 namespace {
 void CheckPreconditionsForPatching(Isolate* isolate,
                                    Handle<Object> replacement_object) {
@@ -132,13 +126,12 @@ void BuiltinsConstantsTableBuilder::Finalize() {
   for (auto it = it_scope.begin(); it != it_scope.end(); ++it) {
     uint32_t index = *it.entry();
     Tagged<Object> value = it.key();
-    if (Tagged<Code> code;
-        TryCast(value, &code) && code->kind() == CodeKind::BUILTIN) {
+    if (IsCode(value) && Cast<Code>(value)->kind() == CodeKind::BUILTIN) {
       // Replace placeholder code objects with the real builtin.
       // See also: SetupIsolateDelegate::PopulateWithPlaceholders.
       // TODO(jgruber): Deduplicate placeholders and their corresponding
       // builtin.
-      value = builtins->code(code->builtin_id());
+      value = builtins->code(Cast<Code>(value)->builtin_id());
     }
     DCHECK(IsHeapObject(value));
     table->set(index, value);

@@ -47,13 +47,7 @@ class OpIndex {
   friend class OperationBuffer;
 
  public:
-  static constexpr OpIndex FromOffset(uint32_t offset,
-                                      uint32_t generation_bit) {
-#ifdef DEBUG
-    DCHECK(generation_bit == 0 || generation_bit == 1);
-    DCHECK_EQ(offset & kGenerationMask, 0);
-    offset |= (generation_bit << kGenerationMaskShift);
-#endif
+  static constexpr OpIndex FromOffset(uint32_t offset) {
     return OpIndex(offset);
   }
   constexpr OpIndex() : offset_(std::numeric_limits<uint32_t>::max()) {}

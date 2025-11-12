@@ -553,14 +553,9 @@ class ValueTypeBase {
 
   /****************************** Pretty-printing *****************************/
   constexpr char short_name() const {
+    DCHECK(!is_sentinel());  // Caller's responsibility.
     if (is_ref()) {
       return is_nullable() ? 'n' : 'r';
-    }
-    if (is_sentinel()) {
-      if (is_void()) return 'v';
-      if (is_top()) return '\\';
-      if (is_bottom()) return '*';
-      // Otherwise fall through to the DCHECK in {numeric_kind()}.
     }
     constexpr const char kNumericShortName[] = {
 #define SHORT_NAME(kind, log2, code, mtype, shortName, ...) shortName,
@@ -632,10 +627,6 @@ class ValueTypeBase {
       case kBottom:
         UNREACHABLE();
     }
-    // The input value of the switch is untrusted, so even if it's exhaustive,
-    // it can skip all cases and end up here, triggering UB since there's no
-    // return.
-    SBXCHECK(false);
   }
 
   constexpr ValueKind kind() const {
@@ -881,10 +872,6 @@ constexpr uint32_t ValueTypeBase::raw_heap_representation(
     case GenericKind::kVoid:
       UNREACHABLE();
   }
-  // The input value of the switch is untrusted, so even if it's exhaustive,
-  // it can skip all cases and end up here, triggering UB since there's no
-  // return.
-  SBXCHECK(false);
 }
 
 class CanonicalValueType;
@@ -1081,15 +1068,8 @@ class CanonicalValueType : public ValueTypeBase {
     return bit_field_ == other.bit_field_;
   }
 
-  // For hashing everything except the index.
-  constexpr uint32_t all_bits_without_index() const {
-    static_assert(std::is_same_v<uint32_t, decltype(bit_field_)>);
-    return bit_field_ & ~kIndexBits;
-  }
-
-  // For checking equality of everything except the index.
   constexpr bool is_equal_except_index(CanonicalValueType other) const {
-    return all_bits_without_index() == other.all_bits_without_index();
+    return (bit_field_ & ~kIndexBits) == (other.bit_field_ & ~kIndexBits);
   }
 
   constexpr bool IsFunctionType() const {
@@ -1321,20 +1301,13 @@ class CanonicalSig : public Signature<CanonicalValueType> {
     Builder(Zone* zone, size_t return_count, size_t parameter_count)
         : SignatureBuilder<CanonicalSig, CanonicalValueType>(zone, return_count,
                                                              parameter_count) {}
-    const CanonicalSig* Get(CanonicalTypeIndex index) const;
+    CanonicalSig* Get() const;
   };
 
   uint64_t signature_hash() const { return signature_hash_; }
 
-  CanonicalTypeIndex index() const { return index_; }
-
  private:
-  // These fields are initialized by `Builder::Get()` and never modified
-  // afterwards. We cannot make them `const` for technical reasons (this would
-  // require a `const_cast` which would be UB).
   uint64_t signature_hash_;
-
-  CanonicalTypeIndex index_;
 };
 
 // This is the special case where comparing module-specific to canonical

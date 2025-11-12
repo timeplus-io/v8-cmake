@@ -621,8 +621,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
 #if V8_ENABLE_WEBASSEMBLY
     case kArchCallWasmFunction:
-    case kArchCallWasmFunctionIndirect:
-    case kArchResumeWasmContinuation: {
+    case kArchCallWasmFunctionIndirect: {
       if (instr->InputAt(0)->IsImmediate()) {
         DCHECK_EQ(arch_opcode, kArchCallWasmFunction);
         Constant constant = i.ToConstant(instr->InputAt(0));
@@ -631,9 +630,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else if (arch_opcode == kArchCallWasmFunctionIndirect) {
         __ CallWasmCodePointer(i.InputRegister(0));
       } else {
-        // TODO(thibaudm): Use a WasmCodePointer for
-        // kArchResumeWasmContinuation. Can this be merged with
-        // kArchCallWasmFunctionIndirect?
         __ Call(i.InputRegister(0));
       }
       RecordCallPosition(instr);
@@ -820,9 +816,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchNop:
       // don't emit code for nops.
       break;
-    case kArchPause:
-      __ sync();
-      break;
     case kArchDeoptimize: {
       DeoptimizationExit* exit =
           BuildTranslation(instr, -1, 0, 0, OutputFrameStateCombine::Ignore());
@@ -869,7 +862,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchStoreWithWriteBarrier:  // Fall through.
     case kArchAtomicStoreWithWriteBarrier: {
-      DCHECK_EQ(AddressingModeField::decode(instr->opcode()), kMode_None);
       RecordWriteMode mode = RecordWriteModeField::decode(instr->opcode());
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
@@ -2039,27 +2031,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Word64AtomicExchangeUint64:
       ASSEMBLE_ATOMIC_EXCHANGE_INTEGER(Lld, Scd);
       break;
-    case kAtomicExchangeWithWriteBarrier: {
-      if constexpr (COMPRESS_POINTERS_BOOL) {
-        UNREACHABLE();
-      } else {
-        ASSEMBLE_ATOMIC_EXCHANGE_INTEGER(Lld, Scd);
-      }
-      if (v8_flags.disable_write_barriers) break;
-      // Emit the write barrier.
-      Register object = i.InputRegister(0);
-      Register offset = i.InputRegister(1);
-      Register value = i.InputRegister(2);
-      auto ool = zone()->New<OutOfLineRecordWrite>(
-          this, object, offset, value, i.TempRegister(0), i.TempRegister(1),
-          RecordWriteMode::kValueIsAny, DetermineStubCallMode());
-      __ JumpIfSmi(value, ool->exit());
-      __ CheckPageFlag(object, i.TempRegister(0),
-                       MemoryChunk::kPointersFromHereAreInterestingMask, ne,
-                       ool->entry());
-      __ bind(ool->exit());
-      break;
-    }
     case kAtomicCompareExchangeInt8:
       DCHECK_EQ(AtomicWidthField::decode(opcode), AtomicWidth::kWord32);
       ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER_EXT(Ll, Sc, true, 8, 32);
@@ -2102,27 +2073,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Word64AtomicCompareExchangeUint64:
       ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(Lld, Scd);
       break;
-    case kAtomicCompareExchangeWithWriteBarrier: {
-      if constexpr (COMPRESS_POINTERS_BOOL) {
-        UNIMPLEMENTED();
-      } else {
-        ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(Lld, Scd);
-      }
-      if (v8_flags.disable_write_barriers) break;
-      // Emit the write barrier.
-      Register object = i.InputRegister(0);
-      Register offset = i.InputRegister(1);
-      Register new_value = i.InputRegister(3);
-      auto ool = zone()->New<OutOfLineRecordWrite>(
-          this, object, offset, new_value, i.TempRegister(0), i.TempRegister(1),
-          RecordWriteMode::kValueIsAny, DetermineStubCallMode());
-      __ JumpIfSmi(new_value, ool->exit());
-      __ CheckPageFlag(object, i.TempRegister(0),
-                       MemoryChunk::kPointersFromHereAreInterestingMask, ne,
-                       ool->entry());
-      __ bind(ool->exit());
-      break;
-    }
 #define ATOMIC_BINOP_CASE(op, inst32, inst64)                          \
   case kAtomic##op##Int8:                                              \
     DCHECK_EQ(AtomicWidthField::decode(opcode), AtomicWidth::kWord32); \
@@ -4149,12 +4099,9 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   }
 }
 
-#if V8_ENABLE_WEBASSEMBLY
-void CodeGenerator::AssembleArchConditionalTrap(Instruction* instr,
-                                                FlagsCondition condition) {
+void CodeGenerator::AssembleArchConditionalBoolean(Instruction* instr) {
   UNREACHABLE();
 }
-#endif  // V8_ENABLE_WEBASSEMBLY
 
 void CodeGenerator::AssembleArchConditionalBranch(Instruction* instr,
                                                   BranchInfo* branch) {

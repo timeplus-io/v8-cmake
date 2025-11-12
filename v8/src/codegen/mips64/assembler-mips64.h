@@ -173,7 +173,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   // Unused on this architecture.
   void MaybeEmitOutOfLineConstantPool() {}
-  void ClearInternalState() {}
 
   // Mips uses BlockTrampolinePool to prevent generating trampoline inside a
   // continuous instruction block. For Call instruction, it prevents generating
@@ -349,8 +348,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void DataAlign(int m);
   // Aligns code to something that's optimal for a jump target for the platform.
   void CodeTargetAlign();
-  void SwitchTargetAlign() { CodeTargetAlign(); }
-  void BranchTargetAlign() {}
   void LoopHeaderAlign() { CodeTargetAlign(); }
 
   // Different nop operations are used by the code generator to detect certain
@@ -1921,7 +1918,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   RegList scratch_register_list_;
 
  private:
-  void PatchInHeapNumberRequest(Address pc, Handle<HeapNumber> object) override;
+  void AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate);
 
   int WriteCodeComments();
 

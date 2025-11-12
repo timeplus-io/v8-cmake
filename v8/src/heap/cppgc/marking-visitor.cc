@@ -125,13 +125,14 @@ RootMarkingVisitor::RootMarkingVisitor(MutatorMarkingState& marking_state)
     : mutator_marking_state_(marking_state) {}
 
 void RootMarkingVisitor::VisitRoot(const void* object, TraceDescriptor desc,
-                                   SourceLocation) {
+                                   const SourceLocation&) {
   mutator_marking_state_.MarkAndPush(object, desc);
 }
 
 void RootMarkingVisitor::VisitWeakRoot(const void* object, TraceDescriptor desc,
                                        WeakCallback weak_callback,
-                                       const void* weak_root, SourceLocation) {
+                                       const void* weak_root,
+                                       const SourceLocation&) {
   mutator_marking_state_.InvokeWeakRootsCallbackIfNeeded(
       object, desc, weak_callback, weak_root);
 }

@@ -8,7 +8,6 @@
 #include <functional>
 #include <optional>
 
-#include "src/base/functional/function-ref.h"
 #include "src/base/macros.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/heap-object-list.h"
@@ -143,16 +142,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 #else
 #error Unknown architecture.
 #endif
-
-  // Convert<T> is intended to handle all converting type changes, i.e. when
-  // the underlying representation may change (extend, truncate, ...) in
-  // some way.
-  //
-  // See also convert.tq.
-  //
-  // Please add new overloads as convenient.
-  template <class To, class From>
-  TNode<To> Convert(TNode<From> from);
 
   TNode<IntPtrT> TaggedIndexToIntPtr(TNode<TaggedIndex> value);
   TNode<TaggedIndex> IntPtrToTaggedIndex(TNode<IntPtrT> value);
@@ -619,12 +608,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<Number> NumberAdd(TNode<Number> a, TNode<Number> b);
   TNode<Number> NumberSub(TNode<Number> a, TNode<Number> b);
   void GotoIfNotNumber(TNode<Object> value, Label* is_not_number);
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-  void GotoIfNumberOrUndefined(TNode<Object> value,
-                               Label* is_number_or_undefined);
-  void GotoIfNotNumberOrUndefined(TNode<Object> value,
-                                  Label* is_not_number_or_undefined);
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
   void GotoIfNumber(TNode<Object> value, Label* is_number);
   TNode<Number> SmiToNumber(TNode<Smi> v) { return v; }
 
@@ -636,9 +619,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                           Operation bitwise_op);
   TNode<Number> BitwiseSmiOp(TNode<Smi> left32, TNode<Smi> right32,
                              Operation bitwise_op);
-
-  TNode<BoolT> LogicalOr(TNode<BoolT> lhs,
-                         base::FunctionRef<TNode<BoolT>()> rhs);
 
   // Align the value to kObjectAlignment8GbHeap if V8_COMPRESS_POINTERS_8GB is
   // defined.
@@ -664,22 +644,22 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   void Dcheck(const BranchGenerator& branch, const char* message,
               std::initializer_list<ExtraNode> extra_nodes = {},
-              SourceLocation loc = SourceLocation::Current());
+              const SourceLocation& loc = SourceLocation::Current());
   void Dcheck(const NodeGenerator<BoolT>& condition_body, const char* message,
               std::initializer_list<ExtraNode> extra_nodes = {},
-              SourceLocation loc = SourceLocation::Current());
+              const SourceLocation& loc = SourceLocation::Current());
   void Dcheck(TNode<Word32T> condition_node, const char* message,
               std::initializer_list<ExtraNode> extra_nodes = {},
-              SourceLocation loc = SourceLocation::Current());
+              const SourceLocation& loc = SourceLocation::Current());
   void Check(const BranchGenerator& branch, const char* message,
              std::initializer_list<ExtraNode> extra_nodes = {},
-             SourceLocation loc = SourceLocation::Current());
+             const SourceLocation& loc = SourceLocation::Current());
   void Check(const NodeGenerator<BoolT>& condition_body, const char* message,
              std::initializer_list<ExtraNode> extra_nodes = {},
-             SourceLocation loc = SourceLocation::Current());
+             const SourceLocation& loc = SourceLocation::Current());
   void Check(TNode<Word32T> condition_node, const char* message,
              std::initializer_list<ExtraNode> extra_nodes = {},
-             SourceLocation loc = SourceLocation::Current());
+             const SourceLocation& loc = SourceLocation::Current());
   void FailAssert(const char* message,
                   const std::vector<FileAndLine>& files_and_lines,
                   std::initializer_list<ExtraNode> extra_nodes = {});
@@ -995,19 +975,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                                     int offset,
                                                     IndirectPointerTag tag);
 
-  void LoadTrustedUnknownPointerFromObject(
-      TNode<HeapObject> object, int offset, TVariable<Object>* value_out,
-      Label* if_empty, Label* if_default,
-      const std::initializer_list<std::pair<InstanceType, Label*>>& cases);
-
   // Load a code pointer field.
   // These are special versions of trusted pointers that, when the sandbox is
   // enabled, reference code objects through the code pointer table.
   TNode<Code> LoadCodePointerFromObject(TNode<HeapObject> object, int offset);
-
-  void DispatchOnInstanceType(
-      TNode<Object> value, TVariable<Uint16T>* type_out, Label* if_default,
-      const std::initializer_list<std::pair<InstanceType, Label*>>& cases);
 
 #ifdef V8_ENABLE_SANDBOX
   // Load an indirect pointer field.
@@ -1023,11 +994,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // which can either be a trusted pointer handle or a code pointer handle.
   TNode<TrustedObject> ResolveIndirectPointerHandle(
       TNode<IndirectPointerHandleT> handle, IndirectPointerTag tag);
-
-  void ResolveIndirectUnknownPointerHandle(
-      TNode<IndirectPointerHandleT> handle, TVariable<Object>* value_out,
-      TVariable<Uint16T>* type_out, Label* if_default,
-      const std::initializer_list<std::pair<InstanceType, Label*>>& cases);
 
   // Retrieve the Code object referenced by the given trusted pointer handle.
   TNode<Code> ResolveCodePointerHandle(TNode<IndirectPointerHandleT> handle);
@@ -1157,7 +1123,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Dynamically allocates a buffer of size `size` in C++ on the cppgc heap.
   TNode<RawPtrT> AllocateBuffer(TNode<IntPtrT> size);
-  TNode<Symbol> ArrayBufferWasmMemorySymbol();
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   TNode<RawPtrT> LoadJSTypedArrayExternalPointerPtr(
@@ -1506,8 +1471,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     return Word32BinaryNot(IsCleared(value));
   }
 
-  TNode<MaybeObject> PrototypeChainInvalidConstant();
-
   // Removes the weak bit + asserts it was set.
   TNode<HeapObject> GetHeapObjectAssumeWeak(TNode<MaybeObject> value);
 
@@ -1733,11 +1696,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<HeapObject> LoadJSFunctionPrototype(TNode<JSFunction> function,
                                             Label* if_bailout);
 
+  // Load the "code" property of a JSFunction.
+  TNode<Code> LoadJSFunctionCode(TNode<JSFunction> function);
+
+  TNode<Object> LoadSharedFunctionInfoTrustedData(
+      TNode<SharedFunctionInfo> sfi);
   TNode<Object> LoadSharedFunctionInfoUntrustedData(
       TNode<SharedFunctionInfo> sfi);
 
-  void GotoIfSharedFunctionInfoHasBaselineCode(TNode<SharedFunctionInfo> sfi,
-                                               Label* if_baseline);
+  TNode<BoolT> SharedFunctionInfoHasBaselineCode(TNode<SharedFunctionInfo> sfi);
 
   TNode<Smi> LoadSharedFunctionInfoBuiltinId(TNode<SharedFunctionInfo> sfi);
 
@@ -1752,13 +1719,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<WasmJSFunctionData> LoadSharedFunctionInfoWasmJSFunctionData(
       TNode<SharedFunctionInfo> sfi);
 #endif  // V8_ENABLE_WEBASSEMBLY
-
-  TNode<BytecodeArray> LoadInterpreterDataBytecodeArray(
-      TNode<InterpreterData> data);
-  TNode<Code> LoadInterpreterDataInterpreterTrampoline(
-      TNode<InterpreterData> data);
-
-  TNode<Int32T> LoadCodeParameterCount(TNode<Code> code);
 
   TNode<Int32T> LoadBytecodeArrayParameterCount(
       TNode<BytecodeArray> bytecode_array);
@@ -1988,11 +1948,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void StoreFixedDoubleArrayHole(TNode<FixedDoubleArray> array,
                                  TNode<IntPtrT> index);
 #ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-  template <typename TIndex>
-    requires(std::is_same_v<TIndex, Smi> || std::is_same_v<TIndex, UintPtrT> ||
-             std::is_same_v<TIndex, IntPtrT>)
   void StoreFixedDoubleArrayUndefined(TNode<FixedDoubleArray> array,
-                                      TNode<TIndex> index);
+                                      TNode<IntPtrT> index);
 #endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
   void StoreFeedbackVectorSlot(
       TNode<FeedbackVector> feedback_vector, TNode<UintPtrT> slot,
@@ -2054,9 +2011,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     return AllocateHeapNumberWithValue(Float64Constant(value));
   }
 
-  // Allocate a shared HeapNumber with a specific value.
-  TNode<HeapNumber> AllocateSharedHeapNumberWithValue(TNode<Float64T> value);
-
   TNode<ContextCell> AllocateContextCell(TNode<Object> value);
 
   // Allocate a BigInt with {length} digits. Sets the sign bit to {false}.
@@ -2117,14 +2071,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<IntPtrT> at_least_space_for,
       AllocationFlags = AllocationFlag::kNone);
   TNode<PropertyDictionary> AllocatePropertyDictionaryWithCapacity(
-      TNode<IntPtrT> capacity, AllocationFlags = AllocationFlag::kNone);
-
-  TNode<SimpleNameDictionary> AllocateSimpleNameDictionary(
-      int at_least_space_for);
-  TNode<SimpleNameDictionary> AllocateSimpleNameDictionary(
-      TNode<IntPtrT> at_least_space_for,
-      AllocationFlags = AllocationFlag::kNone);
-  TNode<SimpleNameDictionary> AllocateSimpleNameDictionaryWithCapacity(
       TNode<IntPtrT> capacity, AllocationFlags = AllocationFlag::kNone);
 
   TNode<NameDictionary> CopyNameDictionary(TNode<NameDictionary> dictionary,
@@ -2300,22 +2246,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                            TNode<Object> value,
                                            TNode<Boolean> done);
 
-  TNode<JSArray> AllocateJSIteratorResultValueForEntry(TNode<Context> context,
-                                                       TNode<Object> key,
-                                                       TNode<Object> value);
   // TODO(v8:9722): Return type should be JSIteratorResult
   TNode<JSObject> AllocateJSIteratorResultForEntry(TNode<Context> context,
                                                    TNode<Object> key,
                                                    TNode<Object> value);
-
-  // Calls the next method of an iterator and returns the pair of
-  // {value, done} properties of the result.
-  std::pair<TNode<Object>, TNode<Object>> CallIteratorNext(
-      TNode<Object> iterator, TNode<Object> next_method,
-      TNode<Context> context);
-  using ForOfNextResult = TorqueStructForOfNextResult_0;
-  ForOfNextResult ForOfNextHelper(TNode<Context> context, TNode<Object> object,
-                                  TNode<Object> next);
 
   TNode<JSObject> AllocatePromiseWithResolversResult(TNode<Context> context,
                                                      TNode<Object> promise,
@@ -2804,8 +2738,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   void TerminateExecution(TNode<Context> context);
 
-  TNode<Union<TheHole, JSMessageObject>> GetPendingMessage();
-  void SetPendingMessage(TNode<Union<TheHole, JSMessageObject>> message);
+  TNode<Union<Hole, JSMessageObject>> GetPendingMessage();
+  void SetPendingMessage(TNode<Union<Hole, JSMessageObject>> message);
   TNode<BoolT> IsExecutionTerminating();
 
   TNode<Object> GetContinuationPreservedEmbedderData();
@@ -2889,12 +2823,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSReceiverInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSReceiverMap(TNode<Map> map);
   TNode<BoolT> IsJSReceiver(TNode<HeapObject> object);
-  // The following four methods assume that we deal either with a primitive
+  // The following two methods assume that we deal either with a primitive
   // object or a JS receiver.
   TNode<BoolT> JSAnyIsNotPrimitiveMap(TNode<Map> map);
   TNode<BoolT> JSAnyIsNotPrimitive(TNode<HeapObject> object);
-  TNode<BoolT> JSAnyIsPrimitiveMap(TNode<Map> map);
-  TNode<BoolT> JSAnyIsPrimitive(TNode<HeapObject> object);
   TNode<BoolT> IsJSRegExp(TNode<HeapObject> object);
   TNode<BoolT> IsJSTypedArrayInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSTypedArrayMap(TNode<Map> map);
@@ -3914,10 +3846,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Helpers to look up Page metadata for a given address.
   // Equivalent to MemoryChunk::FromAddress().
   TNode<IntPtrT> MemoryChunkFromAddress(TNode<IntPtrT> address);
-  // Equivalent to MemoryChunk::Metadata().
-  TNode<IntPtrT> MemoryChunkMetadataFromMemoryChunk(TNode<IntPtrT> address);
+  // Equivalent to MemoryChunk::MutablePageMetadata().
+  TNode<IntPtrT> PageMetadataFromMemoryChunk(TNode<IntPtrT> address);
   // Equivalent to MemoryChunkMetadata::FromAddress().
-  TNode<IntPtrT> MemoryChunkMetadataFromAddress(TNode<IntPtrT> address);
+  TNode<IntPtrT> PageMetadataFromAddress(TNode<IntPtrT> address);
 
   // Store a weak in-place reference into the FeedbackVector.
   TNode<MaybeObject> StoreWeakReferenceInFeedbackVector(
@@ -4216,6 +4148,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // JSTypedArray helpers
   TNode<UintPtrT> LoadJSTypedArrayLength(TNode<JSTypedArray> typed_array);
+  void StoreJSTypedArrayLength(TNode<JSTypedArray> typed_array,
+                               TNode<UintPtrT> value);
   TNode<UintPtrT> LoadJSTypedArrayLengthAndCheckDetached(
       TNode<JSTypedArray> typed_array, Label* detached);
   // Helper for length tracking JSTypedArrays and JSTypedArrays backed by
@@ -4243,7 +4177,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                               TNode<UintPtrT> index,
                               Label* detached_or_out_of_bounds);
 
-  TNode<Uint8T> ElementsKindToElementByteShift(TNode<Int32T> elementsKind);
+  TNode<Uint8T> RabGsabElementsKindToElementByteShift(
+      TNode<Int32T> elementsKind);
   TNode<RawPtrT> LoadJSTypedArrayDataPtr(TNode<JSTypedArray> typed_array);
   TNode<JSArrayBuffer> GetTypedArrayBuffer(TNode<Context> context,
                                            TNode<JSTypedArray> array);
@@ -4283,27 +4218,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<UintPtrT> ComputeJSDispatchTableEntryOffset(
       TNode<JSDispatchHandleT> handle);
-#endif  // V8_ENABLE_LEAPTIERING
-
-  // Tailcalls to the given code object with JSCall linkage. The JS arguments
-  // (including receiver) are supposed to be already on the stack.
-  // This is a building block for implementing trampoline stubs that are
-  // installed instead of code objects with JSCall linkage.
-  // Note that no arguments adaption is going on here - all the JavaScript
-  // arguments are left on the stack unmodified. Therefore, this tail call can
-  // only be used after arguments adaptation has been performed already.
-  // When Sandbox is enabled it also checks that the code's parameter count
-  // and dispatch handle's parameter counts match.
-  void TailCallJSCode(TNode<Code> code, TNode<Context> context,
-                      TNode<JSFunction> function, TNode<Object> new_target,
-                      TNode<Int32T> arg_count,
-                      TNode<JSDispatchHandleT> dispatch_handle);
-  // Same as above, but the code object is loaded from the dispatch table
-  // entry or from the function according to V8_ENABLE_LEAPTIERING state and
-  // thus the parameter count check is not necessary.
-  void TailCallJSCode(TNode<Context> context, TNode<JSFunction> function,
-                      TNode<Object> new_target, TNode<Int32T> arg_count,
-                      TNode<JSDispatchHandleT> dispatch_handle);
+#endif
 
   // Indicate that this code must support a dynamic parameter count.
   //
@@ -4334,11 +4249,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<SharedFunctionInfo> shared_info,
       TVariable<Uint16T>* data_type_out = nullptr,
       Label* if_compile_lazy = nullptr);
-
-  void LoadSharedFunctionInfoTrustedDataAndDispatch(
-      TNode<SharedFunctionInfo> shared_info, TVariable<Object>* sfi_data_out,
-      TVariable<Uint16T>* data_type_out, Label* if_empty, Label* if_default,
-      const std::initializer_list<std::pair<InstanceType, Label*>>& cases);
 
   TNode<JSFunction> AllocateRootFunctionWithContext(
       RootIndex function, TNode<Context> context,

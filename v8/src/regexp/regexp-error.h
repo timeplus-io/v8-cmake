@@ -45,8 +45,7 @@ namespace internal {
   T(InvalidClassSetOperation, "Invalid set operation in character class") \
   T(InvalidCharacterInClass, "Invalid character in character class")      \
   T(NegatedCharacterClassWithStrings,                                     \
-    "Negated character class may contain strings")                        \
-  T(UnsupportedBytecode, "Unsupported Bytecode")
+    "Negated character class may contain strings")
 
 enum class RegExpError : uint32_t {
 #define TEMPLATE(NAME, STRING) k##NAME,

@@ -34,8 +34,7 @@ extern runtime WasmReThrow(Context, Object): JSAny;
 extern runtime WasmTriggerTierUp(Context, WasmTrustedInstanceData): JSAny;
 extern runtime WasmStackGuard(Context, Smi): JSAny;
 extern runtime ThrowWasmStackOverflow(Context): JSAny;
-extern runtime WasmTraceGlobal(NoContext, Smi): JSAny;
-extern runtime WasmTraceMemory(NoContext, Smi): JSAny;
+extern runtime WasmTraceMemory(Context, Smi): JSAny;
 extern runtime WasmTraceEnter(Context): JSAny;
 extern runtime WasmTraceExit(Context, Smi): JSAny;
 extern runtime WasmI32AtomicWait(
@@ -85,9 +84,6 @@ extern runtime WasmLiftoffDeoptFinish(NoContext, WasmTrustedInstanceData):
 
 extern runtime PropagateException(NoContext): JSAny;
 extern runtime AllocateInSharedHeap(Context, Smi, Smi): HeapObject;
-
-extern runtime WasmConfigureAllPrototypesOpt(
-    Context, Object, JSAny, WasmTrustedInstanceData): Object;
 }
 
 extern operator '.wasm_exported_function_data' macro
@@ -112,8 +108,6 @@ macro NumberToUint32(input: Number): uint32 {
 namespace wasm {
 const kAnyType: constexpr int31
     generates 'wasm::kWasmAnyRef.raw_bit_field()';
-const kSharedAnyType: constexpr int31
-    generates 'wasm::kWasmSharedAnyRef.raw_bit_field()';
 const kMaxPolymorphism:
     constexpr int31 generates 'wasm::kMaxPolymorphism';
 const kFixedFrameSizeAboveFp: constexpr int32
@@ -177,10 +171,6 @@ macro LoadMaybeSharedInstanceDataFromFrame(extractSharedData: Smi):
 
 builtin WasmInt32ToHeapNumber(val: int32): HeapNumber {
   return AllocateHeapNumberWithValue(Convert<float64>(val));
-}
-
-builtin WasmInt32ToSharedHeapNumber(val: int32): HeapNumber {
-  return AllocateSharedHeapNumberWithValue(Convert<float64>(val));
 }
 
 builtin WasmFuncRefToJS(
@@ -492,12 +482,8 @@ builtin WasmStackOverflow(): JSAny {
   tail runtime::ThrowWasmStackOverflow(LoadContextFromFrame());
 }
 
-builtin WasmTraceGlobal(info: Smi): JSAny {
-  tail runtime::WasmTraceGlobal(kNoContext, info);
-}
-
 builtin WasmTraceMemory(info: Smi): JSAny {
-  tail runtime::WasmTraceMemory(kNoContext, info);
+  tail runtime::WasmTraceMemory(LoadContextFromFrame(), info);
 }
 
 builtin WasmTraceEnter(): JSAny {
@@ -506,14 +492,6 @@ builtin WasmTraceEnter(): JSAny {
 
 builtin WasmTraceExit(info: Smi): JSAny {
   tail runtime::WasmTraceExit(LoadContextFromFrame(), info);
-}
-
-builtin WasmConfigureAllPrototypesOpt(buffer: Object, constructors: JSAny):
-    Object {
-  const instance = LoadInstanceDataFromFrame();
-  const context = LoadContextFromInstanceData(instance);
-  tail runtime::WasmConfigureAllPrototypesOpt(
-      context, buffer, constructors, instance);
 }
 
 builtin WasmAllocateJSArray(implicit context: Context)(size: Smi): JSArray {
@@ -945,6 +923,19 @@ macro GetRefAt<T: type, From: type>(base: From, offset: intptr): &T {
 }
 
 extern macro LoadPointerFromRootRegister(intptr): RawPtr;
+
+const kThreadInWasmFlagAddressOffset: constexpr intptr
+    generates 'Isolate::thread_in_wasm_flag_address_offset()';
+
+const kActiveSuspenderOffset: constexpr intptr
+    generates 'IsolateData::root_slot_offset(RootIndex::kActiveSuspender)';
+
+macro ModifyThreadInWasmFlag(newValue: int32): void {
+  const threadInWasmFlagAddress =
+      LoadPointerFromRootRegister(kThreadInWasmFlagAddressOffset);
+  const threadInWasmFlagRef = GetRefAt<int32>(threadInWasmFlagAddress, 0);
+  *threadInWasmFlagRef = newValue;
+}
 
 builtin WasmStringNewWtf8(
     offset: uintptr, size: uint32, memory: uint32, utf8Variant: Smi): String
@@ -1589,15 +1580,6 @@ builtin WasmAnyConvertExtern(externObject: JSAny): JSAny {
       context, externObject, SmiConstant(kAnyType));
 }
 
-builtin WasmAnyConvertExternShared(externObject: JSAny): JSAny {
-  const trustedData = LoadInstanceDataFromFrame();
-  const context = LoadContextFromInstanceData(trustedData);
-
-  tail runtime::WasmJSToWasmObject(
-      context, externObject, SmiConstant(kSharedAnyType));
-}
-
-
 extern macro CallOrConstructBuiltinsAssembler::GetCompatibleReceiver(
     JSReceiver, HeapObject, Context): JSReceiver;
 
@@ -1606,9 +1588,11 @@ builtin WasmFastApiCallTypeCheckAndUpdateIC(
     receiver: JSAny): Smi {
   try {
     const rec = Cast<JSReceiver>(receiver) otherwise goto IllegalCast;
+    ModifyThreadInWasmFlag(0);
     // We don't care about the actual compatible receiver; we just rely
     // on this helper throwing an exception when there isn't one.
     GetCompatibleReceiver(rec, data.signature, context);
+    ModifyThreadInWasmFlag(1);
     data.cached_map = StrongToWeak(rec.map);
     return 1;
   } label IllegalCast {

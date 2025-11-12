@@ -26,7 +26,7 @@ TEST_F(HeapAllocatorTest, TryResizeLargeObject) {
   constexpr size_t kInitialElements = 64 * KB;
   constexpr size_t kResizedElements = 2 * kInitialElements;
   Handle<FixedArray> array = i_isolate->factory()->NewFixedArray(
-      kInitialElements, AllocationType::kYoung, AllocationHint().WithMayGrow());
+      kInitialElements, AllocationType::kYoung);
   ReadOnlyRoots roots{i_isolate};
 
   for (size_t i = kInitialElements; i < kResizedElements; i++) {

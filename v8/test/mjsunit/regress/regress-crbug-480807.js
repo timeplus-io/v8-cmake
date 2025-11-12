@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --use-osr
+// Flags: --allow-natives-syntax --use-osr --noalways-turbofan
+
 function foo() {
   var c = 0;
   for (var e = 0; e < 1; ++e) {

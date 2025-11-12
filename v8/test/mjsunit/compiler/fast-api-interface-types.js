@@ -5,6 +5,7 @@
 // This file interface types used with fast API calls.
 
 // Flags: --turbo-fast-api-calls --expose-fast-api --allow-natives-syntax --turbofan
+// Flags: --no-always-turbofan
 // Flags: --deopt-every-n-times=0
 // Flags: --fast-api-allow-float-in-sim
 

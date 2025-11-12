@@ -35,10 +35,11 @@ void ThreadLocalTop::Clear() {
   simulator_ = nullptr;
   js_entry_sp_ = kNullAddress;
   external_callback_scope_ = nullptr;
-  current_vm_state_ = IDLE;
+  current_vm_state_ = EXTERNAL;
   current_embedder_state_ = nullptr;
   top_backup_incumbent_scope_ = nullptr;
   failed_access_check_callback_ = nullptr;
+  thread_in_wasm_flag_address_ = kNullAddress;
   central_stack_limit_ = kNullAddress;
   central_stack_sp_ = kNullAddress;
   secondary_stack_sp_ = kNullAddress;
@@ -50,6 +51,8 @@ void ThreadLocalTop::Initialize(Isolate* isolate) {
   isolate_ = isolate;
   thread_id_ = ThreadId::Current();
 #if V8_ENABLE_WEBASSEMBLY
+  thread_in_wasm_flag_address_ = reinterpret_cast<Address>(
+      trap_handler::GetThreadInWasmThreadLocalAddress());
   is_on_central_stack_flag_ = true;
 #endif  // V8_ENABLE_WEBASSEMBLY
 #ifdef USE_SIMULATOR

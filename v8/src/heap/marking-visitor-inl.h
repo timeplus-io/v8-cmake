@@ -446,7 +446,7 @@ bool MarkingVisitorBase<ConcreteVisitor>::HasBytecodeArrayForFlushing(
   // called by the concurrent marker.
   Tagged<Object> data = sfi->GetTrustedData(heap_->isolate());
   if (IsCode(data)) {
-    Tagged<Code> baseline_code = TrustedCast<Code>(data);
+    Tagged<Code> baseline_code = Cast<Code>(data);
     DCHECK_EQ(baseline_code->kind(), CodeKind::BASELINE);
     // If baseline code flushing isn't enabled and we have baseline data on SFI
     // we cannot flush baseline / bytecode.
@@ -539,7 +539,7 @@ bool MarkingVisitorBase<ConcreteVisitor>::ShouldFlushBaselineCode(
   MemoryChunk::FromAddress(maybe_code.ptr())->SynchronizedLoad();
 #endif
   if (!IsCode(maybe_code)) return false;
-  Tagged<Code> code = TrustedCast<Code>(maybe_code);
+  Tagged<Code> code = Cast<Code>(maybe_code);
   if (code->kind() != CodeKind::BASELINE) return false;
 
   Tagged<SharedFunctionInfo> shared = Cast<SharedFunctionInfo>(maybe_shared);
@@ -692,7 +692,7 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitEphemeronHashTable(
       }
     }
   }
-  return table->SafeSizeFromMap(map).value();
+  return table->SizeFromMap(map);
 }
 
 template <typename ConcreteVisitor>
@@ -733,9 +733,9 @@ size_t MarkingVisitorBase<ConcreteVisitor>::VisitWeakCell(
           heap_, concrete_visitor()->marking_state(), unregister_token)) {
     // Record the slots inside the WeakCell, since its IterateBody doesn't visit
     // it.
-    ObjectSlot slot(&weak_cell->target_);
+    ObjectSlot slot = weak_cell->RawField(WeakCell::kTargetOffset);
     concrete_visitor()->RecordSlot(weak_cell, slot, target);
-    slot = ObjectSlot(&weak_cell->unregister_token_);
+    slot = weak_cell->RawField(WeakCell::kUnregisterTokenOffset);
     concrete_visitor()->RecordSlot(weak_cell, slot, unregister_token);
   } else {
     // WeakCell points to a potentially dead object or a dead unregister

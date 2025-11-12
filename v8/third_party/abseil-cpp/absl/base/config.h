@@ -237,8 +237,6 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 #error ABSL_HAVE_TLS cannot be directly set
 #elif (defined(__linux__)) && (defined(__clang__) || defined(_GLIBCXX_HAVE_TLS))
 #define ABSL_HAVE_TLS 1
-#elif defined(__INTEL_LLVM_COMPILER)
-#define ABSL_HAVE_TLS 1
 #endif
 
 // ABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
@@ -364,7 +362,6 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 //   AsmJS                             __asmjs__
 //   WebAssembly (Emscripten)          __EMSCRIPTEN__
 //   Fuchsia                           __Fuchsia__
-//   WebAssembly (WASI)                _WASI_EMULATED_MMAN (implies __wasi__)
 //
 // Note that since Android defines both __ANDROID__ and __linux__, one
 // may probe for either Linux or Android by simply testing for __linux__.
@@ -380,8 +377,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
     defined(__asmjs__) || defined(__EMSCRIPTEN__) || defined(__Fuchsia__) || \
     defined(__sun) || defined(__myriad2__) || defined(__HAIKU__) ||          \
     defined(__OpenBSD__) || defined(__NetBSD__) || defined(__QNX__) ||       \
-    defined(__VXWORKS__) || defined(__hexagon__) || defined(__XTENSA__) ||   \
-    defined(_WASI_EMULATED_MMAN)
+    defined(__VXWORKS__) || defined(__hexagon__) || defined(__XTENSA__)
 #define ABSL_HAVE_MMAP 1
 #endif
 

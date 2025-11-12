@@ -217,12 +217,15 @@ static void LookupForRead(LookupIterator* it, bool is_has_property) {
       }
       case LookupIterator::ACCESS_CHECK:
         // ICs know how to perform access checks on global proxies.
-        if (!IsAccessCheckNeeded(*it->GetHolder<JSObject>())) continue;
+        if (it->GetHolder<JSObject>().is_identical_to(
+                it->isolate()->global_proxy()) &&
+            !it->isolate()->global_object()->IsDetached(it->isolate())) {
+          continue;
+        }
         return;
       case LookupIterator::ACCESSOR:
       case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
       case LookupIterator::DATA:
-      case LookupIterator::STRING_LOOKUP_START_OBJECT:
       case LookupIterator::NOT_FOUND:
         return;
     }
@@ -604,29 +607,6 @@ bool IC::UpdateMegaDOMIC(const MaybeObjectDirectHandle& handler,
   return true;
 }
 
-bool IC::UpdateOneMapManyNamesIC(DirectHandle<Name> new_name) {
-#if V8_ENABLE_WEBASSEMBLY
-  if (state() != MONOMORPHIC) return false;
-  if (!IsKeyedLoadIC() && !IsKeyedStoreIC()) return false;
-  // For JS objects, using the generic stub is faster. Wasm objects benefit
-  // from collecting a map that the optimizing compiler can use.
-  Tagged<Map> old_map = nexus()->GetFirstMap();
-  if (old_map.is_null() || !IsWasmObjectMap(old_map)) return false;
-  if (old_map != *lookup_start_object_map()) return false;
-  Tagged<Name> old_name = nexus()->GetName();
-  if (old_name.is_null()) return false;     // Saw indexed access before.
-  if (old_name == *new_name) return false;  // Something else is wrong.
-  DirectHandle<Smi> generic = IsKeyedLoadIC()
-                                  ? LoadHandler::LoadGeneric(isolate())
-                                  : StoreHandler::StoreGeneric(isolate());
-  ConfigureVectorState(DirectHandle<Name>(), lookup_start_object_map(),
-                       generic);
-  return true;
-#else
-  return false;
-#endif  // V8_ENABLE_WEBASSEMBLY
-}
-
 bool IC::UpdatePolymorphicIC(DirectHandle<Name> name,
                              const MaybeObjectDirectHandle& handler) {
   DCHECK(IsHandler(*handler));
@@ -764,7 +744,6 @@ void IC::SetCache(DirectHandle<Name> name, const MaybeObjectHandle& handler) {
         UpdateMonomorphicIC(handler, name);
         break;
       }
-      if (UpdateOneMapManyNamesIC(name)) break;
       [[fallthrough]];
     case POLYMORPHIC:
       if (UpdatePolymorphicIC(name, handler)) break;
@@ -818,9 +797,10 @@ void LoadIC::UpdateCaches(LookupIterator* lookup) {
       }
     }
     handler = ComputeHandler(lookup);
-    CHECK(lookup->state() == LookupIterator::STRING_LOOKUP_START_OBJECT ||
-          *lookup->GetHolder<Object>() == *(lookup->lookup_start_object()) ||
-          LoadHandler::CanHandleHolderNotLookupStart(*handler.object()));
+    auto holder = lookup->GetHolder<Object>();
+    CHECK(*holder == *(lookup->lookup_start_object()) ||
+          LoadHandler::CanHandleHolderNotLookupStart(*handler.object()) ||
+          IsJSPrimitiveWrapper(*holder));
   }
   // Can't use {lookup->name()} because the LookupIterator might be in
   // "elements" mode for keys that are strings representing integers above
@@ -1141,7 +1121,6 @@ MaybeObjectHandle LoadIC::ComputeHandler(LookupIterator* lookup) {
     case LookupIterator::ACCESS_CHECK:
     case LookupIterator::NOT_FOUND:
     case LookupIterator::TRANSITION:
-    case LookupIterator::STRING_LOOKUP_START_OBJECT:
       UNREACHABLE();
   }
 
@@ -1455,10 +1434,9 @@ void KeyedLoadIC::LoadElementPolymorphicHandlers(
     MapHandles* receiver_maps, MaybeObjectHandles* handlers,
     KeyedAccessLoadMode new_load_mode) {
   // Filter out deprecated maps to ensure their instances get migrated.
-  auto new_end = std::remove_if(
+  receiver_maps->erase(std::remove_if(
       receiver_maps->begin(), receiver_maps->end(),
-      [](const DirectHandle<Map>& map) { return map->is_deprecated(); });
-  receiver_maps->erase(new_end, receiver_maps->end());
+      [](const DirectHandle<Map>& map) { return map->is_deprecated(); }));
 
   for (DirectHandle<Map> receiver_map : *receiver_maps) {
       Tagged<Map> tmap = receiver_map->FindElementsKindTransitionedMap(
@@ -1658,9 +1636,8 @@ bool StoreIC::LookupForWrite(LookupIterator* it, DirectHandle<Object> value,
         continue;
       }
       case LookupIterator::ACCESS_CHECK:
-        // ICs know how to perform access checks on global proxies.
-        if (!IsAccessCheckNeeded(*it->GetHolder<JSObject>())) continue;
-        return false;
+        if (IsAccessCheckNeeded(*it->GetHolder<JSObject>())) return false;
+        continue;
       case LookupIterator::ACCESSOR:
         return !it->IsReadOnly();
       case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
@@ -1695,9 +1672,6 @@ bool StoreIC::LookupForWrite(LookupIterator* it, DirectHandle<Object> value,
                                             store_origin);
         return it->IsCacheableTransition();
       }
-      case LookupIterator::STRING_LOOKUP_START_OBJECT:
-        UNREACHABLE();
-
       case LookupIterator::NOT_FOUND:
         // If we are in StoreGlobal then check if we should throw on
         // non-existent properties.
@@ -1826,7 +1800,6 @@ Maybe<bool> DefineOwnDataProperty(LookupIterator* it,
         case LookupIterator::INTERCEPTOR:
         case LookupIterator::ACCESSOR:
         case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
-        case LookupIterator::STRING_LOOKUP_START_OBJECT:
           UNREACHABLE();
         case LookupIterator::ACCESS_CHECK: {
           DCHECK(!IsAccessCheckNeeded(*it->GetHolder<JSObject>()));
@@ -1845,8 +1818,6 @@ Maybe<bool> DefineOwnDataProperty(LookupIterator* it,
     case LookupIterator::INTERCEPTOR:
     case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
       break;
-    case LookupIterator::STRING_LOOKUP_START_OBJECT:
-      UNREACHABLE();
   }
 
   // We need to restart to handle interceptors properly.
@@ -2264,7 +2235,6 @@ MaybeObjectHandle StoreIC::ComputeHandler(LookupIterator* lookup) {
     case LookupIterator::ACCESS_CHECK:
     case LookupIterator::NOT_FOUND:
     case LookupIterator::WASM_OBJECT:
-    case LookupIterator::STRING_LOOKUP_START_OBJECT:
       UNREACHABLE();
   }
   return MaybeObjectHandle();
@@ -2413,24 +2383,6 @@ void KeyedStoreIC::UpdateStoreElement(Handle<Map> receiver_map,
 Handle<Object> KeyedStoreIC::StoreElementHandler(
     DirectHandle<Map> receiver_map, KeyedAccessStoreMode store_mode,
     MaybeDirectHandle<UnionOf<Smi, Cell>> prev_validity_cell) {
-  if (!IsJSObjectMap(*receiver_map)) {
-    // DefineKeyedOwnIC, which is used to define computed fields in instances,
-    // should handled by the slow stub below instead of the proxy stub.
-    if (IsJSProxyMap(*receiver_map) && !IsDefineKeyedOwnIC()) {
-      return StoreHandler::StoreProxy(isolate());
-    }
-
-#if V8_ENABLE_WEBASSEMBLY
-    if (IsWasmObjectMap(*receiver_map)) {
-      set_slow_stub_reason("wasm object");
-    }
-#endif  // V8_ENABLE_WEBASSEMBLY
-
-    // Wasm objects or other kind of special objects go through the slow stub.
-    TRACE_HANDLER_STATS(isolate(), KeyedStoreIC_SlowStub);
-    return StoreHandler::StoreSlow(isolate(), store_mode);
-  }
-
   // The only case when could keep using non-slow element store handler for
   // a fast array with potentially read-only elements is when it's an
   // initializing store to array literal.
@@ -2439,6 +2391,18 @@ Handle<Object> KeyedStoreIC::StoreElementHandler(
           receiver_map->ShouldCheckForReadOnlyElementsInPrototypeChain(
               isolate()),
       IsStoreInArrayLiteralIC());
+
+  if (!IsJSObjectMap(*receiver_map)) {
+    // DefineKeyedOwnIC, which is used to define computed fields in instances,
+    // should handled by the slow stub below instead of the proxy stub.
+    if (IsJSProxyMap(*receiver_map) && !IsDefineKeyedOwnIC()) {
+      return StoreHandler::StoreProxy(isolate());
+    }
+
+    // Wasm objects or other kind of special objects go through the slow stub.
+    TRACE_HANDLER_STATS(isolate(), KeyedStoreIC_SlowStub);
+    return StoreHandler::StoreSlow(isolate(), store_mode);
+  }
 
   // TODO(ishell): move to StoreHandler::StoreElement().
   Handle<Code> code;
@@ -2482,7 +2446,7 @@ Handle<Object> KeyedStoreIC::StoreElementHandler(
     validity_cell =
         Map::GetOrCreatePrototypeChainValidityCell(receiver_map, isolate());
   }
-  if (*validity_cell == Map::kNoValidityCellSentinel) {
+  if (IsSmi(*validity_cell)) {
     // There's no prototype validity cell to check, so we can just use the stub.
     return code;
   }
@@ -2646,6 +2610,12 @@ MaybeDirectHandle<Object> KeyedStoreIC::Store(Handle<JSAny> object,
       set_slow_stub_reason("map in array prototype");
       use_ic = false;
     }
+#if V8_ENABLE_WEBASSEMBLY
+    if (IsWasmObjectMap(heap_object->map())) {
+      set_slow_stub_reason("wasm object");
+      use_ic = false;
+    }
+#endif
   }
 
   Handle<Map> old_receiver_map;
@@ -2697,15 +2667,6 @@ MaybeDirectHandle<Object> KeyedStoreIC::Store(Handle<JSAny> object,
       } else if (key_is_valid_index) {
         if (old_receiver_map->is_abandoned_prototype_map()) {
           set_slow_stub_reason("receiver with prototype map");
-#if V8_ENABLE_WEBASSEMBLY
-        } else if (IsWasmObjectMap(*old_receiver_map)) {
-          // Handle object types for which we don't need to check for
-          // read-only prototype elements because we'll use the slow handler
-          // anyway.
-          DirectHandle<HeapObject> receiver = Cast<HeapObject>(object);
-          UpdateStoreElement(old_receiver_map, store_mode,
-                             handle(receiver->map(), isolate()));
-#endif  // V8_ENABLE_WEBASSEMBLY
         } else if (old_receiver_map->has_dictionary_elements() ||
                    !old_receiver_map
                         ->ShouldCheckForReadOnlyElementsInPrototypeChain(
@@ -3607,8 +3568,8 @@ Tagged<Object> GetCloneTargetMap(Isolate* isolate, DirectHandle<Map> source_map,
           Tagged<Object> validity_cell = transitions.GetSideStepTransition(
               SideStepTransition::Kind::kObjectAssignValidityCell);
           is_valid = validity_cell.IsHeapObject() &&
-                     Cast<Cell>(validity_cell)->maybe_value() !=
-                         Map::kPrototypeChainInvalid;
+                     Cast<Cell>(validity_cell)->value().ToSmi().value() ==
+                         Map::kPrototypeChainValid;
         }
       }
       if (V8_LIKELY(is_valid)) {
@@ -3884,25 +3845,15 @@ bool MaybeCanCloneObjectForObjectAssign(DirectHandle<JSReceiver> source,
     LookupIterator it(isolate, target, key);
     switch (it.state()) {
       case LookupIterator::NOT_FOUND:
-        continue;
+        break;
       case LookupIterator::DATA:
         if (it.property_attributes() & PropertyAttributes::READ_ONLY) {
           return false;
         }
-        continue;
-
-      case LookupIterator::INTERCEPTOR:
-      case LookupIterator::TRANSITION:
-      case LookupIterator::ACCESS_CHECK:
-      case LookupIterator::JSPROXY:
-      case LookupIterator::WASM_OBJECT:
-      case LookupIterator::TYPED_ARRAY_INDEX_NOT_FOUND:
-      case LookupIterator::ACCESSOR:
+        break;
+      default:
         return false;
-      case LookupIterator::STRING_LOOKUP_START_OBJECT:
-        UNREACHABLE();
     }
-    UNREACHABLE();
   }
   return true;
 }
@@ -4090,7 +4041,7 @@ RUNTIME_FUNCTION(Runtime_StorePropertyWithInterceptor) {
     // throw an exception.
     constexpr bool ignore_return_value = true;
     InterceptorResult result;
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+    MAYBE_ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, result,
         callback_args.GetBooleanReturnValue(intercepted, "Setter",
                                             ignore_return_value));

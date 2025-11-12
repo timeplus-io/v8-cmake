@@ -182,7 +182,7 @@ MaybeDirectHandle<Object> JSDisposableStackBase::DisposeResources(
       *(isolate->factory()->uninitialized_value()));
 
   // 7. Return ? completion.
-  if (!IsUninitializedHole(*existing_error_handle)) {
+  if (!IsUninitialized(*existing_error_handle)) {
     if (disposable_stack->suppressed_error_created() == true) {
       // Created SuppressedError is intentionally suppressed here for debug.
       SuppressDebug while_processing(isolate->debug());
@@ -201,10 +201,11 @@ JSDisposableStackBase::ResolveAPromiseWithValueAndReturnIt(
   DirectHandle<JSFunction> promise_function = isolate->promise_function();
   DirectHandle<Object> args[] = {value};
   DirectHandle<Object> result;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, result,
       Execution::CallBuiltin(isolate, isolate->promise_resolve(),
-                             promise_function, base::VectorOf(args)));
+                             promise_function, base::VectorOf(args)),
+      MaybeDirectHandle<JSReceiver>());
   return Cast<JSReceiver>(result);
 }
 

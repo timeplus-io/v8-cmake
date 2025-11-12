@@ -8,9 +8,6 @@
 #include "src/objects/tagged-field.h"
 // Include the non-inl header before the rest of the headers.
 
-#include <type_traits>
-
-#include "src/common/globals.h"
 #include "src/common/ptr-compr-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/tagged.h"
@@ -27,12 +24,6 @@ Address TaggedMember<T, CompressionScheme>::tagged_to_full(
     DCHECK(HAS_SMI_TAG(tagged_value));
     return CompressionScheme::DecompressTaggedSigned(tagged_value);
   } else {
-    if constexpr (std::is_same_v<V8HeapCompressionScheme, CompressionScheme>) {
-      static_assert(is_subtype_v<T, MaybeObject>);
-    } else if constexpr (std::is_same_v<TrustedSpaceCompressionScheme,
-                                        CompressionScheme>) {
-      static_assert(is_subtype_v<T, UnionOf<Smi, MaybeWeak<TrustedObject>>>);
-    }
     return CompressionScheme::DecompressTagged(tagged_value);
   }
 #else
@@ -167,7 +158,7 @@ void TaggedMember<T, CompressionScheme>::WriteBarrier(HeapObjectLayout* host,
 #if V8_ENABLE_UNCONDITIONAL_WRITE_BARRIERS
     mode = UPDATE_WRITE_BARRIER;
 #endif
-    DCHECK(TrustedHeapLayout::IsOwnedByAnyHeap(Tagged(host)));
+    DCHECK(HeapLayout::IsOwnedByAnyHeap(Tagged(host)));
     WriteBarrier::ForValue(host, this, value, mode);
   }
 #endif

@@ -38,10 +38,7 @@ struct FeedbackSource {
   };
 };
 
-V8_INLINE bool operator==(FeedbackSource const& lhs,
-                          FeedbackSource const& rhs) {
-  return FeedbackSource::Equal()(lhs, rhs);
-}
+bool operator==(FeedbackSource const&, FeedbackSource const&);
 bool operator!=(FeedbackSource const&, FeedbackSource const&);
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,

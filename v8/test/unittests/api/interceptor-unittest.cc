@@ -39,8 +39,6 @@ TEST_F(InterceptorTest, FreezeApiObjectWithInterceptor) {
 namespace internal {
 namespace {
 
-const v8::EmbedderDataTypeTag kTestInterceptorTag = 1;
-
 class InterceptorLoggingTest : public TestWithNativeContext {
  public:
   InterceptorLoggingTest() = default;
@@ -165,8 +163,7 @@ class InterceptorLoggingTest : public TestWithNativeContext {
         IndexedPropertyDefiner, IndexedPropertyDescriptor));
     v8::Local<v8::Object> instance =
         templ->NewInstance(context()).ToLocalChecked();
-    instance->SetAlignedPointerInInternalField(kTestIndex, this,
-                                               kTestInterceptorTag);
+    instance->SetAlignedPointerInInternalField(kTestIndex, this);
     SetGlobalProperty("obj", instance);
   }
 

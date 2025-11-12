@@ -31,7 +31,9 @@ static const TestOperator kOp1(1, Operator::kIdempotent, 1, 1);
 class ValueNumberingReducerTest : public TestWithZone {
  public:
   ValueNumberingReducerTest()
-      : graph_(zone()), reducer_(zone(), graph()->zone()) {}
+      : TestWithZone(kCompressGraphZone),
+        graph_(zone()),
+        reducer_(zone(), graph()->zone()) {}
 
  protected:
   Reduction Reduce(Node* node) { return reducer_.Reduce(node); }

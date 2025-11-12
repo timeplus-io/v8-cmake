@@ -75,8 +75,6 @@ MaybeDirectHandle<Object> HasEnumerableProperty(
           return it.GetName();
         }
       }
-      case LookupIterator::STRING_LOOKUP_START_OBJECT:
-        UNREACHABLE();
       case LookupIterator::WASM_OBJECT:
         continue;  // Continue to the prototype, if present.
       case LookupIterator::INTERCEPTOR: {

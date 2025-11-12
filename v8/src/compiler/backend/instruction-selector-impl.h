@@ -15,22 +15,23 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-struct CaseInfo {
+struct CaseInfoT {
   int32_t value;  // The case value.
   int32_t order;  // The order for lowering to comparisons (less means earlier).
   turboshaft::Block*
       branch;  // The basic blocks corresponding to the case value.
 };
 
-inline bool operator<(const CaseInfo& l, const CaseInfo& r) {
+inline bool operator<(const CaseInfoT& l, const CaseInfoT& r) {
   return l.order < r.order;
 }
 
 // Helper struct containing data about a table or lookup switch.
-class SwitchInfo {
+class SwitchInfoT {
  public:
-  SwitchInfo(ZoneVector<CaseInfo> const& cases, int32_t min_value,
-             int32_t max_value, turboshaft::Block* default_branch)
+  using CaseInfo = CaseInfoT;
+  SwitchInfoT(ZoneVector<CaseInfo> const& cases, int32_t min_value,
+              int32_t max_value, turboshaft::Block* default_branch)
       : cases_(cases),
         min_value_(min_value),
         max_value_(max_value),
@@ -69,11 +70,10 @@ class SwitchInfo {
 
 // A helper class for the instruction selector that simplifies construction of
 // Operands. This class implements a base for architecture-specific helpers.
-class OperandGenerator : public turboshaft::OperationMatcher {
+class OperandGeneratorT : public TurboshaftAdapter {
  public:
-  explicit OperandGenerator(InstructionSelector* selector)
-      : turboshaft::OperationMatcher(*selector->schedule()),
-        selector_(selector) {}
+  explicit OperandGeneratorT(InstructionSelectorT* selector)
+      : TurboshaftAdapter(selector->schedule()), selector_(selector) {}
 
   InstructionOperand NoOutput() {
     return InstructionOperand();  // Generates an invalid operand.
@@ -313,6 +313,16 @@ class OperandGenerator : public turboshaft::OperationMatcher {
                               sequence()->NextVirtualRegister());
   }
 
+  template <typename FPRegType>
+  InstructionOperand TempFpRegister(FPRegType reg) {
+    UnallocatedOperand op =
+        UnallocatedOperand(UnallocatedOperand::FIXED_FP_REGISTER, reg.code(),
+                           sequence()->NextVirtualRegister());
+    sequence()->MarkAsRepresentation(MachineRepresentation::kSimd128,
+                                     op.virtual_register());
+    return op;
+  }
+
   InstructionOperand TempImmediate(int32_t imm) {
     return sequence()->AddImmediate(Constant(imm));
   }
@@ -322,15 +332,11 @@ class OperandGenerator : public turboshaft::OperationMatcher {
   }
 
   InstructionOperand Label(turboshaft::Block* block) {
-    return sequence()->AddImmediate(Constant(selector_->rpo_number(block)));
-  }
-
-  turboshaft::Graph* turboshaft_graph() const {
-    return selector()->turboshaft_graph();
+    return sequence()->AddImmediate(Constant(this->rpo_number(block)));
   }
 
  protected:
-  InstructionSelector* selector() const { return selector_; }
+  InstructionSelectorT* selector() const { return selector_; }
   InstructionSequence* sequence() const { return selector()->sequence(); }
   Zone* zone() const { return selector()->instruction_zone(); }
 
@@ -342,7 +348,9 @@ class OperandGenerator : public turboshaft::OperationMatcher {
   Constant ToConstant(turboshaft::OpIndex node) {
     using Kind = turboshaft::ConstantOp::Kind;
     if (const turboshaft::ConstantOp* constant =
-            selector_->TryCast<turboshaft::ConstantOp>(node)) {
+            this->turboshaft_graph()
+                ->Get(node)
+                .template TryCast<turboshaft::ConstantOp>()) {
       switch (constant->kind) {
         case Kind::kWord32:
           return Constant(static_cast<int32_t>(constant->word32()));
@@ -405,7 +413,7 @@ class OperandGenerator : public turboshaft::OperationMatcher {
 
   Constant ToNegatedConstant(turboshaft::OpIndex node) {
     const turboshaft::ConstantOp& constant =
-        selector()->Cast<turboshaft::ConstantOp>(node);
+        Get(node).Cast<turboshaft::ConstantOp>();
     switch (constant.kind) {
       case turboshaft::ConstantOp::Kind::kWord32:
         return Constant(-static_cast<int32_t>(constant.word32()));
@@ -475,7 +483,7 @@ class OperandGenerator : public turboshaft::OperationMatcher {
                               location.AsRegister(), virtual_register);
   }
 
-  InstructionSelector* selector_;
+  InstructionSelectorT* selector_;
 };
 
 }  // namespace compiler

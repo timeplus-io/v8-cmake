@@ -964,7 +964,7 @@ class InterpreterBinaryOpAssembler : public InterpreterAssembler {
       TNode<UintPtrT> slot, const LazyNode<HeapObject>& maybe_feedback_vector,
       UpdateFeedbackMode update_feedback_mode, bool rhs_known_smi);
 
-  void BinaryOpWithFeedback_WithoutDispatch(BinaryOpGenerator generator) {
+  void BinaryOpWithFeedback(BinaryOpGenerator generator) {
     TNode<Object> lhs = LoadRegisterAtOperandIndex(0);
     TNode<Object> rhs = GetAccumulator();
     TNode<Context> context = GetContext();
@@ -978,10 +978,6 @@ class InterpreterBinaryOpAssembler : public InterpreterAssembler {
         [=] { return context; }, lhs, rhs, slot_index,
         [=] { return maybe_feedback_vector; }, mode, false);
     SetAccumulator(result);
-  }
-
-  void BinaryOpWithFeedback(BinaryOpGenerator generator) {
-    BinaryOpWithFeedback_WithoutDispatch(generator);
     Dispatch();
   }
 
@@ -1010,40 +1006,14 @@ IGNITION_HANDLER(Add, InterpreterBinaryOpAssembler) {
   BinaryOpWithFeedback(&BinaryOpAssembler::Generate_AddWithFeedback);
 }
 
-// Add_StringConstant_Internalize <src>
+// Add_LhsIsConstant_Internalize <src>
 //
 // Add register <src> to accumulator.
-IGNITION_HANDLER(Add_StringConstant_Internalize, InterpreterBinaryOpAssembler) {
-  auto as_variant = UncheckedCast<Int32T>(BytecodeOperandFlag8(2));
-  using ASVariant = AddStringConstantAndInternalizeVariant;
-  auto lhs_is_sc =
-      Int32Constant(static_cast<uint8_t>(ASVariant::kLhsIsStringConstant));
-
-  Label if_lhs_is_string_constant(this), if_rhs_is_string_constant(this),
-      done(this);
-  Branch(Word32Equal(as_variant, lhs_is_sc), &if_lhs_is_string_constant,
-         &if_rhs_is_string_constant);
-
-  BIND(&if_lhs_is_string_constant);
-  CSA_DCHECK(this, Word32Equal(as_variant, lhs_is_sc));
-  BinaryOpWithFeedback_WithoutDispatch(
+IGNITION_HANDLER(Add_LhsIsStringConstant_Internalize,
+                 InterpreterBinaryOpAssembler) {
+  BinaryOpWithFeedback(
       &BinaryOpAssembler::
           Generate_AddLhsIsStringConstantInternalizeWithFeedback);
-  Goto(&done);
-
-  BIND(&if_rhs_is_string_constant);
-#ifdef DEBUG
-  auto rhs_is_sc =
-      Int32Constant(static_cast<uint8_t>(ASVariant::kRhsIsStringConstant));
-  CSA_DCHECK(this, Word32Equal(as_variant, rhs_is_sc));
-#endif  // DEBUG
-  BinaryOpWithFeedback_WithoutDispatch(
-      &BinaryOpAssembler::
-          Generate_AddRhsIsStringConstantInternalizeWithFeedback);
-  Goto(&done);
-
-  BIND(&done);
-  Dispatch();
 }
 
 // Sub <src>
@@ -2456,8 +2426,8 @@ IGNITION_HANDLER(JumpLoop, InterpreterAssembler) {
   Label maybe_osr_because_baseline(this);
   TNode<SharedFunctionInfo> sfi = LoadObjectField<SharedFunctionInfo>(
       LoadFunctionClosure(), JSFunction::kSharedFunctionInfoOffset);
-  GotoIfSharedFunctionInfoHasBaselineCode(sfi, &maybe_osr_because_baseline);
-  Goto(&ok);
+  Branch(SharedFunctionInfoHasBaselineCode(sfi), &maybe_osr_because_baseline,
+         &ok);
 
   BIND(&ok);
 #endif  // !V8_JITLESS
@@ -2714,25 +2684,6 @@ IGNITION_HANDLER(CreateEmptyObjectLiteral, InterpreterAssembler) {
   TNode<JSObject> result =
       constructor_assembler.CreateEmptyObjectLiteral(context);
   SetAccumulator(result);
-  Dispatch();
-}
-
-// SetPrototypeProperties <name_index>
-//
-// Merges the boilerpateObject at <name_index> into the prototype of the object
-// currently in accumulator
-IGNITION_HANDLER(SetPrototypeProperties, InterpreterLoadGlobalAssembler) {
-  TNode<Object> object = GetAccumulator();
-  TNode<Context> context = GetContext();
-
-  TNode<ObjectBoilerplateDescription> proto_boilerplate_description =
-      CAST(LoadConstantPoolEntryAtOperandIndex(0));
-
-  TNode<Object> result = CallRuntime(Runtime::kSetPrototypeProperties, context,
-                                     object, proto_boilerplate_description);
-
-  ClobberAccumulator(result);
-
   Dispatch();
 }
 
@@ -3295,19 +3246,6 @@ IGNITION_HANDLER(ForInStep, InterpreterAssembler) {
   Dispatch();
 }
 
-// ForOfNext <object> <next> <value_done>
-//
-// Get the next value and done of the iterable.
-IGNITION_HANDLER(ForOfNext, InterpreterAssembler) {
-  TNode<Object> object = LoadRegisterAtOperandIndex(0);
-  TNode<Object> next = LoadRegisterAtOperandIndex(1);
-  TNode<Context> context = GetContext();
-
-  auto [value, done_value] = ForOfNextHelper(context, object, next);
-  StoreRegisterPairAtOperandIndex(value, done_value, 2);
-  Dispatch();
-}
-
 // GetIterator <object>
 //
 // Retrieves the object[Symbol.iterator] method, calls it and stores
@@ -3453,29 +3391,6 @@ void BitwiseNotAssemblerTS_Generate(compiler::turboshaft::PipelineData* data,
                                     compiler::turboshaft::Graph& graph,
                                     Zone* zone);
 
-#define UNEXPECTED_BYTECODE(Name, ...) \
-  case Bytecode::k##Name:              \
-    UNREACHABLE();  // This is not expected in this configuration.
-
-void GenerateBytecodeHandlerTSA(compiler::turboshaft::PipelineData* data,
-                                Isolate* isolate,
-                                compiler::turboshaft::Graph& graph, Zone* zone,
-                                Bytecode bytecode, OperandScale operand_scale) {
-  switch (bytecode) {
-#define CALL_GENERATOR_TSA(Name, ...)                       \
-  case Bytecode::k##Name:                                   \
-    Name##AssemblerTS_Generate(data, isolate, graph, zone); \
-    break;
-    BYTECODE_LIST_WITH_UNIQUE_HANDLERS(UNEXPECTED_BYTECODE, CALL_GENERATOR_TSA)
-#undef CALL_GENERATOR_TS
-    default:
-      // Others (the rest of the short stars, and the rest of the illegal range)
-      // must not get their own handler generated. Rather, multiple entries in
-      // the jump table point to those handlers.
-      UNREACHABLE();
-  }
-}
-
 void GenerateBytecodeHandler(compiler::CodeAssemblerState* state,
                              Bytecode bytecode, OperandScale operand_scale) {
   switch (bytecode) {
@@ -3483,8 +3398,18 @@ void GenerateBytecodeHandler(compiler::CodeAssemblerState* state,
   case Bytecode::k##Name:                            \
     Name##Assembler::Generate(state, operand_scale); \
     break;
-    BYTECODE_LIST_WITH_UNIQUE_HANDLERS(CALL_GENERATOR, UNEXPECTED_BYTECODE);
+#define CALL_GENERATOR_TS(Name, ...)                                       \
+  /* FIXME(348031042): This doesn't compile since the                      \
+   * CodeAssemblerCompilationJob refactor. */                              \
+  case Bytecode::k##Name:                                                  \
+    code = compiler::turboshaft::BuildWithTurboshaftAssemblerImpl(         \
+        isolate, builtin, &Name##AssemblerTS_Generate, descriptor_builder, \
+        debug_name, options, CodeKind::BYTECODE_HANDLER,                   \
+        BytecodeHandlerData(bytecode, operand_scale));                     \
+    break;
+    BYTECODE_LIST_WITH_UNIQUE_HANDLERS(CALL_GENERATOR, CALL_GENERATOR_TS);
 #undef CALL_GENERATOR
+#undef CALL_GENERATOR_TS
     case Bytecode::kIllegal:
       IllegalAssembler::Generate(state, operand_scale);
       break;
@@ -3498,8 +3423,6 @@ void GenerateBytecodeHandler(compiler::CodeAssemblerState* state,
       UNREACHABLE();
   }
 }
-
-#undef UNEXPECTED_BYTECODE
 
 #include "src/codegen/undef-code-stub-assembler-macros.inc"
 

@@ -82,7 +82,7 @@ void IterateAsanFakeFrameIfNecessary(StackVisitor* visitor,
     }
   }
 }
-#else   // !V8_USE_ADDRESS_SANITIZER
+#else
 void IterateAsanFakeFrameIfNecessary(StackVisitor* visitor,
                                      const Stack::Segment& segment,
                                      const void* address) {}
@@ -155,10 +155,7 @@ void IteratePointersInStack(StackVisitor* visitor,
 }  // namespace
 
 void Stack::IteratePointersForTesting(StackVisitor* visitor) {
-  SetMarkerAndCallback([this, visitor]() {
-    IteratePointersUntilMarker(visitor);
-    IterateBackgroundStacks(visitor);
-  });
+  SetMarkerAndCallback([this, visitor]() { IteratePointers(visitor); });
 }
 
 void Stack::IteratePointersUntilMarker(StackVisitor* visitor) const {

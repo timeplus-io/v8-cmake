@@ -39,7 +39,7 @@ void MaglevAssembler::AllocateTwoByteString(RegisterSnapshot register_snapshot,
   StoreInt32Field(result, offsetof(String, length_), length);
 }
 
-Register MaglevAssembler::FromAnyToRegister(ConstInput input,
+Register MaglevAssembler::FromAnyToRegister(const Input& input,
                                             Register scratch) {
   if (input.operand().IsConstant()) {
     input.node()->LoadToRegister(this, scratch);
@@ -48,10 +48,10 @@ Register MaglevAssembler::FromAnyToRegister(ConstInput input,
   const compiler::AllocatedOperand& operand =
       compiler::AllocatedOperand::cast(input.operand());
   if (operand.IsRegister()) {
-    return ToRegister(input.operand());
+    return ToRegister(input);
   } else {
     DCHECK(operand.IsStackSlot());
-    Move(scratch, ToMemOperand(input.operand()));
+    Move(scratch, ToMemOperand(input));
     return scratch;
   }
 }
@@ -311,11 +311,11 @@ void MaglevAssembler::MaterialiseValueNode(Register dst, ValueNode* value) {
     default:
       break;
   }
-  DCHECK(!value->regalloc_info()->allocation().IsConstant());
-  DCHECK(value->regalloc_info()->allocation().IsAnyStackSlot());
+  DCHECK(!value->allocation().IsConstant());
+  DCHECK(value->allocation().IsAnyStackSlot());
   using D = NewHeapNumberDescriptor;
   DoubleRegister builtin_input_value = D::GetDoubleRegisterParameter(D::kValue);
-  MemOperand src = ToMemOperand(value->regalloc_info()->allocation());
+  MemOperand src = ToMemOperand(value->allocation());
   switch (value->properties().value_representation()) {
     case ValueRepresentation::kInt32: {
       Label done;
@@ -377,7 +377,6 @@ void MaglevAssembler::MaterialiseValueNode(Register dst, ValueNode* value) {
       break;
     }
     case ValueRepresentation::kTagged:
-    case ValueRepresentation::kNone:
       UNREACHABLE();
   }
 }

@@ -22,6 +22,10 @@ int FeedbackSource::index() const {
   return FeedbackVector::GetIndex(slot);
 }
 
+bool operator==(FeedbackSource const& lhs, FeedbackSource const& rhs) {
+  return FeedbackSource::Equal()(lhs, rhs);
+}
+
 bool operator!=(FeedbackSource const& lhs, FeedbackSource const& rhs) {
   return !(lhs == rhs);
 }

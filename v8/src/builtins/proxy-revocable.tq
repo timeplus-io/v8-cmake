@@ -9,8 +9,6 @@ namespace proxy {
 extern macro ProxiesCodeStubAssembler::AllocateProxyRevokeFunction(
     implicit context: Context)(JSProxy): JSFunction;
 
-const kIsRevocable: constexpr int32 generates 'JSProxy::kIsRevocableBit';
-
 // Proxy.revocable(target, handler)
 // https://tc39.github.io/ecma262/#sec-proxy.revocable
 transitioning javascript builtin ProxyRevocable(
@@ -22,8 +20,7 @@ transitioning javascript builtin ProxyRevocable(
         Cast<JSReceiver>(target) otherwise ThrowProxyNonObject;
     const handlerJSReceiver =
         Cast<JSReceiver>(handler) otherwise ThrowProxyNonObject;
-    const proxy: JSProxy =
-        AllocateProxy(targetJSReceiver, handlerJSReceiver, kIsRevocable);
+    const proxy: JSProxy = AllocateProxy(targetJSReceiver, handlerJSReceiver);
 
     // 2. Let steps be the algorithm steps defined in Proxy Revocation
     // Functions.

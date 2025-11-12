@@ -14,10 +14,12 @@ namespace compiler {
 // Forward declarations.
 class Node;
 
-// GraphZoneTraits provides typedefs for pointer in zones.
-using GraphZoneTraits = ZoneTypeTraits;
+// GraphZoneTraits provides typedefs for zone pointer types that are either
+// compressed or not depending on the kCompressGraphZone flag.
+using GraphZoneTraits = ZoneTypeTraits<kCompressGraphZone>;
 
-// ZoneNodePtr is a pointer to a Node allocated in a zone memory.
+// ZoneNodePtr is a possibly compressed pointer to a Node allocated in a zone
+// memory.
 using ZoneNodePtr = GraphZoneTraits::Ptr<Node>;
 
 }  // namespace compiler

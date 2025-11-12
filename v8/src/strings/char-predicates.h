@@ -25,10 +25,8 @@ inline constexpr bool IsOctalDigit(base::uc32 c);
 inline constexpr bool IsBinaryDigit(base::uc32 c);
 inline constexpr bool IsRegExpWord(base::uc32 c);
 
-template <typename Char>
-inline constexpr bool IsAsciiLower(Char ch);
-template <typename Char>
-inline constexpr bool IsAsciiUpper(Char ch);
+inline constexpr bool IsAsciiLower(base::uc32 ch);
+inline constexpr bool IsAsciiUpper(base::uc32 ch);
 
 inline constexpr base::uc32 ToAsciiUpper(base::uc32 ch);
 inline constexpr base::uc32 ToAsciiLower(base::uc32 ch);

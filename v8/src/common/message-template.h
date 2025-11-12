@@ -359,8 +359,7 @@ namespace internal {
   T(SymbolKeyFor, "% is not a symbol")                                         \
   T(SymbolToNumber, "Cannot convert a Symbol value to a number")               \
   T(SymbolToString, "Cannot convert a Symbol value to a string")               \
-  T(Temporal, "Temporal error: %")                                             \
-  T(TemporalWithArg, "Temporal error: % %.")                                   \
+  T(TemporalRsError, "Internal error. temporal_rs error.")                     \
   T(ThrowMethodMissing, "The iterator does not provide a 'throw' method.")     \
   T(TopLevelAwaitStalled, "Top-level await promise never resolved")            \
   T(UndefinedOrNullToObject, "Cannot convert undefined or null to object")     \
@@ -412,6 +411,7 @@ namespace internal {
   T(InvalidShadowRealmEvaluateSourceText, "Invalid value used as source text") \
   T(InvalidStringLength, "Invalid string length")                              \
   T(InvalidTimeValue, "Invalid time value")                                    \
+  T(InvalidTimeValueForTemporal, "Invalid time value for Temporal %")          \
   T(InvalidTimeZone, "Invalid time zone specified: %")                         \
   T(InvalidTypedArrayAlignment, "% of % should be a multiple of %")            \
   T(InvalidTypedArrayIndex, "Invalid typed array index")                       \
@@ -590,7 +590,6 @@ namespace internal {
   T(MalformedRegExpFlags, "Invalid regular expression flags")                  \
   T(ModuleExportUndefined, "Export '%' is not defined in module")              \
   T(MissingFunctionName, "Function statements require a function name")        \
-  T(MismatchedCalendars, "Mismatched calendars.")                              \
   T(HtmlCommentInModule, "HTML comments are not allowed in modules")           \
   T(MultipleDefaultsInSwitch,                                                  \
     "More than one default clause in switch statement")                        \
@@ -650,7 +649,6 @@ namespace internal {
   T(TooManySpreads,                                                            \
     "Literal containing too many nested spreads (up to 65534 allowed)")        \
   T(TooManyVariables, "Too many variables declared (only 4194303 allowed)")    \
-  T(TooManyEvals, "Too many eval calls in script")                             \
   T(TooManyElementsInPromiseCombinator,                                        \
     "Too many elements passed to Promise.%")                                   \
   T(TypedArrayTooShort,                                                        \

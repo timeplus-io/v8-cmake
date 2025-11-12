@@ -274,6 +274,7 @@ namespace internal {
   IF_WASM(V, WasmResumeData)                    \
   IF_WASM(V, WasmStruct)                        \
   IF_WASM(V, WasmDescriptorOptions)             \
+  IF_WASM(V, WasmSuspenderObject)               \
   IF_WASM(V, WasmSuspendingObject)              \
   IF_WASM(V, WasmContinuationObject)            \
   IF_WASM(V, WasmTableObject)                   \
@@ -341,6 +342,7 @@ namespace internal {
   V(JSTemporalPlainDateTime)                      \
   V(JSTemporalPlainMonthDay)                      \
   V(JSTemporalPlainYearMonth)                     \
+  V(JSTemporalTimeZone)                           \
   V(JSTemporalZonedDateTime)
 #else
 #define HEAP_OBJECT_ORDINARY_TYPE_LIST(V) \
@@ -392,8 +394,7 @@ namespace internal {
   IF_WASM(APPLY, V, WasmExportedFunctionData, WASM_EXPORTED_FUNCTION_DATA)     \
   IF_WASM(APPLY, V, WasmJSFunctionData, WASM_JS_FUNCTION_DATA)                 \
   IF_WASM(APPLY, V, WasmInternalFunction, WASM_INTERNAL_FUNCTION)              \
-  IF_WASM(APPLY, V, WasmTrustedInstanceData, WASM_TRUSTED_INSTANCE_DATA)       \
-  IF_WASM(APPLY, V, WasmSuspenderObject, WASM_SUSPENDER_OBJECT)
+  IF_WASM(APPLY, V, WasmTrustedInstanceData, WASM_TRUSTED_INSTANCE_DATA)
 
 #define TRUSTED_OBJECT_LIST1_ADAPTER(V, Name, NAME) V(Name)
 #define TRUSTED_OBJECT_LIST2_ADAPTER(V, Name, NAME) V(Name, NAME)
@@ -490,15 +491,16 @@ namespace internal {
   V(PropertyCellHole, property_cell_hole_value, PropertyCellHoleValue) \
   V(HashTableHole, hash_table_hole_value, HashTableHoleValue)          \
   V(PromiseHole, promise_hole_value, PromiseHoleValue)                 \
-  V(ExceptionHole, exception, Exception)                               \
+  V(Exception, exception, Exception)                                   \
   V(TerminationException, termination_exception, TerminationException) \
-  V(UninitializedHole, uninitialized_value, UninitializedValue)        \
+  V(Uninitialized, uninitialized_value, UninitializedValue)            \
   V(ArgumentsMarker, arguments_marker, ArgumentsMarker)                \
   V(OptimizedOut, optimized_out, OptimizedOut)                         \
   V(StaleRegister, stale_register, StaleRegister)                      \
   V(SelfReferenceMarker, self_reference_marker, SelfReferenceMarker)   \
   V(BasicBlockCountersMarker, basic_block_counters_marker,             \
-    BasicBlockCountersMarker)
+    BasicBlockCountersMarker)                                          \
+  V(UndefinedContextCell, undefined_context_cell, UndefinedContextCell)
 
 #define OBJECT_TYPE_LIST(V) \
   V(Primitive)              \

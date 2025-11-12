@@ -18,7 +18,6 @@
 #include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
 #include "src/common/message-template.h"
-#include "src/common/scoped-modification.h"
 #include "src/compiler-dispatcher/lazy-compile-dispatcher.h"
 #include "src/heap/parked-scope.h"
 #include "src/logging/counters.h"
@@ -531,9 +530,6 @@ Expression* Parser::ExpressionFromLiteral(Token::Value token, int pos) {
 Expression* Parser::NewV8Intrinsic(const AstRawString* name,
                                    const ScopedPtrList<Expression>& args,
                                    int pos) {
-  // Natives syntax is not allowed in extensions code but it might be useful
-  // for debugging purposes provided that --allow-natives-syntax flag is
-  // enabled.
   if (ParsingExtension()) {
     // The extension structures are only accessible while parsing the
     // very first time, not when reparsing because of lazy compilation.
@@ -749,14 +745,7 @@ FunctionLiteral* Parser::DoParseProgram(Isolate* isolate, ParseInfo* info) {
   DCHECK_EQ(parsing_on_main_thread_, isolate != nullptr);
   DCHECK_NULL(scope_);
 
-  std::optional<base::ElapsedTimer> timer;
-  if (v8_flags.enable_parser_ablation && base::TimeTicks::IsHighResolution()) {
-    timer.emplace();
-    timer->Start();
-  }
-
-  ScopedModification<Mode> mode_scope(
-      &mode_, allow_lazy_ ? PARSE_LAZILY : PARSE_EAGERLY);
+  ParsingModeScope mode(this, allow_lazy_ ? PARSE_LAZILY : PARSE_EAGERLY);
   ResetInfoId();
 
   FunctionLiteral* result = nullptr;
@@ -860,14 +849,6 @@ FunctionLiteral* Parser::DoParseProgram(Isolate* isolate, ParseInfo* info) {
 
   RecordFunctionLiteralSourceRange(result);
 
-  if (timer && timer->Elapsed().InNanoseconds() > 0) {
-    auto end = timer->Elapsed();
-    end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.parser_ablation_amount);
-    while (timer->Elapsed() < end) {
-    }
-  }
-
   return result;
 }
 
@@ -930,7 +911,7 @@ void Parser::ParseWrapped(Isolate* isolate, ParseInfo* info,
                           DeclarationScope* outer_scope, Zone* zone) {
   DCHECK(parsing_on_main_thread_);
   DCHECK(info->is_wrapped_as_function());
-  ScopedModification<Mode> mode_scope(&mode_, PARSE_EAGERLY);
+  ParsingModeScope parsing_mode(this, PARSE_EAGERLY);
 
   // Set function and block state for the outer eval scope.
   DCHECK(outer_scope->is_eval_scope());
@@ -1107,12 +1088,6 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
   DCHECK_NOT_NULL(raw_name);
   DCHECK_NULL(scope_);
 
-  std::optional<base::ElapsedTimer> timer;
-  if (v8_flags.enable_parser_ablation && base::TimeTicks::IsHighResolution()) {
-    timer.emplace();
-    timer->Start();
-  }
-
   DCHECK(ast_value_factory());
   fni_.PushEnclosingName(raw_name);
 
@@ -1120,7 +1095,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
   DCHECK_LT(0, function_literal_id);
   SkipInfos(function_literal_id - 1);
 
-  ScopedModification<Mode> mode_scope(&mode_, PARSE_EAGERLY);
+  ParsingModeScope parsing_mode(this, PARSE_EAGERLY);
 
   // Place holder for the result.
   FunctionLiteral* result = nullptr;
@@ -1227,14 +1202,6 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
 
   info->set_max_info_id(GetLastInfoId());
 
-  if (timer && timer->Elapsed().InNanoseconds() > 0) {
-    auto end = timer->Elapsed();
-    end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.parser_ablation_amount);
-    while (timer->Elapsed() < end) {
-    }
-  }
-
   DCHECK_IMPLIES(result, function_literal_id == result->function_literal_id());
   return result;
 }
@@ -1258,7 +1225,7 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
 
   // We preparse the class members that are not fields with initializers
   // in order to collect the function literal ids.
-  ScopedModification<Mode> mode_scope(&mode_, PARSE_LAZILY);
+  ParsingModeScope mode(this, PARSE_LAZILY);
 
   ExpressionParsingScope no_expression_scope(impl());
 
@@ -2806,7 +2773,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
 
   // Determine whether we can lazy parse the inner function. Lazy compilation
   // has to be enabled, which is either forced by overall parse flags or via a
-  // ScopedModification.
+  // ParsingModeScope.
   const bool can_preparse = parse_lazily();
 
   // Determine whether we can post any parallel compile tasks. Preparsing must
@@ -2994,24 +2961,9 @@ bool Parser::SkipFunction(const AstRawString* function_name, FunctionKind kind,
   // AST. This gathers the data needed to build a lazy function.
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"), "V8.PreParse");
 
-  std::optional<base::ElapsedTimer> timer;
-  if (v8_flags.enable_preparser_ablation &&
-      base::TimeTicks::IsHighResolution()) {
-    timer.emplace();
-    timer->Start();
-  }
-
   PreParser::PreParseResult result = reusable_preparser()->PreParseFunction(
       function_name, kind, function_syntax_kind, function_scope, use_counts_,
       produced_preparse_data);
-
-  if (timer && timer->Elapsed().InNanoseconds() > 0) {
-    auto end = timer->Elapsed();
-    end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.preparser_ablation_amount);
-    while (timer->Elapsed() < end) {
-    }
-  }
 
   if (result == PreParser::kPreParseStackOverflow) {
     // Propagate stack overflow.
@@ -3109,8 +3061,7 @@ void Parser::ParseFunction(
     int* suspend_count,
     ZonePtrList<const AstRawString>* arguments_for_wrapped_function) {
   FunctionParsingScope function_parsing_scope(this);
-  ScopedModification<Mode> mode_scope(
-      &mode_, allow_lazy_ ? PARSE_LAZILY : PARSE_EAGERLY);
+  ParsingModeScope mode(this, allow_lazy_ ? PARSE_LAZILY : PARSE_EAGERLY);
 
   FunctionState function_state(&function_state_, &scope_, function_scope);
 

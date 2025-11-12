@@ -80,7 +80,6 @@ class V8_EXPORT_PRIVATE CppHeap final
     ExtractLastIncrementalMarkEvent();
 
     void ClearCachedEvents();
-    void ClearCachedYoungEvents();
 
    private:
     Isolate* GetIsolate() const;
@@ -139,8 +138,7 @@ class V8_EXPORT_PRIVATE CppHeap final
       GarbageCollectionFlags = GarbageCollectionFlagValues::kNoFlags);
   void StartMarking();
   bool AdvanceMarking(v8::base::TimeDelta max_duration,
-                      std::optional<size_t> marked_bytes_limit,
-                      cppgc::EmbedderStackState stack_state);
+                      size_t marked_bytes_limit);
   bool IsMarkingDone() const;
   size_t last_bytes_marked() const;
   void ProcessCrossThreadWeakness();

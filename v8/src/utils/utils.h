@@ -15,7 +15,6 @@
 
 #include "src/base/bits.h"
 #include "src/base/compiler-specific.h"
-#include "src/base/hashing.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/numerics/safe_conversions.h"
@@ -268,6 +267,8 @@ inline T RoundingAverageUnsigned(T a, T b) {
   static_assert(static_cast<int>(Offset1) == Offset2)
 // ----------------------------------------------------------------------------
 // Hash function.
+
+static const uint64_t kZeroHashSeed = 0;
 
 // Thomas Wang, Integer Hash Functions.
 // http://www.concentric.net/~Ttwang/tech/inthash.htm`
@@ -691,10 +692,7 @@ class BytecodeOffset {
   bool operator!=(const BytecodeOffset& other) const {
     return id_ != other.id_;
   }
-  V8_INLINE friend size_t hash_value(BytecodeOffset id) {
-    base::hash<int> h;
-    return h(id.id_);
-  }
+  friend size_t hash_value(BytecodeOffset);
   V8_EXPORT_PRIVATE friend std::ostream& operator<<(std::ostream&,
                                                     BytecodeOffset);
 

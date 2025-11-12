@@ -31,24 +31,24 @@ void ProcessorImpl::DivideSingle(RWDigits Q, digit_t* remainder, Digits A,
   DCHECK(b != 0);
   DCHECK(A.len() > 0);
   *remainder = 0;
-  uint32_t length = A.len();
+  int length = A.len();
   if (Q.len() != 0) {
     if (A[length - 1] >= b) {
       DCHECK(Q.len() >= A.len());
-      for (uint32_t i = length; i-- > 0;) {
+      for (int i = length - 1; i >= 0; i--) {
         Q[i] = digit_div(*remainder, A[i], b, remainder);
       }
-      for (uint32_t i = length; i < Q.len(); i++) Q[i] = 0;
+      for (int i = length; i < Q.len(); i++) Q[i] = 0;
     } else {
       DCHECK(Q.len() >= A.len() - 1);
       *remainder = A[length - 1];
-      for (uint32_t i = length - 1; i-- > 0;) {
+      for (int i = length - 2; i >= 0; i--) {
         Q[i] = digit_div(*remainder, A[i], b, remainder);
       }
-      for (uint32_t i = length - 1; i < Q.len(); i++) Q[i] = 0;
+      for (int i = length - 1; i < Q.len(); i++) Q[i] = 0;
     }
   } else {
-    for (uint32_t i = length; i-- > 0;) {
+    for (int i = length - 1; i >= 0; i--) {
       digit_div(*remainder, A[i], b, remainder);
     }
   }
@@ -101,8 +101,8 @@ void ProcessorImpl::DivideSchoolbook(RWDigits Q, RWDigits R, Digits A,
   // Knuth's book, as well as with Go's implementation of this algorithm.
   // Maintaining this consistency is probably more useful than trying to
   // come up with more descriptive names for them.
-  const uint32_t n = B.len();
-  const uint32_t m = A.len() - n;
+  const int n = B.len();
+  const int m = A.len() - n;
 
   // In each iteration, {qhatv} holds {divisor} * {current quotient digit}.
   // "v" is the book's name for {divisor}, "qhat" the current quotient digit.
@@ -171,7 +171,7 @@ void ProcessorImpl::DivideSchoolbook(RWDigits Q, RWDigits R, Digits A,
     }
 
     if (Q.len() != 0) {
-      if (static_cast<uint32_t>(j) >= Q.len()) {
+      if (j >= Q.len()) {
         DCHECK(qhat == 0);
       } else {
         Q[j] = qhat;
@@ -182,7 +182,7 @@ void ProcessorImpl::DivideSchoolbook(RWDigits Q, RWDigits R, Digits A,
     RightShift(R, U, b_normalized.shift());
   }
   // If Q has extra storage, clear it.
-  for (uint32_t i = m + 1; i < Q.len(); i++) Q[i] = 0;
+  for (int i = m + 1; i < Q.len(); i++) Q[i] = 0;
 }
 
 }  // namespace bigint

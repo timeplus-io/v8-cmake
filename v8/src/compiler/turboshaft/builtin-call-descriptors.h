@@ -23,19 +23,17 @@ struct BuiltinCallDescriptor {
   struct Descriptor {
     static const TSCallDescriptor* Create(
         StubCallMode call_mode, Zone* zone,
-        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo,
-        bool compiling_builtins = false) {
+        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo) {
       CallInterfaceDescriptor interface_descriptor =
           Builtins::CallInterfaceDescriptorFor(Derived::kFunction);
       auto descriptor = Linkage::GetStubCallDescriptor(
           zone, interface_descriptor,
           interface_descriptor.GetStackParameterCount(),
-          (Derived::kNeedsFrameState && !compiling_builtins)
-              ? CallDescriptor::kNeedsFrameState
-              : CallDescriptor::kNoFlags,
+          Derived::kNeedsFrameState ? CallDescriptor::kNeedsFrameState
+                                    : CallDescriptor::kNoFlags,
           Derived::kProperties, call_mode);
 #ifdef DEBUG
-      Derived::Verify(descriptor, compiling_builtins);
+      Derived::Verify(descriptor);
 #endif  // DEBUG
       bool can_throw = !(Derived::kProperties & Operator::kNoThrow);
       return TSCallDescriptor::Create(
@@ -44,7 +42,7 @@ struct BuiltinCallDescriptor {
     }
 
 #ifdef DEBUG
-    static void Verify(const CallDescriptor* desc, bool compiling_builtins) {
+    static void Verify(const CallDescriptor* desc) {
       using results_t = typename Derived::results_t;
       using arguments_t = typename Derived::arguments_t;
       DCHECK_EQ(desc->ReturnCount(), std::tuple_size_v<results_t>);
@@ -60,8 +58,7 @@ struct BuiltinCallDescriptor {
             RegisterRepresentation::FromMachineRepresentation(
                 desc->GetReturnType(1).representation())));
       }
-      DCHECK_EQ(desc->NeedsFrameState(),
-                (Derived::kNeedsFrameState && !compiling_builtins));
+      DCHECK_EQ(desc->NeedsFrameState(), Derived::kNeedsFrameState);
       DCHECK_EQ(desc->properties(), Derived::kProperties);
       DCHECK_EQ(desc->ParameterCount(), std::tuple_size_v<arguments_t> +
                                             (Derived::kNeedsContext ? 1 : 0));
@@ -104,17 +101,6 @@ struct BuiltinCallDescriptor {
   using Never = std::tuple<OpIndex>;
 
  public:
-  struct BigIntAdd : public Descriptor<BigIntAdd> {
-    static constexpr auto kFunction = Builtin::kBigIntAdd;
-    using arguments_t = std::tuple<V<Numeric>, V<Numeric>>;
-    using results_t = std::tuple<V<BigInt>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
   struct CheckTurbofanType : public Descriptor<CheckTurbofanType> {
     static constexpr auto kFunction = Builtin::kCheckTurbofanType;
     using arguments_t = std::tuple<V<Object>, V<TurbofanType>, V<Smi>>;
@@ -237,8 +223,7 @@ struct BuiltinCallDescriptor {
     static constexpr bool kNeedsContext = true;
     static constexpr Operator::Properties kProperties =
         Operator::kNoThrow | Operator::kNoDeopt;
-    static constexpr OpEffects kEffects =
-        base_effects.RequiredWhenUnused().CanAllocate();
+    static constexpr OpEffects kEffects = base_effects.RequiredWhenUnused();
   };
   using DebugPrintFloat64 = DebugPrint<Builtin::kDebugPrintFloat64, Float64>;
   using DebugPrintWordPtr = DebugPrint<Builtin::kDebugPrintWordPtr, WordPtr>;
@@ -692,19 +677,6 @@ struct BuiltinCallDescriptor {
 
   struct WasmInt32ToHeapNumber : public Descriptor<WasmInt32ToHeapNumber> {
     static constexpr auto kFunction = Builtin::kWasmInt32ToHeapNumber;
-    using arguments_t = std::tuple<V<Word32>>;
-    using results_t = std::tuple<V<HeapNumber>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kPure;
-    static constexpr OpEffects kEffects =
-        base_effects.CanAllocateWithoutIdentity();
-  };
-
-  struct WasmInt32ToSharedHeapNumber
-      : public Descriptor<WasmInt32ToSharedHeapNumber> {
-    static constexpr auto kFunction = Builtin::kWasmInt32ToSharedHeapNumber;
     using arguments_t = std::tuple<V<Word32>>;
     using results_t = std::tuple<V<HeapNumber>>;
 

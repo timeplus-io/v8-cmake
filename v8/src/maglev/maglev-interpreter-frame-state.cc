@@ -23,9 +23,26 @@ namespace v8 {
 namespace internal {
 namespace maglev {
 
+namespace {
+
+NodeType GetNodeType(compiler::JSHeapBroker* broker, LocalIsolate* isolate,
+                     const KnownNodeAspects& aspects, ValueNode* node) {
+  // We first check the KnownNodeAspects in order to return the most precise
+  // type possible.
+  NodeType type = aspects.NodeTypeFor(node);
+  if (type != NodeType::kUnknown) {
+    return type;
+  }
+  // If this node has no NodeInfo (or not known type in its NodeInfo), we fall
+  // back to its static type.
+  return StaticTypeForNode(broker, isolate, node);
+}
+
+}  // namespace
+
 void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
   bool any_merged_map_is_unstable = false;
-  DestructivelyIntersect(node_infos_, other.node_infos_,
+  DestructivelyIntersect(node_infos, other.node_infos,
                          [&](NodeInfo& lhs, const NodeInfo& rhs) {
                            lhs.MergeWith(rhs, zone, any_merged_map_is_unstable);
                            return !lhs.no_info_available();
@@ -35,20 +52,18 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
     effect_epoch_ = std::max(effect_epoch_, other.effect_epoch_) + 1;
   }
   DestructivelyIntersect(
-      available_expressions_, other.available_expressions_,
+      available_expressions, other.available_expressions,
       [&](const AvailableExpression& lhs, const AvailableExpression& rhs) {
         DCHECK_IMPLIES(lhs.node == rhs.node,
                        lhs.effect_epoch == rhs.effect_epoch);
         DCHECK_NE(lhs.effect_epoch, kEffectEpochOverflow);
-        DCHECK_IMPLIES(
-            !lhs.node->Is<Identity>(),
-            Node::needs_epoch_check(lhs.node->opcode()) ==
-                (lhs.effect_epoch != kEffectEpochForPureInstructions));
-        return !lhs.node->Is<Identity>() && lhs.node == rhs.node &&
-               lhs.effect_epoch >= effect_epoch_;
+        DCHECK_EQ(Node::needs_epoch_check(lhs.node->opcode()),
+                  lhs.effect_epoch != kEffectEpochForPureInstructions);
+
+        return lhs.node == rhs.node && lhs.effect_epoch >= effect_epoch_;
       });
 
-  this->any_map_for_any_node_is_unstable_ = any_merged_map_is_unstable;
+  this->any_map_for_any_node_is_unstable = any_merged_map_is_unstable;
 
   auto merge_loaded_properties =
       [](ZoneMap<ValueNode*, ValueNode*>& lhs,
@@ -58,16 +73,22 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
         DestructivelyIntersect(lhs, rhs);
         return !lhs.empty();
       };
-  DestructivelyIntersect(loaded_constant_properties_,
-                         other.loaded_constant_properties_,
+  DestructivelyIntersect(loaded_constant_properties,
+                         other.loaded_constant_properties,
                          merge_loaded_properties);
-  DestructivelyIntersect(loaded_properties_, other.loaded_properties_,
+  DestructivelyIntersect(loaded_properties, other.loaded_properties,
                          merge_loaded_properties);
-  DestructivelyIntersect(loaded_context_constants_,
-                         other.loaded_context_constants_);
-  may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
-      may_have_aliasing_contexts_, other.may_have_aliasing_contexts());
-  DestructivelyIntersect(loaded_context_slots_, other.loaded_context_slots_);
+  DestructivelyIntersect(loaded_context_constants,
+                         other.loaded_context_constants);
+  if (may_have_aliasing_contexts() != other.may_have_aliasing_contexts()) {
+    if (may_have_aliasing_contexts() == ContextSlotLoadsAlias::None) {
+      may_have_aliasing_contexts_ = other.may_have_aliasing_contexts_;
+    } else if (other.may_have_aliasing_contexts() !=
+               ContextSlotLoadsAlias::None) {
+      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::Yes;
+    }
+  }
+  DestructivelyIntersect(loaded_context_slots, other.loaded_context_slots);
 }
 
 namespace {
@@ -84,71 +105,8 @@ bool NextInIgnoreList(typename ZoneSet<Key>::const_iterator& ignore,
 
 }  // namespace
 
-void KnownNodeAspects::UpdateMayHaveAliasingContexts(
-    compiler::JSHeapBroker* broker, LocalIsolate* local_isolate,
-    ValueNode* context) {
-  while (true) {
-    if (auto load_prev_ctxt =
-            context->TryCast<LoadTaggedFieldForContextSlotNoCells>()) {
-      DCHECK_EQ(load_prev_ctxt->offset(),
-                Context::OffsetOfElementAt(Context::PREVIOUS_INDEX));
-      // Recurse until we find the root.
-      context = load_prev_ctxt->input(0).node();
-      continue;
-    }
-    break;
-  }
-
-  switch (context->opcode()) {
-    case Opcode::kInitialValue:
-      may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
-          may_have_aliasing_contexts_,
-          ContextSlotLoadsAlias::kOnlyLoadsRelativeToCurrentContext);
-      break;
-    case Opcode::kConstant:
-      may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
-          may_have_aliasing_contexts_,
-          ContextSlotLoadsAlias::kOnlyLoadsRelativeToConstant);
-      DCHECK(NodeTypeIs(GetType(broker, context), NodeType::kContext));
-      break;
-    case Opcode::kCreateFunctionContext:
-    case Opcode::kInlinedAllocation:
-      // These can be precisely tracked.
-      DCHECK(NodeTypeIs(GetType(broker, context), NodeType::kContext));
-      break;
-    case Opcode::kLoadTaggedField: {
-      LoadTaggedField* load = context->Cast<LoadTaggedField>();
-      // Currently, the only way to leak a context via load tagged field is with
-      // JSFunction or JSGeneratorObject.
-      USE(load);
-      DCHECK(load->offset() == JSFunction::kContextOffset ||
-             load->offset() == JSGeneratorObject::kContextOffset);
-      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
-      DCHECK(NodeTypeIs(GetType(broker, context), NodeType::kContext));
-      break;
-    }
-    case Opcode::kCallRuntime:
-      DCHECK(NodeTypeIs(GetType(broker, context), NodeType::kContext));
-      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
-      break;
-    case Opcode::kGeneratorRestoreRegister:
-      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
-      break;
-    case Opcode::kPhi:
-      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
-      break;
-    default:
-      // This DCHECK only shows which kind of nodes can be a context, even if
-      // this DCHECK fails, it is always safe to set aliasing context mode to
-      // kYes.
-      DCHECK(false);
-      may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
-      break;
-  }
-}
-
-void KnownNodeAspects::ClearUnstableNodeAspects(bool is_tracing_enabled) {
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building && is_tracing_enabled)) {
+void KnownNodeAspects::ClearUnstableNodeAspects() {
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "  ! Clearing unstable node aspects" << std::endl;
   }
   ClearUnstableMaps();
@@ -156,9 +114,9 @@ void KnownNodeAspects::ClearUnstableNodeAspects(bool is_tracing_enabled) {
   // our known loaded properties -- however, constant properties are known
   // to not change (and we added a dependency on this), so we don't have to
   // clear those.
-  loaded_properties_.clear();
-  loaded_context_slots_.clear();
-  may_have_aliasing_contexts_ = KnownNodeAspects::ContextSlotLoadsAlias::kNone;
+  loaded_properties.clear();
+  loaded_context_slots.clear();
+  may_have_aliasing_contexts_ = KnownNodeAspects::ContextSlotLoadsAlias::None;
 }
 
 KnownNodeAspects* KnownNodeAspects::CloneForLoopHeader(
@@ -169,32 +127,31 @@ KnownNodeAspects* KnownNodeAspects::CloneForLoopHeader(
 KnownNodeAspects::KnownNodeAspects(const KnownNodeAspects& other,
                                    bool optimistic_initial_state,
                                    LoopEffects* loop_effects, Zone* zone)
-    : loaded_constant_properties_(other.loaded_constant_properties_),
-      loaded_properties_(zone),
-      loaded_context_constants_(other.loaded_context_constants_),
-      loaded_context_slots_(zone),
-      available_expressions_(zone),
-      any_map_for_any_node_is_unstable_(false),
+    : any_map_for_any_node_is_unstable(false),
+      loaded_constant_properties(other.loaded_constant_properties),
+      loaded_properties(zone),
+      loaded_context_constants(other.loaded_context_constants),
+      loaded_context_slots(zone),
+      available_expressions(zone),
       may_have_aliasing_contexts_(
-          KnownNodeAspects::ContextSlotLoadsAlias::kNone),
+          KnownNodeAspects::ContextSlotLoadsAlias::None),
       effect_epoch_(other.effect_epoch_),
-      node_infos_(zone),
-      virtual_objects_(other.virtual_objects_) {
-  if (!other.any_map_for_any_node_is_unstable_) {
-    node_infos_ = other.node_infos_;
+      node_infos(zone) {
+  if (!other.any_map_for_any_node_is_unstable) {
+    node_infos = other.node_infos;
 #ifdef DEBUG
-    for (const auto& it : node_infos_) {
+    for (const auto& it : node_infos) {
       DCHECK(!it.second.any_map_is_unstable());
     }
 #endif
   } else if (optimistic_initial_state &&
              !loop_effects->unstable_aspects_cleared) {
-    node_infos_ = other.node_infos_;
-    any_map_for_any_node_is_unstable_ = other.any_map_for_any_node_is_unstable_;
+    node_infos = other.node_infos;
+    any_map_for_any_node_is_unstable = other.any_map_for_any_node_is_unstable;
   } else {
-    for (const auto& it : other.node_infos_) {
-      node_infos_.emplace(it.first,
-                          NodeInfo::ClearUnstableMapsOnCopy{it.second});
+    for (const auto& it : other.node_infos) {
+      node_infos.emplace(it.first,
+                         NodeInfo::ClearUnstableMapsOnCopy{it.second});
     }
   }
   if (optimistic_initial_state && !loop_effects->unstable_aspects_cleared) {
@@ -202,19 +159,18 @@ KnownNodeAspects::KnownNodeAspects(const KnownNodeAspects& other,
     // in when we try to terminate the loop in `IsCompatibleWithLoopHeader`.
     if (loop_effects->objects_written.empty() &&
         loop_effects->keys_cleared.empty()) {
-      loaded_properties_ = other.loaded_properties_;
+      loaded_properties = other.loaded_properties;
     } else {
       auto cleared_key = loop_effects->keys_cleared.begin();
       auto cleared_keys_end = loop_effects->keys_cleared.end();
       auto cleared_obj = loop_effects->objects_written.begin();
       auto cleared_objs_end = loop_effects->objects_written.end();
-      for (auto loaded_key : other.loaded_properties_) {
+      for (auto loaded_key : other.loaded_properties) {
         if (NextInIgnoreList(cleared_key, cleared_keys_end, loaded_key.first)) {
           continue;
         }
         auto& props_for_key =
-            loaded_properties_.try_emplace(loaded_key.first, zone)
-                .first->second;
+            loaded_properties.try_emplace(loaded_key.first, zone).first->second;
         for (auto loaded_obj : loaded_key.second) {
           if (!NextInIgnoreList(cleared_obj, cleared_objs_end,
                                 loaded_obj.first)) {
@@ -224,21 +180,20 @@ KnownNodeAspects::KnownNodeAspects(const KnownNodeAspects& other,
       }
     }
     if (loop_effects->context_slot_written.empty()) {
-      loaded_context_slots_ = other.loaded_context_slots_;
+      loaded_context_slots = other.loaded_context_slots;
     } else {
       auto slot_written = loop_effects->context_slot_written.begin();
       auto slot_written_end = loop_effects->context_slot_written.end();
-      for (auto loaded : other.loaded_context_slots_) {
+      for (auto loaded : other.loaded_context_slots) {
         if (!NextInIgnoreList(slot_written, slot_written_end, loaded.first)) {
-          loaded_context_slots_.emplace(loaded);
+          loaded_context_slots.emplace(loaded);
         }
       }
     }
-    if (!loaded_context_slots_.empty()) {
+    if (!loaded_context_slots.empty()) {
       if (loop_effects->may_have_aliasing_contexts) {
-        may_have_aliasing_contexts_ = ContextSlotLoadsAlias::kYes;
+        may_have_aliasing_contexts_ = ContextSlotLoadsAlias::Yes;
       } else {
-        DCHECK_EQ(may_have_aliasing_contexts_, ContextSlotLoadsAlias::kNone);
         may_have_aliasing_contexts_ = other.may_have_aliasing_contexts();
       }
     }
@@ -248,13 +203,11 @@ KnownNodeAspects::KnownNodeAspects(const KnownNodeAspects& other,
   // across loop headers.
   // TODO(olivf): Only do this if the loop contains write effects.
   increment_effect_epoch();
-  for (const auto& e : other.available_expressions_) {
-    if (e.second.effect_epoch >= effect_epoch_) {
-      available_expressions_.emplace(e);
+  for (const auto& e : other.available_expressions) {
+    if (e.second.effect_epoch >= effect_epoch()) {
+      available_expressions.emplace(e);
     }
   }
-
-  virtual_objects_.Snapshot();
 }
 
 namespace {
@@ -338,11 +291,11 @@ bool KnownNodeAspects::IsCompatibleWithLoopHeader(
   // Needs to be in sync with `CloneForLoopHeader(zone, true)`.
 
   // Analysis state can change with loads.
-  if (!loop_header.loaded_context_slots_.empty() &&
-      loop_header.may_have_aliasing_contexts() != ContextSlotLoadsAlias::kYes &&
+  if (!loop_header.loaded_context_slots.empty() &&
+      loop_header.may_have_aliasing_contexts() != ContextSlotLoadsAlias::Yes &&
       loop_header.may_have_aliasing_contexts() !=
           may_have_aliasing_contexts() &&
-      may_have_aliasing_contexts() != ContextSlotLoadsAlias::kNone) {
+      may_have_aliasing_contexts() != ContextSlotLoadsAlias::None) {
     if (V8_UNLIKELY(v8_flags.trace_maglev_loop_speeling)) {
       std::cout << "KNA after loop has incompatible "
                    "loop_header.may_have_aliasing_contexts\n";
@@ -350,10 +303,10 @@ bool KnownNodeAspects::IsCompatibleWithLoopHeader(
     return false;
   }
 
-  bool had_effects = effect_epoch_ != loop_header.effect_epoch_;
+  bool had_effects = effect_epoch() != loop_header.effect_epoch();
 
   if (!had_effects) {
-    if (!AspectIncludes(loop_header.node_infos_, node_infos_, NodeInfoTypeIs,
+    if (!AspectIncludes(loop_header.node_infos, node_infos, NodeInfoTypeIs,
                         NodeInfoIsEmpty)) {
       if (V8_UNLIKELY(v8_flags.trace_maglev_loop_speeling)) {
         std::cout << "KNA after effectless loop has incompatible node_infos\n";
@@ -367,7 +320,7 @@ bool KnownNodeAspects::IsCompatibleWithLoopHeader(
 #endif
   }
 
-  if (!AspectIncludes(loop_header.node_infos_, node_infos_, NodeInfoIncludes,
+  if (!AspectIncludes(loop_header.node_infos, node_infos, NodeInfoIncludes,
                       NodeInfoIsEmpty)) {
     if (V8_UNLIKELY(v8_flags.trace_maglev_loop_speeling)) {
       std::cout << "KNA after loop has incompatible node_infos\n";
@@ -377,7 +330,7 @@ bool KnownNodeAspects::IsCompatibleWithLoopHeader(
   }
 
   if (!MaybeEmptyAspectIncludes(
-          loop_header.loaded_properties_, loaded_properties_,
+          loop_header.loaded_properties, loaded_properties,
           [](auto a, auto b) { return AspectIncludes(a, b, SameValue); })) {
     if (V8_UNLIKELY(v8_flags.trace_maglev_loop_speeling)) {
       std::cout << "KNA after loop has incompatible loaded_properties\n";
@@ -386,8 +339,8 @@ bool KnownNodeAspects::IsCompatibleWithLoopHeader(
     return false;
   }
 
-  if (!MaybeNullAspectIncludes(loop_header.loaded_context_slots_,
-                               loaded_context_slots_, SameValue)) {
+  if (!MaybeNullAspectIncludes(loop_header.loaded_context_slots,
+                               loaded_context_slots, SameValue)) {
     if (V8_UNLIKELY(v8_flags.trace_maglev_loop_speeling)) {
       std::cout << "KNA after loop has incompatible loaded_context_slots\n";
     }
@@ -424,18 +377,15 @@ MergePointInterpreterFrameState* MergePointInterpreterFrameState::New(
   merge_state->predecessors_[0] = predecessor;
   merge_state->known_node_aspects_ =
       state.known_node_aspects()->Clone(info.zone());
+  state.virtual_objects().Snapshot();
+  merge_state->set_virtual_objects(state.virtual_objects());
   return merge_state;
-}
-
-void MergePointInterpreterFrameState::set_is_resumable_loop(Graph* graph) {
-  graph->set_may_have_unreachable_blocks();
-  bitfield_ = kIsResumableLoopBit::update(bitfield_, true);
 }
 
 // static
 MergePointInterpreterFrameState* MergePointInterpreterFrameState::NewForLoop(
-    const InterpreterFrameState& start_state, Graph* graph,
-    const MaglevCompilationUnit& info, int merge_offset, int predecessor_count,
+    const InterpreterFrameState& start_state, const MaglevCompilationUnit& info,
+    int merge_offset, int predecessor_count,
     const compiler::BytecodeLivenessState* liveness,
     const compiler::LoopInfo* loop_info, bool has_been_peeled) {
   MergePointInterpreterFrameState* state =
@@ -449,7 +399,7 @@ MergePointInterpreterFrameState* MergePointInterpreterFrameState::NewForLoop(
   if (loop_info->resumable()) {
     state->known_node_aspects_ =
         info.zone()->New<KnownNodeAspects>(info.zone());
-    state->set_is_resumable_loop(graph);
+    state->bitfield_ = kIsResumableLoopBit::update(state->bitfield_, true);
   }
   auto& assignments = loop_info->assignments();
   auto& frame_state = state->frame_state_;
@@ -533,12 +483,12 @@ MergePointInterpreterFrameState::MergePointInterpreterFrameState(
                     frame_state_.size(info))) {}
 
 namespace {
-void PrintBeforeMerge(MaglevGraphBuilder* builder, ValueNode* current_value,
-                      ValueNode* unmerged_value, interpreter::Register reg,
-                      KnownNodeAspects* kna) {
-  if (V8_LIKELY(!v8_flags.trace_maglev_graph_building)) return;
-  if (V8_LIKELY(!builder->is_tracing_enabled())) return;
-  std::cout << "  " << reg.ToString() << ": " << PrintNodeLabel(current_value)
+void PrintBeforeMerge(const MaglevCompilationUnit& compilation_unit,
+                      ValueNode* current_value, ValueNode* unmerged_value,
+                      interpreter::Register reg, KnownNodeAspects* kna) {
+  if (!v8_flags.trace_maglev_graph_building) return;
+  std::cout << "  " << reg.ToString() << ": "
+            << PrintNodeLabel(compilation_unit.graph_labeller(), current_value)
             << "<";
   if (kna) {
     if (auto cur_info = kna->TryGetInfoFor(current_value)) {
@@ -548,7 +498,9 @@ void PrintBeforeMerge(MaglevGraphBuilder* builder, ValueNode* current_value,
       }
     }
   }
-  std::cout << "> <- " << PrintNodeLabel(unmerged_value) << "<";
+  std::cout << "> <- "
+            << PrintNodeLabel(compilation_unit.graph_labeller(), unmerged_value)
+            << "<";
   if (kna) {
     if (auto in_info = kna->TryGetInfoFor(unmerged_value)) {
       std::cout << in_info->type();
@@ -559,12 +511,14 @@ void PrintBeforeMerge(MaglevGraphBuilder* builder, ValueNode* current_value,
   }
   std::cout << ">";
 }
-void PrintAfterMerge(MaglevGraphBuilder* builder, ValueNode* merged_value,
-                     KnownNodeAspects* kna) {
-  if (V8_LIKELY(!v8_flags.trace_maglev_graph_building)) return;
-  if (V8_LIKELY(!builder->is_tracing_enabled())) return;
-  std::cout << " => " << PrintNodeLabel(merged_value) << ": "
-            << PrintNode(merged_value) << "<";
+void PrintAfterMerge(const MaglevCompilationUnit& compilation_unit,
+                     ValueNode* merged_value, KnownNodeAspects* kna) {
+  if (!v8_flags.trace_maglev_graph_building) return;
+  std::cout << " => "
+            << PrintNodeLabel(compilation_unit.graph_labeller(), merged_value)
+            << ": "
+            << PrintNode(compilation_unit.graph_labeller(), merged_value)
+            << "<";
 
   if (kna) {
     if (auto out_info = kna->TryGetInfoFor(merged_value)) {
@@ -592,12 +546,12 @@ void MergePointInterpreterFrameState::MergePhis(
   int i = 0;
   frame_state_.ForEachValue(
       compilation_unit, [&](ValueNode*& value, interpreter::Register reg) {
-        PrintBeforeMerge(builder, value, unmerged.get(reg), reg,
+        PrintBeforeMerge(compilation_unit, value, unmerged.get(reg), reg,
                          known_node_aspects_);
         value = MergeValue(builder, reg, *unmerged.known_node_aspects(), value,
                            unmerged.get(reg), &per_predecessor_alternatives_[i],
                            optimistic_loop_phis);
-        PrintAfterMerge(builder, value, known_node_aspects_);
+        PrintAfterMerge(compilation_unit, value, known_node_aspects_);
         ++i;
       });
 }
@@ -612,10 +566,14 @@ void MergePointInterpreterFrameState::MergeVirtualObject(
   }
   DCHECK(unmerged->compatible_for_merge(merged));
 
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  builder->is_tracing_enabled())) {
-    std::cout << " - Merging VOS: " << PrintNodeLabel(merged) << "(merged) and "
-              << PrintNodeLabel(unmerged) << "(unmerged)" << std::endl;
+  if (v8_flags.trace_maglev_graph_building) {
+    std::cout << " - Merging VOS: "
+              << PrintNodeLabel(builder->compilation_unit()->graph_labeller(),
+                                merged)
+              << "(merged) and "
+              << PrintNodeLabel(builder->compilation_unit()->graph_labeller(),
+                                unmerged)
+              << "(unmerged)" << std::endl;
   }
 
   auto maybe_result = merged->Merge(
@@ -630,18 +588,17 @@ void MergePointInterpreterFrameState::MergeVirtualObject(
   result->set_allocation(unmerged->allocation());
   result->Snapshot();
   unmerged->allocation()->UpdateObject(result);
-  known_node_aspects_->virtual_objects().Add(result);
+  frame_state_.virtual_objects().Add(result);
 }
 
 void MergePointInterpreterFrameState::MergeVirtualObjects(
     MaglevGraphBuilder* builder, MaglevCompilationUnit& compilation_unit,
+    const VirtualObjectList unmerged_vos,
     const KnownNodeAspects& unmerged_aspects) {
-  if (known_node_aspects_->virtual_objects().is_empty()) return;
-
-  const VirtualObjectList unmerged_vos = unmerged_aspects.virtual_objects();
+  if (frame_state_.virtual_objects().is_empty()) return;
   if (unmerged_vos.is_empty()) return;
 
-  known_node_aspects_->virtual_objects().Snapshot();
+  frame_state_.virtual_objects().Snapshot();
 
   PrintVirtualObjects(compilation_unit, unmerged_vos, "VOs before merge:");
 
@@ -653,7 +610,7 @@ void MergePointInterpreterFrameState::MergeVirtualObjects(
   // We iterate both list in reversed order of ids collecting the umerged
   // objects into the map, until we find a common virtual object.
   VirtualObjectList::WalkUntilCommon(
-      known_node_aspects_->virtual_objects(), unmerged_vos,
+      frame_state_.virtual_objects(), unmerged_vos,
       [&](VirtualObject* vo, VirtualObjectList vos) {
         // If we have a version in the map, it should be the most up-to-date,
         // since the list is in reverse order.
@@ -686,7 +643,7 @@ void MergePointInterpreterFrameState::MergeVirtualObjects(
     if (it != merged_map.end()) {
       merged = it->second;
     } else {
-      merged = known_node_aspects_->virtual_objects().FindAllocatedWith(
+      merged = frame_state_.virtual_objects().FindAllocatedWith(
           unmerged->allocation());
     }
     if (merged != nullptr) {
@@ -714,8 +671,8 @@ void MergePointInterpreterFrameState::InitializeLoop(
   known_node_aspects_ = unmerged.known_node_aspects()->CloneForLoopHeader(
       optimistic_initial_state, loop_effects, builder->zone());
   unmerged.virtual_objects().Snapshot();
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  builder->is_tracing_enabled())) {
+  frame_state_.set_virtual_objects(unmerged.virtual_objects());
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "Initializing "
               << (optimistic_initial_state ? "optimistic " : "")
               << "loop state..." << std::endl;
@@ -746,12 +703,11 @@ void MergePointInterpreterFrameState::Merge(
   }
 
   known_node_aspects_->Merge(*unmerged.known_node_aspects(), builder->zone());
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  compilation_unit.is_tracing_enabled())) {
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "Merging..." << std::endl;
   }
 
-  MergeVirtualObjects(builder, compilation_unit,
+  MergeVirtualObjects(builder, compilation_unit, unmerged.virtual_objects(),
                       *unmerged.known_node_aspects());
   MergePhis(builder, compilation_unit, unmerged, predecessor, false);
 
@@ -774,19 +730,19 @@ void MergePointInterpreterFrameState::MergeLoop(
   DCHECK(is_unmerged_loop());
   predecessors_[predecessor_count_ - 1] = loop_end_block;
 
-  backedge_deopt_frame_ = builder->GetLatestCheckpointedFrame();
+  backedge_deopt_frame_ =
+      builder->zone()->New<DeoptFrame>(builder->GetLatestCheckpointedFrame());
 
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  compilation_unit.is_tracing_enabled())) {
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "Merging loop backedge..." << std::endl;
   }
   frame_state_.ForEachValue(
       compilation_unit, [&](ValueNode* value, interpreter::Register reg) {
-        PrintBeforeMerge(builder, value, loop_end_state.get(reg), reg,
+        PrintBeforeMerge(compilation_unit, value, loop_end_state.get(reg), reg,
                          known_node_aspects_);
         MergeLoopValue(builder, reg, *loop_end_state.known_node_aspects(),
                        value, loop_end_state.get(reg));
-        PrintAfterMerge(builder, value, known_node_aspects_);
+        PrintAfterMerge(compilation_unit, value, known_node_aspects_);
       });
   predecessors_so_far_++;
   DCHECK_EQ(predecessors_so_far_, predecessor_count_);
@@ -815,7 +771,8 @@ bool MergePointInterpreterFrameState::TryMergeLoop(
   DCHECK_EQ(predecessors_so_far_, predecessor_count_ - 1);
   DCHECK(is_unmerged_loop());
 
-  backedge_deopt_frame_ = builder->GetLatestCheckpointedFrame();
+  backedge_deopt_frame_ =
+      builder->zone()->New<DeoptFrame>(builder->GetLatestCheckpointedFrame());
 
   auto& compilation_unit = *builder->compilation_unit();
 
@@ -825,8 +782,7 @@ bool MergePointInterpreterFrameState::TryMergeLoop(
   // TODO(olivf): This could be done faster by consulting loop_effects_
   if (!loop_end_state.known_node_aspects()->IsCompatibleWithLoopHeader(
           *known_node_aspects_)) {
-    if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                    compilation_unit.is_tracing_enabled())) {
+    if (v8_flags.trace_maglev_graph_building) {
       std::cout << "Merging failed, peeling loop instead... " << std::endl;
     }
     ClearLoopInfo();
@@ -840,10 +796,12 @@ bool MergePointInterpreterFrameState::TryMergeLoop(
     Phi* phi = value->Cast<Phi>();
     if (!phi->is_loop_phi()) return;
     if (phi->merge_state() != this) return;
-    NodeType old_type = known_node_aspects_->GetType(builder->broker(), phi);
+    NodeType old_type = GetNodeType(builder->broker(), builder->local_isolate(),
+                                    *known_node_aspects_, phi);
     if (old_type != NodeType::kUnknown) {
-      NodeType new_type = loop_end_state.known_node_aspects()->GetType(
-          builder->broker(), loop_end_state.get(reg));
+      NodeType new_type = GetNodeType(
+          builder->broker(), builder->local_isolate(),
+          *loop_end_state.known_node_aspects(), loop_end_state.get(reg));
       if (!NodeTypeIs(new_type, old_type)) {
         if (v8_flags.trace_maglev_loop_speeling) {
           std::cout << "Cannot merge " << new_type << " into " << old_type
@@ -863,18 +821,17 @@ bool MergePointInterpreterFrameState::TryMergeLoop(
   loop_end_block->set_predecessor_id(input);
   predecessors_[input] = loop_end_block;
 
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  compilation_unit.is_tracing_enabled())) {
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "Next peeling not needed due to compatible state" << std::endl;
   }
 
   frame_state_.ForEachValue(
       compilation_unit, [&](ValueNode* value, interpreter::Register reg) {
-        PrintBeforeMerge(builder, value, loop_end_state.get(reg), reg,
+        PrintBeforeMerge(compilation_unit, value, loop_end_state.get(reg), reg,
                          known_node_aspects_);
         MergeLoopValue(builder, reg, *loop_end_state.known_node_aspects(),
                        value, loop_end_state.get(reg));
-        PrintAfterMerge(builder, value, known_node_aspects_);
+        PrintAfterMerge(compilation_unit, value, known_node_aspects_);
       });
   predecessors_so_far_++;
   DCHECK_EQ(predecessors_so_far_, predecessor_count_);
@@ -897,7 +854,8 @@ const LoopEffects* MergePointInterpreterFrameState::loop_effects() {
 
 void MergePointInterpreterFrameState::MergeThrow(
     MaglevGraphBuilder* builder, const MaglevCompilationUnit* handler_unit,
-    const KnownNodeAspects& known_node_aspects) {
+    const KnownNodeAspects& known_node_aspects,
+    const VirtualObjectList virtual_objects) {
   // We don't count total predecessors on exception handlers, but we do want to
   // special case the first predecessor so we do count predecessors_so_far
   DCHECK_EQ(predecessor_count_, 0);
@@ -908,36 +866,37 @@ void MergePointInterpreterFrameState::MergeThrow(
   const InterpreterFrameState& builder_frame =
       builder->current_interpreter_frame();
 
-  if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
-                  handler_unit->is_tracing_enabled())) {
+  if (v8_flags.trace_maglev_graph_building) {
     std::cout << "- Merging into exception handler @" << this << std::endl;
-    PrintVirtualObjects(*handler_unit, known_node_aspects.virtual_objects());
+    PrintVirtualObjects(*handler_unit, virtual_objects);
   }
 
   if (known_node_aspects_ == nullptr) {
     DCHECK_EQ(predecessors_so_far_, 0);
     known_node_aspects_ = known_node_aspects.Clone(builder->zone());
+    virtual_objects.Snapshot();
+    frame_state_.set_virtual_objects(virtual_objects);
   } else {
     known_node_aspects_->Merge(known_node_aspects, builder->zone());
-    MergeVirtualObjects(builder, *builder->compilation_unit(),
+    MergeVirtualObjects(builder, *builder->compilation_unit(), virtual_objects,
                         known_node_aspects);
   }
 
   frame_state_.ForEachParameter(
       *handler_unit, [&](ValueNode*& value, interpreter::Register reg) {
-        PrintBeforeMerge(builder, value, builder_frame.get(reg), reg,
+        PrintBeforeMerge(*handler_unit, value, builder_frame.get(reg), reg,
                          known_node_aspects_);
         value = MergeValue(builder, reg, known_node_aspects, value,
                            builder_frame.get(reg), nullptr);
-        PrintAfterMerge(builder, value, known_node_aspects_);
+        PrintAfterMerge(*handler_unit, value, known_node_aspects_);
       });
   frame_state_.ForEachLocal(
       *handler_unit, [&](ValueNode*& value, interpreter::Register reg) {
-        PrintBeforeMerge(builder, value, builder_frame.get(reg), reg,
+        PrintBeforeMerge(*handler_unit, value, builder_frame.get(reg), reg,
                          known_node_aspects_);
         value = MergeValue(builder, reg, known_node_aspects, value,
                            builder_frame.get(reg), nullptr);
-        PrintAfterMerge(builder, value, known_node_aspects_);
+        PrintAfterMerge(*handler_unit, value, known_node_aspects_);
       });
 
   // Pick out the context value from the incoming registers.
@@ -945,13 +904,13 @@ void MergePointInterpreterFrameState::MergeThrow(
   // the identity for generator-restored context. If generator value restores
   // were handled differently, we could avoid emitting a Phi here.
   ValueNode*& context = frame_state_.context(*handler_unit);
-  PrintBeforeMerge(builder, context,
+  PrintBeforeMerge(*handler_unit, context,
                    builder_frame.get(catch_block_context_register_),
                    catch_block_context_register_, known_node_aspects_);
   context = MergeValue(
       builder, catch_block_context_register_, known_node_aspects, context,
       builder_frame.get(catch_block_context_register_), nullptr);
-  PrintAfterMerge(builder, context, known_node_aspects_);
+  PrintAfterMerge(*handler_unit, context, known_node_aspects_);
 
   predecessors_so_far_++;
 }
@@ -961,14 +920,15 @@ namespace {
 ValueNode* FromInt32ToTagged(const MaglevGraphBuilder* builder,
                              NodeType node_type, ValueNode* value,
                              BasicBlock* predecessor) {
-  DCHECK(value->is_int32());
+  DCHECK_EQ(value->properties().value_representation(),
+            ValueRepresentation::kInt32);
   DCHECK(!value->properties().is_conversion());
 
   ValueNode* tagged;
   if (value->Is<Int32Constant>()) {
     int32_t constant = value->Cast<Int32Constant>()->value();
     if (Smi::IsValid(constant)) {
-      return builder->graph()->GetSmiConstant(constant);
+      return builder->GetSmiConstant(constant);
     }
   }
 
@@ -992,7 +952,8 @@ ValueNode* FromInt32ToTagged(const MaglevGraphBuilder* builder,
 ValueNode* FromUint32ToTagged(const MaglevGraphBuilder* builder,
                               NodeType node_type, ValueNode* value,
                               BasicBlock* predecessor) {
-  DCHECK(value->is_uint32());
+  DCHECK_EQ(value->properties().value_representation(),
+            ValueRepresentation::kUint32);
   DCHECK(!value->properties().is_conversion());
 
   ValueNode* tagged;
@@ -1024,7 +985,8 @@ ValueNode* FromIntPtrToTagged(const MaglevGraphBuilder* builder,
 ValueNode* FromFloat64ToTagged(const MaglevGraphBuilder* builder,
                                NodeType node_type, ValueNode* value,
                                BasicBlock* predecessor) {
-  DCHECK(value->is_float64());
+  DCHECK_EQ(value->properties().value_representation(),
+            ValueRepresentation::kFloat64);
   DCHECK(!value->properties().is_conversion());
 
   // Create a tagged version, and insert it at the end of the predecessor.
@@ -1040,7 +1002,8 @@ ValueNode* FromFloat64ToTagged(const MaglevGraphBuilder* builder,
 ValueNode* FromHoleyFloat64ToTagged(const MaglevGraphBuilder* builder,
                                     NodeType node_type, ValueNode* value,
                                     BasicBlock* predecessor) {
-  DCHECK(value->is_holey_float64());
+  DCHECK_EQ(value->properties().value_representation(),
+            ValueRepresentation::kHoleyFloat64);
   DCHECK(!value->properties().is_conversion());
 
   // Create a tagged version, and insert it at the end of the predecessor.
@@ -1069,14 +1032,13 @@ ValueNode* NonTaggedToTagged(const MaglevGraphBuilder* builder,
       return FromFloat64ToTagged(builder, node_type, value, predecessor);
     case ValueRepresentation::kHoleyFloat64:
       return FromHoleyFloat64ToTagged(builder, node_type, value, predecessor);
-    case ValueRepresentation::kNone:
-      UNREACHABLE();
   }
 }
 ValueNode* EnsureTagged(const MaglevGraphBuilder* builder,
                         const KnownNodeAspects& known_node_aspects,
                         ValueNode* value, BasicBlock* predecessor) {
-  if (value->is_tagged()) {
+  if (value->properties().value_representation() ==
+      ValueRepresentation::kTagged) {
     return value;
   }
 
@@ -1170,7 +1132,8 @@ ValueNode* MergePointInterpreterFrameState::MergeValue(
     }
 
     NodeType unmerged_type =
-        unmerged_aspects.GetType(builder->broker(), unmerged);
+        GetNodeType(builder->broker(), builder->local_isolate(),
+                    unmerged_aspects, unmerged);
     if (result->is_loop_phi()) {
       UpdateLoopPhiType(result, unmerged_type);
     } else {
@@ -1238,9 +1201,11 @@ ValueNode* MergePointInterpreterFrameState::MergeValue(
     }
   }
 
-  NodeType merged_type = merged->GetStaticType(builder->broker());
+  NodeType merged_type =
+      StaticTypeForNode(builder->broker(), builder->local_isolate(), merged);
 
-  bool is_tagged = merged->is_tagged();
+  bool is_tagged = merged->properties().value_representation() ==
+                   ValueRepresentation::kTagged;
   NodeType type = merged_type != NodeType::kUnknown
                       ? merged_type
                       : AlternativeType(per_predecessor_alternatives->first());
@@ -1260,11 +1225,11 @@ ValueNode* MergePointInterpreterFrameState::MergeValue(
   }
   DCHECK_EQ(i, predecessors_so_far_);
 
-  // Note: it's better to call GetType on {unmerged} before updating it with
+  // Note: it's better to call GetNodeType on {unmerged} before updating it with
   // EnsureTagged, since untagged nodes have a higher chance of having a
   // StaticType.
-  NodeType unmerged_type =
-      unmerged_aspects.GetType(builder->broker(), unmerged);
+  NodeType unmerged_type = GetNodeType(
+      builder->broker(), builder->local_isolate(), unmerged_aspects, unmerged);
   unmerged = EnsureTagged(builder, unmerged_aspects, unmerged,
                           predecessors_[predecessors_so_far_]);
   result->set_input(predecessors_so_far_, unmerged);
@@ -1290,7 +1255,8 @@ MergePointInterpreterFrameState::MergeVirtualObjectValue(
   Phi* result = merged->TryCast<Phi>();
   if (result != nullptr && result->merge_state() == this) {
     NodeType unmerged_type =
-        unmerged_aspects.GetType(builder->broker(), unmerged);
+        GetNodeType(builder->broker(), builder->local_isolate(),
+                    unmerged_aspects, unmerged);
     unmerged = EnsureTagged(builder, unmerged_aspects, unmerged,
                             predecessors_[predecessors_so_far_]);
     for (uint32_t i = predecessors_so_far_; i < predecessor_count_; i++) {
@@ -1337,7 +1303,8 @@ MergePointInterpreterFrameState::MergeVirtualObjectValue(
     }
   }
 
-  NodeType merged_type = merged->GetStaticType(builder->broker());
+  NodeType merged_type =
+      StaticTypeForNode(builder->broker(), builder->local_isolate(), merged);
 
   // We must have seen the same value so far.
   DCHECK_NOT_NULL(known_node_aspects_);
@@ -1347,8 +1314,8 @@ MergePointInterpreterFrameState::MergeVirtualObjectValue(
     result->set_input(i, tagged_merged);
   }
 
-  NodeType unmerged_type =
-      unmerged_aspects.GetType(builder->broker(), unmerged);
+  NodeType unmerged_type = GetNodeType(
+      builder->broker(), builder->local_isolate(), unmerged_aspects, unmerged);
   unmerged = EnsureTagged(builder, unmerged_aspects, unmerged,
                           predecessors_[predecessors_so_far_]);
   for (uint32_t i = predecessors_so_far_; i < predecessor_count_; i++) {
@@ -1371,7 +1338,8 @@ void MergePointInterpreterFrameState::MergeLoopValue(
     return;
   }
   DCHECK_EQ(result->owner(), owner);
-  NodeType type = unmerged_aspects.GetType(builder->broker(), unmerged);
+  NodeType type = GetNodeType(builder->broker(), builder->local_isolate(),
+                              unmerged_aspects, unmerged);
   unmerged = EnsureTagged(builder, unmerged_aspects, unmerged,
                           predecessors_[predecessors_so_far_]);
   result->set_input(predecessor_count_ - 1, unmerged);
@@ -1385,16 +1353,13 @@ void MergePointInterpreterFrameState::MergeLoopValue(
 
   if (Phi* unmerged_phi = unmerged->TryCast<Phi>()) {
     // Propagating the `uses_repr` from {result} to {unmerged_phi}.
-    unmerged_phi->RecordUseReprHint(result->get_uses_repr_hints());
+    builder->RecordUseReprHint(unmerged_phi, result->get_uses_repr_hints());
 
     // Soundness of the loop phi Smi type relies on the back-edge static types
     // sminess.
     if (result->uses_require_31_bit_value()) {
       unmerged_phi->SetUseRequires31BitValue();
     }
-  } else if (CallKnownJSFunction* call =
-                 unmerged->TryCast<CallKnownJSFunction>()) {
-    call->RecordUseReprHint(result->get_uses_repr_hints());
   }
 }
 
@@ -1441,12 +1406,6 @@ bool MergePointInterpreterFrameState::IsUnreachableByForwardEdge() const {
   }
 }
 
-bool MergePointInterpreterFrameState::IsUnreachable() const {
-  if (is_exception_handler()) return false;
-  if (is_resumable_loop()) return false;
-  return IsUnreachableByForwardEdge();
-}
-
 void MergePointInterpreterFrameState::RemovePredecessorAt(int predecessor_id) {
   // Only call this function if we have already process all merge points.
   DCHECK_EQ(predecessors_so_far_, predecessor_count_);
@@ -1465,13 +1424,9 @@ void MergePointInterpreterFrameState::RemovePredecessorAt(int predecessor_id) {
   // Remove Phi input of index predecessor_id.
   for (Phi* phi : *phis()) {
     DCHECK_EQ(phi->input_count(), predecessor_count_);
-    if (phi->input(predecessor_id).node()) {
-      phi->input(predecessor_id).clear();
-    }
     // Shift phi inputs by 1.
     for (int i = predecessor_id; i < phi->input_count() - 1; i++) {
-      // Do not call change_input, since we don't want to update the use count.
-      phi->move_input(i, i + 1);
+      phi->change_input(i, phi->input(i + 1).node());
     }
     phi->reduce_input_count(1);
   }

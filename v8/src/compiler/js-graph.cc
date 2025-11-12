@@ -51,9 +51,12 @@ Node* JSGraph::CEntryStubConstant(int result_size, ArgvMode argv_mode,
 Node* JSGraph::ConstantNoHole(ObjectRef ref, JSHeapBroker* broker) {
   // This CHECK is security critical, we should never observe a hole
   // here.  Please do not remove this! (crbug.com/1486789)
-  CHECK(ref.IsSmi() || ref.IsHeapNumber() || ref.HoleType() == HoleType::kNone);
-  if (ref.IsString()) {
-    ref = ref.AsString().UnpackIfThin(broker);
+  CHECK(ref.IsSmi() || ref.IsHeapNumber() ||
+        ref.AsHeapObject().GetHeapObjectType(broker).hole_type() ==
+            HoleType::kNone);
+  if (IsThinString(*ref.object())) {
+    ref = MakeRefAssumeMemoryFence(broker,
+                                   Cast<ThinString>(*ref.object())->actual());
   }
   return Constant(ref, broker);
 }
@@ -64,8 +67,11 @@ Node* JSGraph::ConstantMaybeHole(ObjectRef ref, JSHeapBroker* broker) {
 
 Node* JSGraph::Constant(ObjectRef ref, JSHeapBroker* broker) {
   if (ref.IsSmi()) return ConstantMaybeHole(ref.AsSmi());
+  if (ref.IsHeapNumber()) {
+    return ConstantMaybeHole(ref.AsHeapNumber().value());
+  }
 
-  switch (ref.HoleType()) {
+  switch (ref.AsHeapObject().GetHeapObjectType(broker).hole_type()) {
     case HoleType::kNone:
       break;
     case HoleType::kGeneric:
@@ -80,18 +86,15 @@ Node* JSGraph::Constant(ObjectRef ref, JSHeapBroker* broker) {
       return OptimizedOutConstant();
     case HoleType::kStaleRegister:
       return StaleRegisterConstant();
-    case HoleType::kUninitializedHole:
+    case HoleType::kUninitialized:
       return UninitializedConstant();
-    case HoleType::kExceptionHole:
+    case HoleType::kException:
     case HoleType::kTerminationException:
     case HoleType::kArgumentsMarker:
     case HoleType::kSelfReferenceMarker:
     case HoleType::kBasicBlockCountersMarker:
+    case HoleType::kUndefinedContextCell:
       UNREACHABLE();
-  }
-
-  if (ref.IsHeapNumber()) {
-    return ConstantMaybeHole(ref.AsHeapNumber().value());
   }
 
   OddballType oddball_type =
@@ -121,23 +124,16 @@ Node* JSGraph::ConstantMutableHeapNumber(HeapNumberRef ref,
 }
 
 Node* JSGraph::ConstantNoHole(double value) {
-  return ConstantNoHole(Float64::FromBits(base::bit_cast<uint64_t>(value)));
-}
-
-Node* JSGraph::ConstantNoHole(Float64 value) {
-  CHECK(!value.is_hole_nan());
+  CHECK_NE(base::bit_cast<uint64_t>(value), kHoleNanInt64);
   return ConstantMaybeHole(value);
 }
 
 Node* JSGraph::ConstantMaybeHole(double value) {
-  return ConstantMaybeHole(Float64::FromBits(base::bit_cast<uint64_t>(value)));
-}
-
-Node* JSGraph::ConstantMaybeHole(Float64 value) {
-  if (value == Float64(0.0)) return ZeroConstant();
-  if (value == Float64(1.0)) return OneConstant();
-  // TODO(leszeks): Make NumberConstant store Float64 too.
-  return NumberConstant(value.get_scalar());
+  if (base::bit_cast<int64_t>(value) == base::bit_cast<int64_t>(0.0))
+    return ZeroConstant();
+  if (base::bit_cast<int64_t>(value) == base::bit_cast<int64_t>(1.0))
+    return OneConstant();
+  return NumberConstant(value);
 }
 
 Node* JSGraph::NumberConstant(double value) {

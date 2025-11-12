@@ -24,7 +24,10 @@ namespace compiler {
 class LinearSchedulerTest : public TestWithIsolateAndZone {
  public:
   LinearSchedulerTest()
-      : graph_(zone()), common_(zone()), simplified_(zone()) {}
+      : TestWithIsolateAndZone(kCompressGraphZone),
+        graph_(zone()),
+        common_(zone()),
+        simplified_(zone()) {}
 
   TFGraph* graph() { return &graph_; }
   CommonOperatorBuilder* common() { return &common_; }

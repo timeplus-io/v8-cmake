@@ -57,9 +57,6 @@ std::optional<Tagged<Object>> Dictionary<Derived, Shape>::TryValueAt(
   Isolate* isolate;
   GetIsolateFromHeapObject(this, &isolate);
   DCHECK_NE(isolate, nullptr);
-  // TODO(431584880): Replace `GetIsolateFromHeapObject` by
-  // `Isolate::Current()`.
-  DCHECK_EQ(isolate, Isolate::TryGetCurrent());
   SLOW_DCHECK(!isolate->heap()->IsPendingAllocation(Tagged(this)));
 #endif  // DEBUG
   // We can read length() in a non-atomic way since we are reading an
@@ -171,13 +168,12 @@ void Dictionary<Derived, Shape>::SetEntry(InternalIndex entry,
                                           Tagged<Object> value,
                                           PropertyDetails details) {
   DCHECK(Dictionary::kEntrySize == 2 || Dictionary::kEntrySize == 3);
-  DCHECK(IsAnyHole(key) || !IsName(key) || details.dictionary_index() > 0 ||
-         !Shape::kHasDetails);
+  DCHECK(!IsName(key) || details.dictionary_index() > 0 || !Shape::kHasDetails);
   int index = DerivedHashTable::EntryToIndex(entry);
   DisallowGarbageCollection no_gc;
-  WriteBarrierModeScope mode = this->GetWriteBarrierMode(no_gc);
-  this->set(index + Derived::kEntryKeyIndex, key, *mode);
-  this->set(index + Derived::kEntryValueIndex, value, *mode);
+  WriteBarrierMode mode = this->GetWriteBarrierMode(no_gc);
+  this->set(index + Derived::kEntryKeyIndex, key, mode);
+  this->set(index + Derived::kEntryValueIndex, value, mode);
   if (Shape::kHasDetails) DetailsAtPut(entry, details);
 }
 
@@ -279,7 +275,7 @@ void GlobalDictionary::SetEntry(InternalIndex entry, Tagged<Object> key,
 }
 
 void GlobalDictionary::ClearEntry(InternalIndex entry) {
-  Tagged<TheHole> the_hole = GetReadOnlyRoots().the_hole_value();
+  Tagged<Hole> the_hole = GetReadOnlyRoots().the_hole_value();
   set(EntryToIndex(entry) + kEntryKeyIndex, the_hole);
 }
 
@@ -292,7 +288,7 @@ bool NumberDictionaryBaseShape::IsMatch(uint32_t key, Tagged<Object> other) {
 }
 
 uint32_t NumberDictionaryBaseShape::Hash(ReadOnlyRoots roots, uint32_t key) {
-  return ComputeSeededHash(key, HashSeed(roots).seed());
+  return ComputeSeededHash(key, HashSeed(roots));
 }
 
 uint32_t NumberDictionaryBaseShape::HashForObject(ReadOnlyRoots roots,
@@ -300,7 +296,7 @@ uint32_t NumberDictionaryBaseShape::HashForObject(ReadOnlyRoots roots,
   DCHECK(IsNumber(other));
   return ComputeSeededHash(
       static_cast<uint32_t>(Object::NumberValue(Cast<Number>(other))),
-      HashSeed(roots).seed());
+      HashSeed(roots));
 }
 
 template <AllocationType allocation>

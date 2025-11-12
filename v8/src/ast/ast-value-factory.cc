@@ -292,8 +292,7 @@ std::forward_list<const AstRawString*> AstConsString::ToRawStrings() const {
   return result;
 }
 
-AstStringConstants::AstStringConstants(Isolate* isolate,
-                                       const HashSeed hash_seed)
+AstStringConstants::AstStringConstants(Isolate* isolate, uint64_t hash_seed)
     : zone_(isolate->allocator(), ZONE_NAME),
       string_table_(),
       hash_seed_(hash_seed) {

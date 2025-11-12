@@ -3669,8 +3669,6 @@ void ImplementationVisitor::GenerateBuiltinDefinitionsAndInterfaceDescriptors(
           // objects inside the sandbox via the code pointer table.
           interface_descriptors << "  INTERNAL_DESCRIPTOR()\n";
 
-          interface_descriptors << "  SANDBOXING_MODE(kSandboxed)\n";
-
           if (has_context_parameter) {
             interface_descriptors << "  DEFINE_RESULT_AND_PARAMETERS(";
           } else {
@@ -4077,7 +4075,7 @@ class ClassFieldOffsetGenerator : public FieldOffsetsGenerator {
       // HeapObject) being mirrored by a *Layout class. Remove once
       // everything is ported to layout classes.
       if (parent_name == "HeapObject" || parent_name == "TrustedObject" ||
-          parent_name == "ExposedTrustedObject" || parent_name == "Struct") {
+          parent_name == "Struct") {
         parent_name += "Layout";
       }
 
@@ -4236,8 +4234,8 @@ void CppClassGenerator::GenerateClass() {
     impl_ << "\ntemplate <>\n";
     impl_ << "void " << gen_name_I_ << "::" << name_
           << "Verify(Isolate* isolate) {\n";
-    impl_ << "  TorqueGeneratedClassVerifiers::" << name_
-          << "Verify(TrustedCast<" << name_
+    impl_ << "  TorqueGeneratedClassVerifiers::" << name_ << "Verify(Cast<"
+          << name_
           << ">(*this), "
              "isolate);\n";
     impl_ << "}\n\n";
@@ -4462,13 +4460,7 @@ std::string GenerateRuntimeTypeCheck(const Type* type,
     type_check << value << ".IsCleared()";
     at_start = false;
   }
-  std::vector<TypeChecker> type_checkers = type->GetTypeCheckers();
-  std::partition(type_checkers.begin(), type_checkers.end(),
-                 [](const TypeChecker& runtime_type) {
-                   return runtime_type.type == "Hole" ||
-                          runtime_type.type == "TheHole";
-                 });
-  for (const TypeChecker& runtime_type : type_checkers) {
+  for (const TypeChecker& runtime_type : type->GetTypeCheckers()) {
     if (!at_start) type_check << " || ";
     at_start = false;
     if (maybe_object) {
@@ -5322,6 +5314,8 @@ void GenerateClassFieldVerifier(const std::string& class_name,
   // Protected pointer fields cannot be read or verified from torque yet.
   if (field_type->IsSubtypeOf(TypeOracle::GetProtectedPointerType())) return;
   if (field_type == TypeOracle::GetFloat64OrUndefinedOrHoleType()) return;
+  // Do not verify if the field may be uninitialized.
+  if (TypeOracle::GetUninitializedType()->IsSubtypeOf(field_type)) return;
 
   std::string field_start_offset;
   if (f.index) {

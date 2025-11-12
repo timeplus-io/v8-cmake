@@ -9,7 +9,6 @@
 
 #include "src/common/globals.h"
 #include "src/handles/maybe-handles.h"
-#include "src/objects/free-space.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/maybe-object.h"
@@ -30,10 +29,8 @@ namespace v8::internal {
 // Limit all fixed arrays to the same max capacity, so that non-resizing
 // transitions between different elements kinds (like Smi to Double) will not
 // error.
-// This could be larger, but the next power of two up would push the maximum
-// byte size of FixedDoubleArray out of int32 range.
 static constexpr int kMaxFixedArrayCapacity =
-    V8_LOWER_LIMITS_MODE_BOOL ? (16 * 1024 * 1024) : (128 * 1024 * 1024);
+    V8_LOWER_LIMITS_MODE_BOOL ? (16 * 1024 * 1024) : (64 * 1024 * 1024);
 
 namespace detail {
 template <class Super, bool kLengthEqualsCapacity>
@@ -184,8 +181,11 @@ class TaggedArrayBase : public detail::TaggedArrayHeader<ShapeT, Super> {
   // Maximal allowed capacity, in number of elements. Chosen s.t. the byte size
   // fits into a Smi which is necessary for being able to create a free space
   // filler.
+  // TODO(jgruber): The kMaxCapacity could be larger (`(Smi::kMaxValue -
+  // Shape::kHeaderSize) / kElementSize`), but our tests rely on a
+  // smaller maximum to avoid timeouts.
   static constexpr int kMaxCapacity = kMaxFixedArrayCapacity;
-  static_assert(SizeFor(kMaxCapacity) <= FreeSpace::kMaxSizeInBytes);
+  static_assert(Smi::IsValid(SizeFor(kMaxCapacity)));
 
   // Maximally allowed length for regular (non large object space) object.
   static constexpr int kMaxRegularCapacity =
@@ -197,8 +197,7 @@ class TaggedArrayBase : public detail::TaggedArrayHeader<ShapeT, Super> {
   static Handle<Derived> Allocate(
       IsolateT* isolate, int capacity,
       std::optional<DisallowGarbageCollection>* no_gc_out,
-      AllocationType allocation = AllocationType::kYoung,
-      AllocationHint hint = AllocationHint());
+      AllocationType allocation = AllocationType::kYoung);
 
   static constexpr int NewCapacityForIndex(int index, int old_capacity);
 
@@ -225,8 +224,7 @@ V8_OBJECT class FixedArray
   template <class IsolateT>
   static inline Handle<FixedArray> New(
       IsolateT* isolate, int capacity,
-      AllocationType allocation = AllocationType::kYoung,
-      AllocationHint hint = AllocationHint());
+      AllocationType allocation = AllocationType::kYoung);
 
   using Super::CopyElements;
   using Super::MoveElements;
@@ -427,8 +425,11 @@ class PrimitiveArrayBase : public detail::ArrayHeaderBase<Super, true> {
   // Maximal allowed length, in number of elements. Chosen s.t. the byte size
   // fits into a Smi which is necessary for being able to create a free space
   // filler.
+  // TODO(jgruber): The kMaxLength could be larger (`(Smi::kMaxValue -
+  // sizeof(Header)) / kElementSize`), but our tests rely on a
+  // smaller maximum to avoid timeouts.
   static constexpr int kMaxLength = kMaxFixedArrayCapacity;
-  static_assert(SizeFor(kMaxLength) <= FreeSpace::kMaxSizeInBytes);
+  static_assert(Smi::IsValid(SizeFor(kMaxLength)));
 
   // Maximally allowed length for regular (non large object space) object.
   static constexpr int kMaxRegularLength =

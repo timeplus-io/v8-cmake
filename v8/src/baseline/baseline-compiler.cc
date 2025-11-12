@@ -321,10 +321,6 @@ void BaselineCompiler::GenerateCode() {
   DCHECK_EQ(__ pc_offset(), 0);
   __ CodeEntry();
 
-#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  __ AssertInSandboxedExecutionMode();
-#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-
   {
     RCS_BASELINE_SCOPE(Visit);
     Prologue();
@@ -634,7 +630,6 @@ constexpr static bool BuiltinMayDeopt(Builtin id) {
     case Builtin::kStoreCurrentContextElementBaseline:
     // This one explicitly skips the construct if the debugger is enabled.
     case Builtin::kFindNonDefaultConstructorOrConstruct:
-    case Builtin::kForOfNextBaseline:
       return false;
     default:
       return true;
@@ -782,8 +777,6 @@ void BaselineCompiler::VisitLdaContextSlot() {
       context, index, depth,
       BaselineAssembler::CompressionMode::kForceDecompression);
   __ JumpIfSmi(kInterpreterAccumulatorRegister, &done);
-  __ JumpIfRoot(kInterpreterAccumulatorRegister, RootIndex::kTheHoleValue,
-                &done);
   __ JumpIfObjectTypeFast(kNotEqual, kInterpreterAccumulatorRegister,
                           CONTEXT_CELL_TYPE, &done, Label::kNear);
   // TODO(victorgomes): inline trivial constant value read from context cell.
@@ -815,8 +808,6 @@ void BaselineCompiler::VisitLdaCurrentContextSlot() {
   __ LoadTaggedField(kInterpreterAccumulatorRegister, context,
                      Context::OffsetOfElementAt(index));
   __ JumpIfSmi(kInterpreterAccumulatorRegister, &done);
-  __ JumpIfRoot(kInterpreterAccumulatorRegister, RootIndex::kTheHoleValue,
-                &done);
   __ JumpIfObjectTypeFast(kNotEqual, kInterpreterAccumulatorRegister,
                           CONTEXT_CELL_TYPE, &done, Label::kNear);
   // TODO(victorgomes): inline trivial constant value read from context cell.
@@ -1015,11 +1006,6 @@ void BaselineCompiler::VisitStaModuleVariable() {
   __ StaModuleVariable(scratch, value, cell_index, depth);
 }
 
-void BaselineCompiler::VisitSetPrototypeProperties() {
-  CallRuntime(Runtime::kSetPrototypeProperties, kInterpreterAccumulatorRegister,
-              Constant<ObjectBoilerplateDescription>(0));
-}
-
 void BaselineCompiler::VisitSetNamedProperty() {
   // StoreIC is currently a base class for multiple property store operations
   // and contains mixed logic for named and keyed, set and define operations,
@@ -1090,23 +1076,9 @@ void BaselineCompiler::VisitAdd() {
       RegisterOperand(0), kInterpreterAccumulatorRegister, Index(1));
 }
 
-void BaselineCompiler::VisitAdd_StringConstant_Internalize() {
-  using ASVariant = AddStringConstantAndInternalizeVariant;
-  uint8_t flags = Flag8(2);
-  const ASVariant as_variant = static_cast<ASVariant>(flags);
-  DCHECK(as_variant == ASVariant::kLhsIsStringConstant ||
-         as_variant == ASVariant::kRhsIsStringConstant);
-  static constexpr auto kTargetL =
-      Builtin::kAdd_LhsIsStringConstant_Internalize_Baseline;
-  static constexpr auto kTargetR =
-      Builtin::kAdd_RhsIsStringConstant_Internalize_Baseline;
-  if (as_variant == ASVariant::kLhsIsStringConstant) {
-    CallBuiltin<kTargetL>(RegisterOperand(0), kInterpreterAccumulatorRegister,
-                          Index(1));
-  } else {
-    CallBuiltin<kTargetR>(RegisterOperand(0), kInterpreterAccumulatorRegister,
-                          Index(1));
-  }
+void BaselineCompiler::VisitAdd_LhsIsStringConstant_Internalize() {
+  CallBuiltin<Builtin::kAdd_LhsIsStringConstant_Internalize_Baseline>(
+      RegisterOperand(0), kInterpreterAccumulatorRegister, Index(1));
 }
 
 void BaselineCompiler::VisitSub() {
@@ -2451,13 +2423,6 @@ void BaselineCompiler::VisitResumeGenerator() {
   CallBuiltin<Builtin::kResumeGeneratorBaseline>(
       generator_object,
       static_cast<int>(RegisterCount(2)));  // register_count
-}
-
-void BaselineCompiler::VisitForOfNext() {
-  SaveAccumulatorScope accumulator_scope(this, &basm_);
-  CallBuiltin<Builtin::kForOfNextBaseline>(RegisterOperand(0),   // object
-                                           RegisterOperand(1));  // next
-  StoreRegisterPair(2, kReturnRegister0, kReturnRegister1);
 }
 
 void BaselineCompiler::VisitGetIterator() {

@@ -1225,22 +1225,16 @@ class HeapObject(object):
                            instance_type)
 
   def ObjectField(self, offset):
-    if not self.heap.reader.IsValidAddress(self.address + offset):
-      return None
     field_value = self.heap.reader.ReadTagged(self.address + offset)
     return self.heap.FindObjectOrSmi(field_value)
 
   def SmiField(self, offset):
-    if not self.heap.reader.IsValidAddress(self.address + offset):
-      return None
     field_value = self.heap.reader.ReadTagged(self.address + offset)
     if self.heap.IsSmi(field_value):
       return self.heap.SmiUntag(field_value)
     return None
 
   def Uint32Field(self, offset):
-    if not self.heap.reader.IsValidAddress(self.address + offset):
-      return None
     return self.heap.reader.ReadU32(self.address + offset)
 
 
@@ -1434,9 +1428,7 @@ class ConsString(String):
 
   def GetChars(self):
     try:
-      left = self.left.GetChars() if self.left is not None else "<lhs>"
-      right = self.right.GetChars() if self.right is not None else "<rhs>"
-      return left + right
+      return self.left.GetChars() + self.right.GetChars()
     except Exception as e:
       return "***CAUGHT EXCEPTION IN GROKDUMP***: " + str(e)
 

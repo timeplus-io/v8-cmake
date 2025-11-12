@@ -216,10 +216,9 @@ class RegExpBuiltinsAssembler : public CodeStubAssembler {
     return CAST(AdvanceStringIndex(string, index, is_unicode, true));
   }
 
-  TNode<Number> AdvanceStringIndexSlow(TNode<String> string,
-                                       TNode<Number> index,
-                                       TNode<BoolT> is_unicode) {
-    return AdvanceStringIndex(string, index, is_unicode, false);
+  TNode<Smi> AdvanceStringIndexSlow(TNode<String> string, TNode<Number> index,
+                                    TNode<BoolT> is_unicode) {
+    return CAST(AdvanceStringIndex(string, index, is_unicode, false));
   }
 
   TNode<JSArray> RegExpPrototypeSplitBody(TNode<Context> context,

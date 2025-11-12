@@ -21,8 +21,7 @@ class FeedbackVectorHelper {
       : vector_(vector) {
     int slot_count = vector->length();
     slots_.reserve(slot_count);
-    DisallowGarbageCollection no_gc;
-    FeedbackMetadataIterator iter(vector->metadata(), no_gc);
+    FeedbackMetadataIterator iter(vector->metadata());
     while (iter.HasNext()) {
       FeedbackSlot slot = iter.Next();
       slots_.push_back(slot);

@@ -126,13 +126,7 @@ TEST_F(ApiWasmTest, WasmStreamingCallback) {
   TestWasmStreaming(WasmStreamingCallbackTestCallbackIsCalled,
                     Promise::kPending);
   CHECK(wasm_streaming_callback_got_called);
-  {
-    // We need to invoke GC without stack, otherwise the WasmStreaming data may
-    // not be reclaimed.
-    i::DisableConservativeStackScanningScopeForTesting no_css_scope(
-        i_isolate()->heap());
-    InvokeMemoryReducingMajorGCs(i_isolate());
-  }
+  InvokeMemoryReducingMajorGCs(i_isolate());
   CHECK(wasm_streaming_data_got_collected);
 }
 
@@ -221,45 +215,43 @@ TEST_F(ApiWasmTest, WasmErrorIsSharedCrossOrigin) {
   EXPECT_TRUE(message->IsSharedCrossOrigin());
 }
 
-TEST_F(ApiWasmTest, WasmEnableDisableCustomDescriptors) {
+TEST_F(ApiWasmTest, WasmEnableDisableImportedStrings) {
   Local<Context> context_local = Context::New(isolate());
   Context::Scope context_scope(context_local);
   i::DirectHandle<i::NativeContext> context =
       v8::Utils::OpenDirectHandle(*context_local);
   // Test enabling/disabling via flag.
   {
-    i::FlagScope<bool> flag_descriptors(
-        &i::v8_flags.experimental_wasm_custom_descriptors, true);
-    EXPECT_TRUE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    i::FlagScope<bool> flag_strings(
+        &i::v8_flags.experimental_wasm_imported_strings, true);
+    EXPECT_TRUE(i_isolate()->IsWasmImportedStringsEnabled(context));
 
     // When flag is on, callback return value has no effect.
-    isolate()->SetWasmCustomDescriptorsEnabledCallback(
-        [](auto) { return true; });
-    EXPECT_TRUE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    isolate()->SetWasmImportedStringsEnabledCallback([](auto) { return true; });
+    EXPECT_TRUE(i_isolate()->IsWasmImportedStringsEnabled(context));
     EXPECT_TRUE(i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate())
-                    .has_custom_descriptors());
-    isolate()->SetWasmCustomDescriptorsEnabledCallback(
+                    .has_imported_strings());
+    isolate()->SetWasmImportedStringsEnabledCallback(
         [](auto) { return false; });
-    EXPECT_TRUE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    EXPECT_TRUE(i_isolate()->IsWasmImportedStringsEnabled(context));
     EXPECT_TRUE(i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate())
-                    .has_custom_descriptors());
+                    .has_imported_strings());
   }
   {
-    i::FlagScope<bool> flag_descriptors(
-        &i::v8_flags.experimental_wasm_custom_descriptors, false);
-    EXPECT_FALSE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    i::FlagScope<bool> flag_strings(
+        &i::v8_flags.experimental_wasm_imported_strings, false);
+    EXPECT_FALSE(i_isolate()->IsWasmImportedStringsEnabled(context));
 
     // Test enabling/disabling via callback.
-    isolate()->SetWasmCustomDescriptorsEnabledCallback(
-        [](auto) { return true; });
-    EXPECT_TRUE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    isolate()->SetWasmImportedStringsEnabledCallback([](auto) { return true; });
+    EXPECT_TRUE(i_isolate()->IsWasmImportedStringsEnabled(context));
     EXPECT_TRUE(i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate())
-                    .has_custom_descriptors());
-    isolate()->SetWasmCustomDescriptorsEnabledCallback(
+                    .has_imported_strings());
+    isolate()->SetWasmImportedStringsEnabledCallback(
         [](auto) { return false; });
-    EXPECT_FALSE(i_isolate()->IsWasmCustomDescriptorsEnabled(context));
+    EXPECT_FALSE(i_isolate()->IsWasmImportedStringsEnabled(context));
     EXPECT_FALSE(i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate())
-                     .has_custom_descriptors());
+                     .has_imported_strings());
   }
 }
 

@@ -123,6 +123,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
 
   inline MemOperand GetStackSlot(const compiler::AllocatedOperand& operand);
   inline MemOperand ToMemOperand(const compiler::InstructionOperand& operand);
+  inline MemOperand ToMemOperand(const ValueLocation& location);
 
   inline Register GetFramePointer();
 
@@ -174,7 +175,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                      Label* if_false, Label::Distance false_distance,
                      bool fallthrough_when_false);
 
-  Register FromAnyToRegister(ConstInput input, Register scratch);
+  Register FromAnyToRegister(const Input& input, Register scratch);
 
   inline void LoadTaggedField(Register result, MemOperand operand);
   inline void LoadTaggedField(Register result, Register object, int offset);
@@ -339,8 +340,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void UncheckedSmiTagUint32(Register dst, Register src);
   inline void UncheckedSmiTagUint32(Register reg);
 
-  // Try to smi-tag {obj}. Result is thrown away. Only use this when
-  // SmiValuesAre31Bits().
+  // Try to smi-tag {obj}. Result is thrown away.
   inline void CheckInt32IsSmi(Register obj, Label* fail,
                               Register scratch = Register::no_reg());
 
@@ -648,11 +648,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void JumpIfByte(Condition cc, Register value, int32_t byte,
                          Label* target, Label::Distance distance = Label::kFar);
 
-  inline void Float64SilenceNan(DoubleRegister value);
 #ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
-  inline void JumpIfUndefinedNan(DoubleRegister value, Register scratch,
-                                 Label* target,
-                                 Label::Distance distance = Label::kFar);
   inline void JumpIfNotUndefinedNan(DoubleRegister value, Register scratch,
                                     Label* target,
                                     Label::Distance distance = Label::kFar);
@@ -855,9 +851,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
            index * kSystemPointerSize;
   }
 
-  // Returns the condition code satisfied if tagging is successful. Only use
-  // this when SmiValuesAre31Bits(); otherwise use SmiTag(dst, src).
-  inline Condition TrySmiTagInt32(Register dst, Register src);
+  inline void SmiTagInt32AndSetFlags(Register dst, Register src);
 
   MaglevCodeGenState* const code_gen_state_;
   TemporaryRegisterScope* scratch_register_scope_ = nullptr;

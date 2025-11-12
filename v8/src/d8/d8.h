@@ -84,7 +84,6 @@ class CounterCollection {
 };
 
 using CounterMap = std::unordered_map<std::string, Counter*>;
-using PerformanceMarkMap = std::unordered_map<std::string, double>;
 
 class SourceGroup {
  public:
@@ -381,8 +380,6 @@ class PerIsolateData {
            std::pair<Global<Context>, Global<Function>>>
       worker_message_callbacks_;
 
-  PerformanceMarkMap performance_mark_map_;
-
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& info,
                         int arg_offset);
   int RealmFind(Local<Context> context);
@@ -435,7 +432,7 @@ class ShellOptions {
     T value_;
     bool specified_ = false;
   };
-  DisallowReassignment<bool> can_block = {"can_block", true};
+
   DisallowReassignment<const char*> d8_path = {"d8-path", ""};
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
@@ -555,10 +552,8 @@ class Shell : public i::AllStatic {
   static MaybeLocal<Context> CreateEvaluationContext(Isolate* isolate);
   static int RunMain(Isolate* isolate, bool last_run);
   static int Main(int argc, char* argv[]);
-  static void InitializeDefaultCounters(Isolate* isolate);
   static void Exit(int exit_code);
   static void OnExit(Isolate* isolate, bool dispose);
-  static void DumpCounters();
   static void CollectGarbage(Isolate* isolate);
   static bool EmptyMessageQueues(Isolate* isolate);
   static bool CompleteMessageLoop(Isolate* isolate);
@@ -582,13 +577,10 @@ class Shell : public i::AllStatic {
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static bool LookupPerformanceMark(Isolate* isolate, v8::Local<String> name,
-                                    double* result);
   static void PerformanceMeasure(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void PerformanceMeasureMemory(
       const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void PerformanceStub(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   static void RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -634,13 +626,6 @@ class Shell : public i::AllStatic {
   static void SerializerDeserialize(
       const v8::FunctionCallbackInfo<v8::Value>& info);
 
-#if V8_ENABLE_WEBASSEMBLY
-  static void WasmSerializeModule(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void WasmDeserializeModule(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
-#endif  // V8_ENABLE_WEBASSEMBLY
-
   static void ProfilerSetOnProfileEndListener(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void ProfilerTriggerSample(
@@ -672,7 +657,7 @@ class Shell : public i::AllStatic {
   static MaybeLocal<PrimitiveArray> ReadLines(Isolate* isolate,
                                               const char* name);
   static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static MaybeLocal<String> ReadFromStdin(Isolate* isolate);
+  static Local<String> ReadFromStdin(Isolate* isolate);
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
   static void ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -795,7 +780,6 @@ class Shell : public i::AllStatic {
 
   static void Initialize(Isolate* isolate, D8Console* console,
                          bool isOnMainThread = true);
-  static void InitializeMainThreadCounters(Isolate* isolate);
 
   static void PromiseRejectCallback(v8::PromiseRejectMessage reject_message);
 
@@ -849,6 +833,7 @@ class Shell : public i::AllStatic {
   static Local<ObjectTemplate> CreateOSTemplate(Isolate* isolate);
   static Local<FunctionTemplate> CreateWorkerTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateAsyncHookTemplate(Isolate* isolate);
+  static Local<ObjectTemplate> CreateTestRunnerTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreatePerformanceTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateRealmTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateD8Template(Isolate* isolate);

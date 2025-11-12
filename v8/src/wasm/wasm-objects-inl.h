@@ -24,7 +24,6 @@
 #include "src/objects/js-function-inl.h"
 #include "src/objects/js-objects-inl.h"
 #include "src/objects/managed.h"
-#include "src/objects/objects-inl.h"
 #include "src/objects/oddball-inl.h"
 #include "src/objects/script-inl.h"
 #include "src/roots/roots.h"
@@ -92,6 +91,15 @@ wasm::NativeModule* WasmModuleObject::native_module() const {
 const std::shared_ptr<wasm::NativeModule>&
 WasmModuleObject::shared_native_module() const {
   return managed_native_module()->get();
+}
+const wasm::WasmModule* WasmModuleObject::module() const {
+  // TODO(clemensb): Remove this helper (inline in callers).
+  return native_module()->module();
+}
+bool WasmModuleObject::is_asm_js() {
+  bool asm_js = is_asmjs_module(module());
+  DCHECK_EQ(asm_js, script()->IsUserJavaScript());
+  return asm_js;
 }
 
 // WasmMemoryObject
@@ -289,7 +297,8 @@ size_t WasmTrustedInstanceData::memory_size(int memory_index) const {
 Tagged<WasmDispatchTable> WasmTrustedInstanceData::dispatch_table(
     uint32_t table_index) {
   Tagged<Object> table = dispatch_tables()->get(table_index);
-  return TrustedCast<WasmDispatchTable>(table);
+  DCHECK(IsWasmDispatchTable(table));
+  return Cast<WasmDispatchTable>(table);
 }
 
 bool WasmTrustedInstanceData::has_dispatch_table(uint32_t table_index) {
@@ -319,7 +328,7 @@ TRUSTED_POINTER_ACCESSORS(WasmInstanceObject, trusted_data,
 // incorrect WasmModule! For security-relevant code, prefer reading
 // {native_module()} from a {WasmTrustedInstanceData}.
 const wasm::WasmModule* WasmInstanceObject::module() const {
-  return module_object()->native_module()->module();
+  return module_object()->module();
 }
 
 ImportedFunctionEntry::ImportedFunctionEntry(
@@ -570,13 +579,6 @@ TRUSTED_POINTER_ACCESSORS(WasmTableObject, trusted_data,
 TRUSTED_POINTER_ACCESSORS(WasmTableObject, trusted_dispatch_table,
                           WasmDispatchTable, kTrustedDispatchTableOffset,
                           kWasmDispatchTableIndirectPointerTag)
-
-TRUSTED_POINTER_ACCESSORS(WasmResumeData, trusted_suspender,
-                          WasmSuspenderObject, kTrustedSuspenderOffset,
-                          kWasmSuspenderIndirectPointerTag)
-
-PROTECTED_POINTER_ACCESSORS(WasmSuspenderObject, parent, WasmSuspenderObject,
-                            kParentOffset)
 
 wasm::ValueType WasmTableObject::type(const wasm::WasmModule* module) {
   wasm::ValueType type = unsafe_type();

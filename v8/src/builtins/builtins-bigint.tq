@@ -176,7 +176,7 @@ macro BigIntAddImpl(implicit context: Context)(x: BigInt, y: BigInt): BigInt
 }
 
 builtin BigIntAddNoThrow(implicit context: Context)(x: BigInt,
-                          y: BigInt): BigInt|Smi {
+                          y: BigInt): Numeric {
   try {
     return BigIntAddImpl(x, y) otherwise BigIntTooBig;
   } label BigIntTooBig {

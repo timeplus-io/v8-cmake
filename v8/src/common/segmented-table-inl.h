@@ -69,25 +69,18 @@ void SegmentedTable<Entry, size>::Initialize() {
   static_assert(kUseContiguousMemory);
   DCHECK(IsAligned(kReservationSize, root_space->allocation_granularity()));
 
-  std::optional<VirtualAddressSpace::MemoryProtectionKeyId> pkey;
-  if (kUseContiguousMemory && kIsWriteProtected && ThreadIsolation::Enabled()) {
-#if V8_HAS_PKU_JIT_WRITE_PROTECT
-    pkey = ThreadIsolation::pkey();
-#else
-    UNREACHABLE();
-#endif  // V8_HAS_PKU_JIT_WRITE_PROTECT
-  }
-
   if (root_space->CanAllocateSubspaces()) {
-    auto subspace = root_space->AllocateSubspace(
-        VirtualAddressSpace::kNoHint, kReservationSize, kAlignment,
-        PagePermissions::kReadWrite, pkey);
+    auto subspace = root_space->AllocateSubspace(VirtualAddressSpace::kNoHint,
+                                                 kReservationSize, kAlignment,
+                                                 PagePermissions::kReadWrite);
     vas_ = subspace.release();
+    if (kUseSegmentPool) {
+      segment_pool_grow_mutex_ = new base::Mutex();
+    }
   } else {
     // This may be required on old Windows versions that don't support
-    // VirtualAlloc2, which is required for subspaces. In that case, just
-    // use a fully-backed emulated subspace.
-    DCHECK(!pkey);
+    // VirtualAlloc2, which is required for subspaces. In that case, just use a
+    // fully-backed emulated subspace.
     Address reservation_base = root_space->AllocatePages(
         VirtualAddressSpace::kNoHint, kReservationSize, kAlignment,
         PagePermissions::kNoAccess);
@@ -95,6 +88,8 @@ void SegmentedTable<Entry, size>::Initialize() {
       vas_ = new base::EmulatedVirtualAddressSubspace(
           root_space, reservation_base, kReservationSize, kReservationSize);
     }
+    // EmulatedVirtualAddressSubspace does not suppert AllocatePagesArray.
+    DCHECK(!kUseSegmentPool);
   }
   if (!vas_) {
     V8::FatalProcessOutOfMemory(
@@ -107,13 +102,9 @@ void SegmentedTable<Entry, size>::Initialize() {
 
   base_ = reinterpret_cast<Entry*>(vas_->base());
 
-  if (kUseSegmentPool) {
-    for (size_t i = 0; i < kSegmentPoolSize; ++i) {
-      DCHECK_EQ(segment_pool_[i].load(std::memory_order_acquire), 0);
-      segment_pool_[i].store(kSegmentPoolFreeEntry, std::memory_order_release);
-    }
-
-    segment_pool_grow_mutex_ = new base::Mutex();
+  if constexpr (kUseContiguousMemory && kIsWriteProtected) {
+    CHECK(ThreadIsolation::WriteProtectMemory(
+        base(), size, PageAllocator::Permission::kNoAccess));
   }
 }
 
@@ -157,11 +148,10 @@ template <typename Entry, size_t size>
 std::optional<typename SegmentedTable<Entry, size>::Segment>
 SegmentedTable<Entry, size>::TryGetSegmentFromPool() {
   DCHECK(kUseSegmentPool);
-  DCHECK(segment_pool_grow_mutex_);
   for (int i = 0; i < static_cast<int>(kSegmentPoolSize); ++i) {
     uint32_t segment = segment_pool_[i].load(std::memory_order_relaxed);
-    if (segment != kSegmentPoolFreeEntry) {
-      if (segment_pool_[i].compare_exchange_weak(segment, kSegmentPoolFreeEntry,
+    if (segment != 0) {
+      if (segment_pool_[i].compare_exchange_weak(segment, 0,
                                                  std::memory_order_acq_rel)) {
         return Segment::At(segment);
       } else {
@@ -208,19 +198,18 @@ std::optional<typename SegmentedTable<Entry, size>::Segment>
 SegmentedTable<Entry, size>::FillSegmentsPool(bool return_a_segment) {
   std::optional<Segment> res;
   for (size_t i = 0; i < kSegmentPoolSize; ++i) {
-    DCHECK_EQ(segment_pool_[i].load(std::memory_order_acquire),
-              kSegmentPoolFreeEntry);
+    DCHECK_EQ(segment_pool_[i].load(std::memory_order_acquire), 0);
     Address start =
         vas_->AllocatePages(VirtualAddressSpace::kNoHint, kSegmentSize,
                             kAlignment, PagePermissions::kReadWrite);
     if (!start) continue;
     uint32_t offset = static_cast<uint32_t>(start - vas_->base());
-    DCHECK_NE(offset, kSegmentPoolFreeEntry);
-    if (return_a_segment && !res) {
+    if (return_a_segment && i == 0) {
       res.emplace(Segment::At(offset));
-    } else {
-      segment_pool_[i].store(offset, std::memory_order_release);
+      continue;
     }
+    DCHECK_NE(offset, 0);
+    segment_pool_[i].store(offset, std::memory_order_release);
   }
   return res;
 }
@@ -251,14 +240,17 @@ SegmentedTable<Entry, size>::TryAllocateAndInitializeSegment() {
 template <typename Entry, size_t size>
 void SegmentedTable<Entry, size>::FreeTableSegment(Segment segment) {
   if (kUseSegmentPool) {
-    DCHECK_NE(segment.offset(), kSegmentPoolFreeEntry);
-    base::MutexGuard guard(*segment_pool_grow_mutex_);
-    for (size_t i = 0; i < kSegmentPoolSize; ++i) {
-      uint32_t cur = segment_pool_[i].load(std::memory_order_relaxed);
-      if (cur == kSegmentPoolFreeEntry) {
-        if (segment_pool_[i].compare_exchange_weak(cur, segment.offset(),
-                                                   std::memory_order_acq_rel)) {
-          return;
+    // Offset 0 is used as a marker for free entries. Thus we cannot store it in
+    // the pool.
+    if (segment.offset() != 0) {
+      base::MutexGuard guard(*segment_pool_grow_mutex_);
+      for (size_t i = 0; i < kSegmentPoolSize; ++i) {
+        uint32_t cur = segment_pool_[i].load(std::memory_order_relaxed);
+        if (cur == 0) {
+          if (segment_pool_[i].compare_exchange_weak(
+                  cur, segment.offset(), std::memory_order_acq_rel)) {
+            return;
+          }
         }
       }
     }

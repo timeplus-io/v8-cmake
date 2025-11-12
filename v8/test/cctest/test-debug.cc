@@ -4173,8 +4173,6 @@ class ArchiveRestoreThread : public v8::base::Thread,
 
   void Run() override {
     {
-      v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
-
       v8::Locker locker(isolate_);
       v8::Isolate::Scope i_scope(isolate_);
 
@@ -4583,6 +4581,7 @@ UNINITIALIZED_TEST(DebugSetOutOfMemoryListener) {
 }
 
 TEST(DebugCoverage) {
+  i::v8_flags.always_turbofan = false;
   LocalContext env;
   v8::Isolate* isolate = env.isolate();
   v8::HandleScope scope(isolate);
@@ -4637,6 +4636,7 @@ v8::debug::Coverage::ScriptData GetScriptDataAndDeleteCoverage(
 }  // namespace
 
 TEST(DebugCoverageWithCoverageOutOfScope) {
+  i::v8_flags.always_turbofan = false;
   LocalContext env;
   v8::Isolate* isolate = env.isolate();
   v8::HandleScope scope(isolate);
@@ -4707,6 +4707,7 @@ v8::debug::Coverage::FunctionData GetFunctionDataAndDeleteCoverage(
 }  // namespace
 
 TEST(DebugCoverageWithScriptDataOutOfScope) {
+  i::v8_flags.always_turbofan = false;
   LocalContext env;
   v8::Isolate* isolate = env.isolate();
   v8::HandleScope scope(isolate);
@@ -6396,13 +6397,15 @@ v8::Persistent<v8::Message> message_from_rethrow_callback_;
 }
 
 void RethrowCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  v8::Isolate* isolate = info.GetIsolate();
-  v8::TryCatch try_catch(isolate);
-  isolate->ThrowError("Error");
-  CHECK(try_catch.HasCaught());
-  CHECK(!try_catch.Message().IsEmpty());
-  message_from_rethrow_callback_.Reset(isolate, try_catch.Message());
-  try_catch.ReThrow();
+  {
+    v8::TryCatch try_catch(info.GetIsolate());
+    info.GetIsolate()->ThrowError(v8_str("Error"));
+    CHECK(try_catch.HasCaught());
+    CHECK(!try_catch.Message().IsEmpty());
+    message_from_rethrow_callback_.Reset(info.GetIsolate(),
+                                         try_catch.Message());
+    try_catch.ReThrow();
+  }
 }
 
 class ClearPendingMessageOnExceptionDelegate : public v8::debug::DebugDelegate {

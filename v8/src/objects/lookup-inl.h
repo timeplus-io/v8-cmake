@@ -238,7 +238,6 @@ DirectHandle<Name> PropertyKey::GetName(Isolate* isolate) {
 }
 
 DirectHandle<Name> LookupIterator::name() const {
-  DCHECK_IMPLIES(holder_.is_null(), !IsElement());
   DCHECK_IMPLIES(!holder_.is_null(), !IsElement(*holder_));
   return name_;
 }
@@ -282,9 +281,6 @@ DirectHandle<PropertyCell> LookupIterator::transition_cell() const {
 template <class T>
 DirectHandle<T> LookupIterator::GetHolder() const {
   DCHECK(IsFound());
-  // Holder is not initialized in this state and one should use
-  // lookup_start_object() instead.
-  DCHECK_NE(state_, STRING_LOOKUP_START_OBJECT);
   return Cast<T>(holder_);
 }
 
@@ -329,9 +325,7 @@ bool LookupIterator::IsCacheableTransition() {
 // static
 void LookupIterator::UpdateProtector(Isolate* isolate,
                                      DirectHandle<JSAny> receiver,
-                                     DirectHandle<Name> name,
-                                     MaybeDirectHandle<Object> value,
-                                     MaybeDirectHandle<Object> old_value) {
+                                     DirectHandle<Name> name) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kUpdateProtector);
   DCHECK(IsInternalizedString(*name) || IsSymbol(*name));
 
@@ -353,14 +347,13 @@ void LookupIterator::UpdateProtector(Isolate* isolate,
 #endif  // DEBUG
 
   if (maybe_protector) {
-    InternalUpdateProtector(isolate, receiver, name, value, old_value);
+    InternalUpdateProtector(isolate, receiver, name);
   }
 }
 
-void LookupIterator::UpdateProtector(MaybeDirectHandle<Object> value,
-                                     MaybeDirectHandle<Object> old_value) {
+void LookupIterator::UpdateProtector() {
   if (IsElement()) return;
-  UpdateProtector(isolate_, receiver_, name_, value, old_value);
+  UpdateProtector(isolate_, receiver_, name_);
 }
 
 InternalIndex LookupIterator::descriptor_number() const {
@@ -384,6 +377,17 @@ LookupIterator::Configuration LookupIterator::ComputeConfiguration(
     Isolate* isolate, Configuration configuration, DirectHandle<Name> name) {
   return (!name.is_null() && name->IsPrivate()) ? OWN_SKIP_INTERCEPTOR
                                                 : configuration;
+}
+
+// static
+MaybeDirectHandle<JSReceiver> LookupIterator::GetRoot(
+    Isolate* isolate, DirectHandle<JSAny> lookup_start_object, size_t index,
+    Configuration configuration) {
+  if (IsJSReceiver(*lookup_start_object, isolate)) {
+    return Cast<JSReceiver>(lookup_start_object);
+  }
+  return GetRootForNonJSReceiver(
+      isolate, Cast<JSPrimitive>(lookup_start_object), index, configuration);
 }
 
 template <class T>

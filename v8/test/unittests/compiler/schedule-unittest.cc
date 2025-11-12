@@ -70,7 +70,7 @@ TEST_F(BasicBlockTest, GetCommonDominator3) {
 
 class ScheduleTest : public TestWithZone {
  public:
-  ScheduleTest() = default;
+  ScheduleTest() : TestWithZone(kCompressGraphZone) {}
 };
 
 const Operator kCallOperator(IrOpcode::kCall, Operator::kNoProperties,

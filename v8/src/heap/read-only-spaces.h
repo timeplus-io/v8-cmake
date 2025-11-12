@@ -16,7 +16,6 @@
 #include "src/heap/allocation-stats.h"
 #include "src/heap/base-space.h"
 #include "src/heap/heap-verifier.h"
-#include "src/heap/memory-chunk-layout.h"
 #include "src/heap/memory-chunk-metadata.h"
 
 namespace v8 {
@@ -35,7 +34,7 @@ class ReadOnlyPageMetadata : public MemoryChunkMetadata {
 
   // Clears any pointers in the header that point out of the page that would
   // otherwise make the header non-relocatable.
-  void MakeHeaderRelocatableAndMarkAsSealed();
+  void MakeHeaderRelocatable();
 
   size_t ShrinkToHighWaterMark();
 

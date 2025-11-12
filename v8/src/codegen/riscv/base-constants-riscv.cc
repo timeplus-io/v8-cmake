@@ -251,37 +251,8 @@ bool InstructionGetters<T>::IsLoad() {
 #endif
       return v8_flags.riscv_c_extension && this->IsShortInstruction();
     default:
-      break;
+      return BaseOpcode() == LOAD_FP;
   }
-  if (BaseOpcode() == LOAD_FP) return true;
-  // Atomic instructions.
-  switch (this->InstructionBits() &
-          (kBaseOpcodeMask | kFunct3Mask | kFunct5Mask)) {
-    case RO_LR_W:
-    case RO_AMOSWAP_W:
-    case RO_AMOADD_W:
-    case RO_AMOXOR_W:
-    case RO_AMOAND_W:
-    case RO_AMOOR_W:
-    case RO_AMOMIN_W:
-    case RO_AMOMAX_W:
-    case RO_AMOMINU_W:
-    case RO_AMOMAXU_W:
-#ifdef V8_TARGET_ARCH_RISCV64
-    case RO_LR_D:
-    case RO_AMOSWAP_D:
-    case RO_AMOADD_D:
-    case RO_AMOXOR_D:
-    case RO_AMOAND_D:
-    case RO_AMOOR_D:
-    case RO_AMOMIN_D:
-    case RO_AMOMAX_D:
-    case RO_AMOMINU_D:
-    case RO_AMOMAXU_D:
-#endif
-      return true;
-  }
-  return false;
 }
 
 template <class T>
@@ -302,37 +273,8 @@ bool InstructionGetters<T>::IsStore() {
 #endif
       return v8_flags.riscv_c_extension && this->IsShortInstruction();
     default:
-      break;
+      return BaseOpcode() == STORE_FP;
   }
-  if (BaseOpcode() == STORE_FP) return true;
-  // Atomic instructions.
-  switch (this->InstructionBits() &
-          (kBaseOpcodeMask | kFunct3Mask | kFunct5Mask)) {
-    case RO_SC_W:
-    case RO_AMOSWAP_W:
-    case RO_AMOADD_W:
-    case RO_AMOXOR_W:
-    case RO_AMOAND_W:
-    case RO_AMOOR_W:
-    case RO_AMOMIN_W:
-    case RO_AMOMAX_W:
-    case RO_AMOMINU_W:
-    case RO_AMOMAXU_W:
-#ifdef V8_TARGET_ARCH_RISCV64
-    case RO_SC_D:
-    case RO_AMOSWAP_D:
-    case RO_AMOADD_D:
-    case RO_AMOXOR_D:
-    case RO_AMOAND_D:
-    case RO_AMOOR_D:
-    case RO_AMOMIN_D:
-    case RO_AMOMAX_D:
-    case RO_AMOMINU_D:
-    case RO_AMOMAXU_D:
-#endif
-      return true;
-  }
-  return false;
 }
 
 template class InstructionGetters<InstructionBase>;

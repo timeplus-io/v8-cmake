@@ -36,8 +36,7 @@ transitioning javascript builtin ProxyConstructor(
     // 8. Set P.[[ProxyTarget]] to target.
     // 9. Set P.[[ProxyHandler]] to handler.
     // 10. Return P.
-    const kNotRevocable = 0;
-    return AllocateProxy(targetJSReceiver, handlerJSReceiver, kNotRevocable);
+    return AllocateProxy(targetJSReceiver, handlerJSReceiver);
   } label ThrowProxyNonObject deferred {
     ThrowTypeError(MessageTemplate::kProxyNonObject);
   }

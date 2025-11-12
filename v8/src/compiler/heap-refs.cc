@@ -285,13 +285,6 @@ class JSObjectData : public JSReceiverData {
       : JSReceiverData(broker, storage, object, kind) {}
 };
 
-class JSProxyData : public JSReceiverData {
- public:
-  JSProxyData(JSHeapBroker* broker, ObjectData** storage,
-              IndirectHandle<JSProxy> object, ObjectDataKind kind)
-      : JSReceiverData(broker, storage, object, kind) {}
-};
-
 namespace {
 
 // Separate function for racy HeapNumber value read, so that we can explicitly
@@ -363,7 +356,7 @@ std::optional<Tagged<Object>> GetOwnFastConstantDataPropertyFromHeap(
     // TODO(leszeks): We could instead sleep/yield and spin the load, since the
     // timing on this is tight enough that we wouldn't delay the compiler thread
     // by much.
-    if (IsUninitializedHole(constant.value())) {
+    if (IsUninitialized(constant.value())) {
       TRACE_BROKER_MISSING(broker, "Read uninitialized property.");
       return {};
     }
@@ -652,37 +645,36 @@ void JSFunctionData::Cache(JSHeapBroker* broker) {
   if (function->has_prototype_slot()) {
     prototype_or_initial_map_ = broker->GetOrCreateData(
         function->prototype_or_initial_map(kAcquireLoad), kAssumeMemoryFence);
-    has_instance_prototype_ =
-        (prototype_or_initial_map_ != broker->the_hole_value().data());
 
-    if (has_instance_prototype_) {
-      has_initial_map_ = prototype_or_initial_map_->IsMap();
-      if (has_initial_map_) {
-        // MapData is not used for initial_map_ because some
-        // AlwaysSharedSpaceJSObject subclass constructors (e.g. SharedArray)
-        // have initial maps in RO space, which can be accessed directly.
-        initial_map_ = prototype_or_initial_map_;
+    has_initial_map_ = prototype_or_initial_map_->IsMap();
+    if (has_initial_map_) {
+      // MapData is not used for initial_map_ because some
+      // AlwaysSharedSpaceJSObject subclass constructors (e.g. SharedArray) have
+      // initial maps in RO space, which can be accessed directly.
+      initial_map_ = prototype_or_initial_map_;
 
-        MapRef initial_map_ref = TryMakeRef<Map>(broker, initial_map_).value();
-        if (initial_map_ref.IsInobjectSlackTrackingInProgress()) {
-          initial_map_instance_size_with_min_slack_ =
-              InstanceSizeWithMinSlack(broker, initial_map_ref);
-        } else {
-          initial_map_instance_size_with_min_slack_ =
-              initial_map_ref.instance_size();
-        }
-        CHECK_GT(initial_map_instance_size_with_min_slack_, 0);
-
-        instance_prototype_ =
-            MakeRefAssumeMemoryFence(
-                broker, Cast<Map>(initial_map_->object())->prototype())
-                .data();
+      MapRef initial_map_ref = TryMakeRef<Map>(broker, initial_map_).value();
+      if (initial_map_ref.IsInobjectSlackTrackingInProgress()) {
+        initial_map_instance_size_with_min_slack_ =
+            InstanceSizeWithMinSlack(broker, initial_map_ref);
       } else {
-        static_assert(std::is_same_v<JSPrototype, UnionOf<JSReceiver, Null>>);
-        DCHECK(prototype_or_initial_map_->IsJSReceiver() ||
-               prototype_or_initial_map_->IsNull());
-        instance_prototype_ = prototype_or_initial_map_;
+        initial_map_instance_size_with_min_slack_ =
+            initial_map_ref.instance_size();
       }
+      CHECK_GT(initial_map_instance_size_with_min_slack_, 0);
+    }
+
+    if (has_initial_map_) {
+      has_instance_prototype_ = true;
+      instance_prototype_ =
+          MakeRefAssumeMemoryFence(
+              broker, Cast<Map>(initial_map_->object())->prototype())
+              .data();
+    } else if (prototype_or_initial_map_->IsHeapObject() &&
+               !IsTheHole(
+                   *Cast<HeapObject>(prototype_or_initial_map_->object()))) {
+      has_instance_prototype_ = true;
+      instance_prototype_ = prototype_or_initial_map_;
     }
   }
 
@@ -1090,7 +1082,7 @@ ObjectData* JSHeapBroker::TryGetOrCreateData(IndirectHandle<Object> object,
   if (i::InstanceTypeChecker::Is##Name(instance_type)) {              \
     entry = refs_->LookupOrInsert(object.address());                  \
     object_data = zone()->New<ref_traits<Name>::data_type>(           \
-        this, &entry->value, TrustedCast<Name>(object),               \
+        this, &entry->value, Cast<Name>(object),                      \
         ObjectDataKindFor(ref_traits<Name>::ref_serialization_kind)); \
     /* NOLINTNEXTLINE(readability/braces) */                          \
   } else
@@ -1483,15 +1475,6 @@ std::optional<double> StringRef::ToInt(JSHeapBroker* broker, int radix) {
   return TryStringToInt(broker->local_isolate(), object(), radix);
 }
 
-StringRef StringRef::UnpackIfThin(JSHeapBroker* broker) {
-  IndirectHandle<String> obj = object();
-  if (InstanceTypeChecker::IsThinString(obj->map(kAcquireLoad))) {
-    // String::MakeThin sets the map with ReleaseStore after storing actual().
-    return MakeRefAssumeMemoryFence(broker, Cast<ThinString>(obj)->actual());
-  }
-  return *this;
-}
-
 int ArrayBoilerplateDescriptionRef::constants_elements_length() const {
   return object()->constant_elements()->length();
 }
@@ -1647,7 +1630,6 @@ HEAP_ACCESSOR_B(Map, bit_field3, NumberOfOwnDescriptors,
                 Map::Bits3::NumberOfOwnDescriptorsBits)
 HEAP_ACCESSOR_B(Map, bit_field3, is_migration_target,
                 Map::Bits3::IsMigrationTargetBit)
-BIMODAL_ACCESSOR_B(Map, bit_field3, is_extensible, Map::Bits3::IsExtensibleBit)
 BIMODAL_ACCESSOR_B(Map, bit_field3, construction_counter,
                    Map::Bits3::ConstructionCounterBits)
 HEAP_ACCESSOR_B(Map, bit_field, has_prototype_slot,
@@ -1656,8 +1638,6 @@ HEAP_ACCESSOR_B(Map, bit_field, is_access_check_needed,
                 Map::Bits1::IsAccessCheckNeededBit)
 HEAP_ACCESSOR_B(Map, bit_field, is_callable, Map::Bits1::IsCallableBit)
 HEAP_ACCESSOR_B(Map, bit_field, has_indexed_interceptor,
-                Map::Bits1::HasIndexedInterceptorBit)
-HEAP_ACCESSOR_B(Map, bit_field, has_named_interceptor,
                 Map::Bits1::HasIndexedInterceptorBit)
 HEAP_ACCESSOR_B(Map, bit_field, is_constructor, Map::Bits1::IsConstructorBit)
 HEAP_ACCESSOR_B(Map, bit_field, is_undetectable, Map::Bits1::IsUndetectableBit)
@@ -1842,9 +1822,9 @@ bool JSTypedArrayRef::is_on_heap() const {
   return object()->is_on_heap(kAcquireLoad);
 }
 
-size_t JSTypedArrayRef::length(JSHeapBroker* broker) const {
-  return object()->byte_length() /
-         ElementsKindToByteSize(elements_kind(broker));
+size_t JSTypedArrayRef::length() const {
+  // Immutable after initialization (since this is not used for RAB/GSAB).
+  return object()->length();
 }
 
 size_t JSTypedArrayRef::byte_length() const {
@@ -1992,19 +1972,19 @@ bool ObjectRef::IsUndefined() const { return i::IsUndefined(*object()); }
 
 bool ObjectRef::IsTheHole() const {
   if (i::IsTheHole(*object())) return true;
-  DCHECK(!i::IsAnyHole(*object()));
+  DCHECK(!i::IsHole(*object()));
   return false;
 }
 
 bool ObjectRef::IsPropertyCellHole() const {
   if (i::IsPropertyCellHole(*object())) return true;
-  DCHECK(!i::IsAnyHole(*object()));
+  DCHECK(!i::IsHole(*object()));
   return false;
 }
 
 bool ObjectRef::IsHashTableHole() const {
   if (i::IsHashTableHole(*object())) return true;
-  DCHECK(!i::IsAnyHole(*object()));
+  DCHECK(!i::IsHole(*object()));
   return false;
 }
 
@@ -2012,7 +1992,7 @@ HoleType ObjectRef::HoleType() const {
   // Trusted objects cannot be TheHole and comparing them to TheHole is not
   // allowed, as they live in different cage bases.
   if (i::IsHeapObject(*object()) &&
-      i::TrustedHeapLayout::InTrustedSpace(Cast<HeapObject>(*object())))
+      i::HeapLayout::InTrustedSpace(Cast<HeapObject>(*object())))
     return HoleType::kNone;
 #define IF_HOLE_THEN_RETURN(Name, name, Root) \
   if (i::Is##Name(*object())) {               \
@@ -2066,16 +2046,6 @@ bool ObjectRef::should_access_heap() const {
 bool ObjectRef::is_read_only() const {
   return data()->kind() == kUnserializedReadOnlyHeapObject;
 }
-
-// TODO(leszeks): Could/should these use the BIMODAL_ACCESSORS macro?
-OptionalObjectRef JSProxyRef::GetTarget(JSHeapBroker* broker) const {
-  return TryMakeRef(broker, object()->target());
-}
-OptionalObjectRef JSProxyRef::GetHandler(JSHeapBroker* broker) const {
-  return TryMakeRef(broker, object()->handler());
-}
-
-HEAP_ACCESSOR_B(JSProxy, flags, is_revocable, JSProxy::IsRevocableBit)
 
 OptionalObjectRef JSObjectRef::GetOwnConstantElement(
     JSHeapBroker* broker, FixedArrayBaseRef elements_ref, uint32_t index,

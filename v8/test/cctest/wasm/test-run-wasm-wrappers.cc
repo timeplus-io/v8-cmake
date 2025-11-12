@@ -57,6 +57,7 @@ DirectHandle<WasmInstanceObject> CompileModule(Zone* zone, Isolate* isolate,
                                                WasmModuleBuilder* builder) {
   ZoneBuffer buffer(zone);
   builder->WriteTo(&buffer);
+  testing::SetupIsolateForWasmModule(isolate);
   ErrorThrower thrower(isolate, "CompileAndRunWasmModule");
   MaybeDirectHandle<WasmInstanceObject> maybe_instance =
       CompileAndInstantiateForTesting(isolate, &thrower,

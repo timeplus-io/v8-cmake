@@ -86,10 +86,11 @@ V8_WARN_UNUSED_RESULT Maybe<size_t> ValidateAtomicAccess(
     Isolate* isolate, DirectHandle<JSTypedArray> typed_array,
     Handle<Object> request_index) {
   DirectHandle<Object> access_index_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, access_index_obj,
       Object::ToIndex(isolate, request_index,
-                      MessageTemplate::kInvalidAtomicAccessIndex));
+                      MessageTemplate::kInvalidAtomicAccessIndex),
+      Nothing<size_t>());
 
   size_t access_index;
   size_t typed_array_length = typed_array->GetLength();
@@ -144,8 +145,8 @@ BUILTIN(AtomicsNotify) {
     c = kMaxUInt32;
   } else {
     double count_double;
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, count_double,
-                                       Object::IntegerValue(isolate, count));
+    MAYBE_ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, count_double, Object::IntegerValue(isolate, count));
     if (count_double < 0) {
       count_double = 0;
     } else if (count_double > kMaxUInt32) {
@@ -288,11 +289,12 @@ V8_NOINLINE Maybe<bool> CheckAtomicsPauseIterationNumber(
     }
   }
 
-  THROW_NEW_ERROR(
+  THROW_NEW_ERROR_RETURN_VALUE(
       isolate,
       NewError(isolate->type_error_function(),
                MessageTemplate::kArgumentIsNotUndefinedOrInteger,
-               isolate->factory()->NewStringFromAsciiChecked(method_name)));
+               isolate->factory()->NewStringFromAsciiChecked(method_name)),
+      Nothing<bool>());
 }
 }  // namespace
 
@@ -307,7 +309,7 @@ BUILTIN(AtomicsPause) {
   // exception.
   if (V8_UNLIKELY(!IsUndefined(*iteration_number, isolate) &&
                   !IsSmi(*iteration_number))) {
-    RETURN_ON_EXCEPTION_VALUE(
+    MAYBE_RETURN_ON_EXCEPTION_VALUE(
         isolate, CheckAtomicsPauseIterationNumber(isolate, iteration_number),
         ReadOnlyRoots(isolate).exception());
   }

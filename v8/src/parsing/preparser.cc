@@ -44,6 +44,9 @@ PreParserIdentifier GetIdentifierHelper(Scanner* scanner,
   if (string == avf->eval_string()) {
     return PreParserIdentifier::Eval();
   }
+  if (scanner->literal_contains_escapes()) {
+    return PreParserIdentifier::Default();
+  }
   if (string == avf->arguments_string()) {
     return PreParserIdentifier::Arguments();
   }

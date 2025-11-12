@@ -20,7 +20,8 @@ namespace compiler {
 // TODO(391750831): This needs to be ported to Turboshaft.
 #if 0
 InstructionSelectorTest::InstructionSelectorTest()
-    :  rng_(v8_flags.random_seed) {}
+    : TestWithNativeContextAndZone(kCompressGraphZone),
+      rng_(v8_flags.random_seed) {}
 
 InstructionSelectorTest::~InstructionSelectorTest() = default;
 

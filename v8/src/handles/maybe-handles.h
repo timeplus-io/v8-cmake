@@ -7,7 +7,6 @@
 
 #include <type_traits>
 
-#include "include/v8-maybe.h"
 #include "src/handles/handles.h"
 
 namespace v8 {
@@ -26,19 +25,18 @@ constexpr NullMaybeHandleType kNullMaybeHandle;
 // hashing operators on purpose. Such operators would be misleading, because
 // intended semantics is ambiguous between handle location and object identity.
 template <typename T>
-class MaybeHandle final : public HandleBase {
+class MaybeHandle final {
  public:
-  V8_INLINE MaybeHandle() : HandleBase(nullptr) {}
+  V8_INLINE MaybeHandle() = default;
 
-  V8_INLINE MaybeHandle(NullMaybeType) : MaybeHandle() {}
-  V8_INLINE MaybeHandle(NullMaybeHandleType) : MaybeHandle() {}
+  V8_INLINE MaybeHandle(NullMaybeHandleType) {}
 
   // Constructor for handling automatic up casting from Handle.
   // Ex. Handle<JSArray> can be passed when MaybeHandle<Object> is expected.
   template <typename S>
   V8_INLINE MaybeHandle(Handle<S> handle)
     requires(is_subtype_v<S, T>)
-      : HandleBase(handle) {}
+      : location_(handle.location_) {}
 
   // Constructor for handling automatic up casting.
   // Ex. MaybeHandle<JSArray> can be passed when MaybeHandle<Object> is
@@ -46,13 +44,13 @@ class MaybeHandle final : public HandleBase {
   template <typename S>
   V8_INLINE MaybeHandle(MaybeHandle<S> maybe_handle)
     requires(is_subtype_v<S, T>)
-      : HandleBase(maybe_handle) {}
+      : location_(maybe_handle.location_) {}
 
   V8_INLINE MaybeHandle(Tagged<T> object, Isolate* isolate);
   V8_INLINE MaybeHandle(Tagged<T> object, LocalHeap* local_heap);
 
-  V8_INLINE void Assert() const { DCHECK(!is_null()); }
-  V8_INLINE void Check() const { CHECK(!is_null()); }
+  V8_INLINE void Assert() const { DCHECK_NOT_NULL(location_); }
+  V8_INLINE void Check() const { CHECK_NOT_NULL(location_); }
 
   V8_INLINE Handle<T> ToHandleChecked() const {
     Check();
@@ -62,7 +60,7 @@ class MaybeHandle final : public HandleBase {
   // Convert to a Handle with a type that can be upcasted to.
   template <typename S>
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToHandle(Handle<S>* out) const {
-    if (is_null()) {
+    if (location_ == nullptr) {
       *out = Handle<T>::null();
       return false;
     } else {
@@ -74,31 +72,35 @@ class MaybeHandle final : public HandleBase {
   template <typename S>
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToHandle(DirectHandle<S>* out) const;
 
-  // Adapter methods to make error handling macros like
-  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeHandles.
-  template <typename S>
-  V8_WARN_UNUSED_RESULT V8_INLINE bool To(Handle<S>* out) const {
-    return ToHandle(out);
-  }
-
-  template <typename S>
-  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
-    return ToHandle(out);
-  }
-
-  bool IsEmpty() const { return is_null(); }
-
   // Location equality.
   bool equals(MaybeHandle<T> other) const {
     return address() == other.address();
   }
 
- private:
-  V8_INLINE explicit MaybeHandle(Address* location) : HandleBase(location) {}
+  // Returns the raw address where this handle is stored. This should only be
+  // used for hashing handles; do not ever try to dereference it.
+  V8_INLINE Address address() const {
+    return reinterpret_cast<Address>(location_);
+  }
 
-  // Casts are allowed to access the private constructor.
+  bool is_null() const { return location_ == nullptr; }
+
+ protected:
+  V8_INLINE explicit MaybeHandle(Address* location) : location_(location) {}
+
+  Address* location_ = nullptr;
+
+  // MaybeHandles of different classes are allowed to access each
+  // other's location_.
+  template <typename>
+  friend class MaybeHandle;
+#ifdef V8_ENABLE_DIRECT_HANDLE
+  template <typename>
+  friend class MaybeDirectHandle;
+#endif
+  // Casts are allowed to access location_.
   template <typename To, typename From>
-  friend inline MaybeHandle<To> UncheckedCast(MaybeHandle<From> value);
+  friend inline MaybeIndirectHandle<To> UncheckedCast(MaybeHandle<From> value);
 };
 
 template <typename T>
@@ -146,101 +148,99 @@ class MaybeObjectHandle {
 #ifdef V8_ENABLE_DIRECT_HANDLE
 
 template <typename T>
-class MaybeDirectHandle final : public DirectHandleBase {
+class MaybeDirectHandle final {
  public:
-  V8_INLINE MaybeDirectHandle() : DirectHandleBase(kTaggedNullAddress) {}
+  V8_INLINE MaybeDirectHandle() = default;
 
-  V8_INLINE MaybeDirectHandle(NullMaybeType) : MaybeDirectHandle() {}
-  V8_INLINE MaybeDirectHandle(NullMaybeHandleType) : MaybeDirectHandle() {}
+  V8_INLINE MaybeDirectHandle(NullMaybeHandleType) {}
 
   // Constructor for handling automatic up casting from DirectHandle.
   // Ex. DirectHandle<JSArray> can be passed when MaybeDirectHandle<Object> is
   // expected.
-  template <typename S>
+  template <typename S, typename = std::enable_if_t<is_subtype_v<S, T>>>
   V8_INLINE MaybeDirectHandle(DirectHandle<S> handle)
-    requires(is_subtype_v<S, T>)
-      : DirectHandleBase(handle) {}
+      : location_(handle.address()) {}
 
   // Constructor for handling automatic up casting from Handle.
   // Ex. Handle<JSArray> can be passed when MaybeDirectHandle<Object> is
   // expected.
-  template <typename S>
+  template <typename S, typename = std::enable_if_t<is_subtype_v<S, T>>>
   V8_INLINE MaybeDirectHandle(Handle<S> handle)
-    requires(is_subtype_v<S, T>)
       : MaybeDirectHandle(DirectHandle<S>(handle)) {}
 
   // Constructor for handling automatic up casting.
   // Ex. MaybeDirectHandle<JSArray> can be passed when MaybeDirectHandle<Object>
   // is expected.
-  template <typename S>
+  template <typename S, typename = std::enable_if_t<is_subtype_v<S, T>>>
   V8_INLINE MaybeDirectHandle(MaybeDirectHandle<S> maybe_handle)
-    requires(is_subtype_v<S, T>)
-      : DirectHandleBase(maybe_handle) {}
+      : location_(maybe_handle.location_) {}
 
   // Constructor for handling automatic up casting from MaybeHandle.
   // Ex. MaybeHandle<JSArray> can be passed when
   // MaybeDirectHandle<Object> is expected.
-  template <typename S>
+  template <typename S, typename = std::enable_if_t<is_subtype_v<S, T>>>
   V8_INLINE MaybeDirectHandle(MaybeIndirectHandle<S> maybe_handle)
-    requires(is_subtype_v<S, T>)
-      : DirectHandleBase(maybe_handle.location() == nullptr
-                             ? kTaggedNullAddress
-                             : *maybe_handle.location()) {}
+      : location_(maybe_handle.location_ == nullptr ? kTaggedNullAddress
+                                                    : *maybe_handle.location_) {
+  }
 
   V8_INLINE MaybeDirectHandle(Tagged<T> object, Isolate* isolate);
   V8_INLINE MaybeDirectHandle(Tagged<T> object, LocalHeap* local_heap);
 
-  V8_INLINE void Assert() const { DCHECK(!is_null()); }
-  V8_INLINE void Check() const { CHECK(!is_null()); }
+  V8_INLINE void Assert() const { DCHECK_NE(location_, kTaggedNullAddress); }
+  V8_INLINE void Check() const { CHECK_NE(location_, kTaggedNullAddress); }
 
   V8_INLINE DirectHandle<T> ToHandleChecked() const {
     Check();
-    return DirectHandle<T>(obj_);
+    return DirectHandle<T>(location_);
   }
 
   // Convert to a DirectHandle with a type that can be upcasted to.
   template <typename S>
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToHandle(DirectHandle<S>* out) const {
-    if (is_null()) {
+    if (location_ == kTaggedNullAddress) {
       *out = DirectHandle<T>::null();
       return false;
     } else {
-      *out = DirectHandle<T>(obj_);
+      *out = DirectHandle<T>(location_);
       return true;
     }
   }
-
-  // Adapter methods to make error handling macros like
-  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeDirectHandles.
-  template <typename S>
-  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
-    return ToHandle(out);
-  }
-
-  bool IsEmpty() const { return is_null(); }
 
   // Address equality.
   bool equals(MaybeHandle<T> other) const {
     return address() == other.address();
   }
 
- private:
-  V8_INLINE explicit MaybeDirectHandle(Address obj) : DirectHandleBase(obj) {}
+  // Returns the raw address where this direct handle is stored.
+  V8_INLINE Address address() const { return location_; }
+
+  bool is_null() const { return location_ == kTaggedNullAddress; }
+
+ protected:
+  V8_INLINE explicit MaybeDirectHandle(Address location)
+      : location_(location) {}
+
+  Address location_ = kTaggedNullAddress;
+
+  // MaybeDirectHandles of different classes are allowed to access each
+  // other's location_.
+  template <typename>
+  friend class MaybeDirectHandle;
+  template <typename>
+  friend class MaybeHandle;
+  // Casts are allowed to access location_.
+  template <typename To, typename From>
+  friend inline MaybeDirectHandle<To> UncheckedCast(
+      MaybeDirectHandle<From> value);
 };
 
 #else
 
 template <typename T>
-class MaybeDirectHandle final :
-#ifdef ENABLE_SLOW_DCHECKS
-    public api_internal::StackAllocated<true>
-#else
-    public api_internal::StackAllocated<false>
-#endif
-{
+class MaybeDirectHandle {
  public:
   V8_INLINE MaybeDirectHandle() = default;
-  V8_INLINE MaybeDirectHandle(NullMaybeType) {}
   V8_INLINE MaybeDirectHandle(NullMaybeHandleType) {}
 
   V8_INLINE MaybeDirectHandle(Tagged<T> object, Isolate* isolate)
@@ -278,15 +278,6 @@ class MaybeDirectHandle final :
     return handle_.ToHandle(out);
   }
 
-  // Adapter methods to make error handling macros like
-  // ASSIGN_RETURN_ON_EXCEPTION work with MaybeDirectHandles.
-  template <typename S>
-  V8_WARN_UNUSED_RESULT V8_INLINE bool To(DirectHandle<S>* out) const {
-    return ToHandle(out);
-  }
-
-  bool IsEmpty() const { return is_null(); }
-
   V8_INLINE bool is_null() const { return handle_.is_null(); }
 
  private:
@@ -316,7 +307,7 @@ class MaybeDirectHandle final :
 template <typename T>
 std::ostream& operator<<(std::ostream& os, MaybeDirectHandle<T> handle);
 
-class MaybeObjectDirectHandle final {
+class MaybeObjectDirectHandle {
  public:
   inline MaybeObjectDirectHandle()
       : reference_type_(HeapObjectReferenceType::STRONG) {}

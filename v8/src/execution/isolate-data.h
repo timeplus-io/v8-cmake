@@ -54,6 +54,17 @@ static constexpr int kFastCCallAlignmentPaddingCount = 1;
 #define BUILTINS_WITH_DISPATCH_ADAPTER(V, CamelName, underscore_name, ...) \
   V(CamelName, CamelName##SharedFun)
 
+// If we have predictable builtins then dispatch handles of builtins are
+// stored in the read only segment of the JSDispatchTable. Otherwise,
+// we need a table of per-isolate dispatch handles of builtins.
+#if V8_ENABLE_LEAPTIERING_BOOL
+#if V8_STATIC_ROOTS_BOOL
+#define V8_STATIC_DISPATCH_HANDLES_BOOL true
+#else
+#define V8_STATIC_DISPATCH_HANDLES_BOOL false
+#endif  // V8_STATIC_ROOTS_BOOL
+#endif  // V8_ENABLE_LEAPTIERING_BOOL
+
 #define BUILTINS_WITH_DISPATCH_LIST(V) \
   BUILTINS_WITH_SFI_LIST_GENERATOR(BUILTINS_WITH_DISPATCH_ADAPTER, V)
 
@@ -129,7 +140,6 @@ struct JSBuiltinDispatchHandleRoot {
   /* Misc. fields. */                                                          \
   V(NewAllocationInfo, LinearAllocationArea::kSize, new_allocation_info)       \
   V(OldAllocationInfo, LinearAllocationArea::kSize, old_allocation_info)       \
-  V(Address, kSystemPointerSize, last_young_allocation)                        \
   ISOLATE_DATA_FAST_C_CALL_PADDING(V)                                          \
   V(FastCCallCallerPC, kSystemPointerSize, fast_c_call_caller_pc)              \
   V(FastCCallCallerFP, kSystemPointerSize, fast_c_call_caller_fp)              \
@@ -161,7 +171,6 @@ struct JSBuiltinDispatchHandleRoot {
     builtin_entry_table)                                                       \
   V(BuiltinTable, Builtins::kBuiltinCount* kSystemPointerSize, builtin_table)  \
   V(ActiveStack, kSystemPointerSize, active_stack)                             \
-  V(ActiveSuspender, kSystemPointerSize, active_suspender)                     \
   V(DateCacheStamp, kInt32Size, date_cache_stamp)                              \
   V(IsDateCacheUsed, kUInt8Size, is_date_cache_used)                           \
   /* This padding aligns next field to kDoubleSize bytes. */                   \
@@ -303,9 +312,6 @@ class IsolateData final {
   ISOLATE_DATA_FIELDS(V)
 #undef V
 
-  LinearAllocationArea& new_allocation_info() { return new_allocation_info_; }
-  LinearAllocationArea& old_allocation_info() { return old_allocation_info_; }
-
   Address fast_c_call_caller_fp() const { return fast_c_call_caller_fp_; }
   Address fast_c_call_caller_pc() const { return fast_c_call_caller_pc_; }
   Address fast_api_call_target() const { return fast_api_call_target_; }
@@ -348,8 +354,6 @@ class IsolateData final {
   Address* builtin_table() { return builtin_table_; }
   wasm::StackMemory* active_stack() { return active_stack_; }
   void set_active_stack(wasm::StackMemory* stack) { active_stack_ = stack; }
-  Tagged<Object> active_suspender() { return active_suspender_; }
-  void set_active_suspender(Tagged<Object> v) { active_suspender_ = v; }
 #if V8_ENABLE_LEAPTIERING_BOOL && !V8_STATIC_DISPATCH_HANDLES_BOOL
   JSDispatchHandle builtin_dispatch_handle(Builtin builtin) {
     return builtin_dispatch_table_[JSBuiltinDispatchHandleRoot::to_idx(
@@ -485,8 +489,6 @@ class IsolateData final {
   LinearAllocationArea new_allocation_info_;
   LinearAllocationArea old_allocation_info_;
 
-  Address last_young_allocation_;
-
   // Aligns fast_c_call_XXX fields so that they stay in the same CPU cache line.
   Address fast_c_call_alignment_padding_[kFastCCallAlignmentPaddingCount];
 
@@ -563,7 +565,6 @@ class IsolateData final {
   Address builtin_table_[Builtins::kBuiltinCount] = {};
 
   wasm::StackMemory* active_stack_ = nullptr;
-  Tagged<Object> active_suspender_ = Smi::zero();
 
   // Stamp value which is increased on every
   // v8::Isolate::DateTimeConfigurationChangeNotification(..).

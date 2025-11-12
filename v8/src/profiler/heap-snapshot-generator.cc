@@ -25,7 +25,6 @@
 #include "src/objects/cell-inl.h"
 #include "src/objects/feedback-cell-inl.h"
 #include "src/objects/hash-table-inl.h"
-#include "src/objects/instance-type.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
@@ -37,7 +36,6 @@
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/objects-inl.h"
-#include "src/objects/objects.h"
 #include "src/objects/prototype.h"
 #include "src/objects/slots-inl.h"
 #include "src/objects/struct-inl.h"
@@ -853,8 +851,6 @@ Tagged<JSFunction> V8HeapExplorer::GetLocationFunction(
     Tagged<HeapObject> object) {
   DisallowHeapAllocation no_gc;
 
-  if (SafeIsAnyHole(object)) return {};
-
   if (IsJSFunction(object)) {
     return Cast<JSFunction>(object);
   } else if (IsJSGeneratorObject(object)) {
@@ -868,7 +864,7 @@ Tagged<JSFunction> V8HeapExplorer::GetLocationFunction(
     return maybe_constructor;
   }
 
-  return {};
+  return JSFunction();
 }
 
 void V8HeapExplorer::ExtractLocation(HeapEntry* entry,
@@ -898,9 +894,6 @@ void V8HeapExplorer::ExtractLocationForJSFunction(HeapEntry* entry,
 
 HeapEntry* V8HeapExplorer::AddEntry(Tagged<HeapObject> object) {
   PtrComprCageBase cage_base(isolate());
-  if (SafeIsAnyHole(object)) {
-    return AddEntry(object, HeapEntry::kHidden, "system / Hole");
-  }
   InstanceType instance_type = object->map(cage_base)->instance_type();
   if (InstanceTypeChecker::IsJSObject(instance_type)) {
     if (InstanceTypeChecker::IsJSFunction(instance_type)) {
@@ -1136,14 +1129,7 @@ const char* V8HeapExplorer::GetSystemEntryName(Tagged<HeapObject> object) {
     UNREACHABLE();
     STRING_TYPE_LIST(MAKE_STRING_CASE)
 #undef MAKE_STRING_CASE
-
-    case HOLE_TYPE:
-      UNREACHABLE();
   }
-
-  // Avoid undefined behavior for enum values not handled by the exhaustive
-  // switch, since they're read from inside the sandbox.
-  SBXCHECK(false);
 }
 
 HeapEntry::Type V8HeapExplorer::GetSystemEntryType(Tagged<HeapObject> object) {
@@ -1382,8 +1368,6 @@ class IndexedReferencesExtractor : public ObjectVisitorWithCageBases {
 
 void V8HeapExplorer::ExtractReferences(HeapEntry* entry,
                                        Tagged<HeapObject> obj) {
-  if (SafeIsAnyHole(obj)) return;
-
   if (IsJSGlobalProxy(obj)) {
     ExtractJSGlobalProxyReferences(entry, Cast<JSGlobalProxy>(obj));
   } else if (IsJSArrayBuffer(obj)) {
@@ -1428,10 +1412,10 @@ void V8HeapExplorer::ExtractReferences(HeapEntry* entry,
     ExtractAccessorInfoReferences(entry, Cast<AccessorInfo>(obj));
   } else if (IsAccessorPair(obj)) {
     ExtractAccessorPairReferences(entry, Cast<AccessorPair>(obj));
-  } else if (Tagged<Code> code; TryCast(obj, &code)) {
-    ExtractCodeReferences(entry, code);
-  } else if (Tagged<InstructionStream> istream; TryCast(obj, &istream)) {
-    ExtractInstructionStreamReferences(entry, istream);
+  } else if (IsCode(obj)) {
+    ExtractCodeReferences(entry, Cast<Code>(obj));
+  } else if (IsInstructionStream(obj)) {
+    ExtractInstructionStreamReferences(entry, Cast<InstructionStream>(obj));
   } else if (IsCell(obj)) {
     ExtractCellReferences(entry, Cast<Cell>(obj));
   } else if (IsFeedbackCell(obj)) {
@@ -1474,9 +1458,8 @@ void V8HeapExplorer::ExtractReferences(HeapEntry* entry,
     if (snapshot_->capture_numeric_value()) {
       ExtractNumberReference(entry, obj);
     }
-  } else if (Tagged<BytecodeArray> bytecode_array;
-             TryCast(obj, &bytecode_array)) {
-    ExtractBytecodeArrayReferences(entry, bytecode_array);
+  } else if (IsBytecodeArray(obj)) {
+    ExtractBytecodeArrayReferences(entry, Cast<BytecodeArray>(obj));
   } else if (IsScopeInfo(obj)) {
     ExtractScopeInfoReferences(entry, Cast<ScopeInfo>(obj));
   } else if (IsCppHeapExternalObject(obj)) {
@@ -1486,9 +1469,9 @@ void V8HeapExplorer::ExtractReferences(HeapEntry* entry,
     ExtractWasmStructReferences(Cast<WasmStruct>(obj), entry);
   } else if (IsWasmArray(obj)) {
     ExtractWasmArrayReferences(Cast<WasmArray>(obj), entry);
-  } else if (Tagged<WasmTrustedInstanceData> instance_data;
-             TryCast(obj, &instance_data)) {
-    ExtractWasmTrustedInstanceDataReferences(instance_data, entry);
+  } else if (IsWasmTrustedInstanceData(obj)) {
+    ExtractWasmTrustedInstanceDataReferences(Cast<WasmTrustedInstanceData>(obj),
+                                             entry);
 #endif  // V8_ENABLE_WEBASSEMBLY
   }
 }
@@ -1524,9 +1507,9 @@ void V8HeapExplorer::ExtractJSObjectReferences(HeapEntry* entry,
   } else if (IsJSFunction(obj)) {
     Tagged<JSFunction> js_fun = Cast<JSFunction>(js_obj);
     if (js_fun->has_prototype_slot()) {
-      Tagged<UnionOf<JSPrototype, Map, TheHole>> proto_or_map =
+      Tagged<Object> proto_or_map =
           js_fun->prototype_or_initial_map(kAcquireLoad);
-      if (!IsTheHole(proto_or_map)) {
+      if (!IsTheHole(proto_or_map, isolate)) {
         if (!IsMap(proto_or_map)) {
           SetPropertyReference(entry, roots.prototype_string(), proto_or_map,
                                nullptr,
@@ -1933,9 +1916,9 @@ void V8HeapExplorer::ExtractJSWeakRefReferences(HeapEntry* entry,
 void V8HeapExplorer::ExtractWeakCellReferences(HeapEntry* entry,
                                                Tagged<WeakCell> weak_cell) {
   SetWeakReference(entry, "target", weak_cell->target(),
-                   offsetof(WeakCell, target_));
+                   WeakCell::kTargetOffset);
   SetWeakReference(entry, "unregister_token", weak_cell->unregister_token(),
-                   offsetof(WeakCell, unregister_token_));
+                   WeakCell::kUnregisterTokenOffset);
 }
 
 void V8HeapExplorer::TagBuiltinCodeObject(Tagged<Code> code, const char* name) {
@@ -1965,7 +1948,7 @@ void V8HeapExplorer::ExtractCodeReferences(HeapEntry* entry,
                          Code::kPositionTableOffset);
   } else if (code->uses_deoptimization_data()) {
     Tagged<DeoptimizationData> deoptimization_data =
-        code->deoptimization_data();
+        Cast<DeoptimizationData>(code->deoptimization_data());
     TagObject(deoptimization_data, "(code deopt data)", HeapEntry::kCode);
     SetInternalReference(entry, "deoptimization_data", deoptimization_data,
                          Code::kDeoptimizationDataOrInterpreterDataOffset);
@@ -2001,18 +1984,7 @@ void V8HeapExplorer::ExtractInstructionStreamReferences(
 
 void V8HeapExplorer::ExtractCellReferences(HeapEntry* entry,
                                            Tagged<Cell> cell) {
-  Tagged<MaybeObject> maybe_value = cell->maybe_value();
-  Tagged<HeapObject> heap_object;
-  HeapObjectReferenceType reference_type;
-  if (maybe_value.GetHeapObject(&heap_object, &reference_type)) {
-    if (reference_type == HeapObjectReferenceType::WEAK) {
-      SetWeakReference(entry, "value", heap_object, Cell::kMaybeValueOffset);
-    } else {
-      DCHECK_EQ(reference_type, HeapObjectReferenceType::STRONG);
-      SetInternalReference(entry, "value", heap_object,
-                           Cell::kMaybeValueOffset);
-    }
-  }
+  SetInternalReference(entry, "value", cell->value(), Cell::kValueOffset);
 }
 
 void V8HeapExplorer::ExtractFeedbackCellReferences(
@@ -2538,7 +2510,7 @@ class RootsReferencesExtractor : public RootVisitor {
     if (object.ptr() == kTaggedNullAddress) return;
 #endif
     if (root == Root::kBuiltins) {
-      explorer_->TagBuiltinCodeObject(CheckedCast<Code>(object), description);
+      explorer_->TagBuiltinCodeObject(Cast<Code>(object), description);
     }
     explorer_->SetGcSubrootReference(root, description, visiting_weak_roots_,
                                      object);
@@ -2569,7 +2541,7 @@ class RootsReferencesExtractor : public RootVisitor {
                         FullObjectSlot istream_or_smi_zero_slot) final {
     Tagged<Object> istream_or_smi_zero = *istream_or_smi_zero_slot;
     if (istream_or_smi_zero != Smi::zero()) {
-      Tagged<Code> code = CheckedCast<Code>(*code_slot);
+      Tagged<Code> code = Cast<Code>(*code_slot);
       code->IterateDeoptimizationLiterals(this);
       VisitRootPointer(Root::kStackRoots, nullptr, istream_or_smi_zero_slot);
     }
@@ -2664,13 +2636,13 @@ bool V8HeapExplorer::IsEssentialObject(Tagged<Object> object) {
   if (!IsHeapObject(object)) return false;
   // Avoid comparing objects in other pointer compression cages to objects
   // inside the main cage as the comparison may only look at the lower 32 bits.
-  if (TrustedHeapLayout::InCodeSpace(Cast<HeapObject>(object)) ||
-      TrustedHeapLayout::InTrustedSpace(Cast<HeapObject>(object))) {
+  if (HeapLayout::InCodeSpace(Cast<HeapObject>(object)) ||
+      HeapLayout::InTrustedSpace(Cast<HeapObject>(object))) {
     return true;
   }
   Isolate* isolate = heap_->isolate();
   ReadOnlyRoots roots(isolate);
-  return !IsAnyHole(object) && !IsOddball(object, isolate) &&
+  return !IsOddball(object, isolate) && object != roots.the_hole_value() &&
          object != roots.empty_byte_array() &&
          object != roots.empty_fixed_array() &&
          object != roots.empty_weak_fixed_array() &&
@@ -2891,13 +2863,7 @@ void V8HeapExplorer::SetGcSubrootReference(Root root, const char* description,
   // Add a shortcut to JS global object reference at snapshot root.
   // That allows the user to easily find global objects. They are
   // also used as starting points in distance calculations.
-  if (is_weak) return;
-  if (SafeIsAnyHole(child_heap_obj)) {
-    return;
-  }
-  if (!IsNativeContext(child_heap_obj)) {
-    return;
-  }
+  if (is_weak || !IsNativeContext(child_heap_obj)) return;
 
   Tagged<JSGlobalObject> global =
       Cast<Context>(child_heap_obj)->global_object();
@@ -2950,7 +2916,8 @@ void V8HeapExplorer::RecursivelyTagConstantPool(Tagged<Object> obj,
     for (int i = 0; i < arr->length(); ++i) {
       RecursivelyTagConstantPool(arr->get(i), tag, type, recursion_limit);
     }
-  } else if (Tagged<TrustedFixedArray> arr; TryCast(obj, &arr)) {
+  } else if (IsTrustedFixedArray(obj, isolate())) {
+    Tagged<TrustedFixedArray> arr = Cast<TrustedFixedArray>(obj);
     TagObject(arr, tag, type, /*overwrite_existing_name=*/true);
     if (recursion_limit <= 0) return;
     for (int i = 0; i < arr->length(); ++i) {

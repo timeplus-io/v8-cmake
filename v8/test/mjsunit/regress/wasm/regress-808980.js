@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 // Force TurboFan code for serialization.
-// Flags: --throws --no-liftoff --no-wasm-lazy-compilation
+// Flags: --allow-natives-syntax --throws --no-liftoff
+// Flags: --no-wasm-lazy-compilation
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 let kTableSize = 3;
@@ -21,8 +22,8 @@ builder.setTableBounds(kTableSize, kTableSize);
 var m1_bytes = builder.toBuffer();
 var m1 = new WebAssembly.Module(m1_bytes);
 
-var serialized_m1 = d8.wasm.serializeModule(m1);
-var m1_clone = d8.wasm.deserializeModule(serialized_m1, m1_bytes);
+var serialized_m1 = %SerializeWasmModule(m1);
+var m1_clone = %DeserializeWasmModule(serialized_m1, m1_bytes);
 var i1 = new WebAssembly.Instance(m1_clone);
 
 i1.exports.main(123123);

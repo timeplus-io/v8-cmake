@@ -11,7 +11,6 @@
 // Do not include anything from src/compiler here!
 #include "src/codegen/interface-descriptors.h"
 #include "src/common/globals.h"
-#include "src/interpreter/interpreter.h"
 #include "src/objects/code.h"
 #include "src/zone/zone-containers.h"
 
@@ -93,11 +92,6 @@ class Pipeline : public AllStatic {
       const AssemblerOptions& assembler_options, int argc, const char* name,
       const ProfileDataFromFile* profile_data, int finalize_order);
 
-  using TurboshaftAssemblerGenerator =
-      std::function<void(compiler::turboshaft::PipelineData*, Isolate*,
-                         compiler::turboshaft::Graph&, Zone*)>;
-  using TurboshaftAssemblerInstaller = CodeAssemblerInstaller;
-
   static std::unique_ptr<TurbofanCompilationJob>
   NewBytecodeHandlerCompilationJob(Isolate* isolate, Builtin builtin,
                                    CodeAssemblerGenerator generator,
@@ -106,13 +100,6 @@ class Pipeline : public AllStatic {
                                    const char* name,
                                    const ProfileDataFromFile* profile_data,
                                    int finalize_order);
-  static std::unique_ptr<TurbofanCompilationJob>
-  NewBytecodeHandlerCompilationJobTSA(
-      Isolate* isolate, Builtin builtin, TurboshaftAssemblerGenerator generator,
-      TurboshaftAssemblerInstaller installer,
-      const AssemblerOptions& assembler_options, const char* name,
-      interpreter::BytecodeHandlerData bytecode_handler_data,
-      const ProfileDataFromFile* profile_data, int finalize_order);
 
 #if V8_ENABLE_WEBASSEMBLY
   // Run the pipeline on a machine graph and generate code.
@@ -124,7 +111,8 @@ class Pipeline : public AllStatic {
   static wasm::WasmCompilationResult
   GenerateCodeForWasmNativeStubFromTurboshaft(
       const wasm::CanonicalSig* sig, wasm::WrapperCompilationInfo wrapper_info,
-      const char* debug_name, const AssemblerOptions& assembler_options);
+      const char* debug_name, const AssemblerOptions& assembler_options,
+      SourcePositionTable* source_positions);
 
   static wasm::WasmCompilationResult GenerateWasmCode(
       wasm::CompilationEnv* env, WasmCompilationData& compilation_data,

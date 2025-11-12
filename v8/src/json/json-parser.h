@@ -10,7 +10,6 @@
 #include "include/v8-callbacks.h"
 #include "src/base/small-vector.h"
 #include "src/base/strings.h"
-#include "src/codegen/script-details.h"
 #include "src/common/high-allocation-throughput-scope.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
@@ -161,18 +160,17 @@ class JsonParser final {
 
   V8_WARN_UNUSED_RESULT static bool CheckRawJson(Isolate* isolate,
                                                  Handle<String> source) {
-    return JsonParser(isolate, source, std::nullopt).ParseRawJson();
+    return JsonParser(isolate, source).ParseRawJson();
   }
 
   V8_WARN_UNUSED_RESULT static MaybeHandle<Object> Parse(
-      Isolate* isolate, Handle<String> source, Handle<Object> reviver,
-      std::optional<ScriptDetails> script_details) {
+      Isolate* isolate, Handle<String> source, Handle<Object> reviver) {
     HighAllocationThroughputScope high_throughput_scope(
         V8::GetCurrentPlatform());
     Handle<Object> result;
     MaybeHandle<Object> val_node;
     {
-      JsonParser parser(isolate, source, script_details);
+      JsonParser parser(isolate, source);
       ASSIGN_RETURN_ON_EXCEPTION(isolate, result, parser.ParseJson(reviver));
       val_node = parser.parsed_val_node_;
     }
@@ -212,8 +210,7 @@ class JsonParser final {
     uint32_t elements;
   };
 
-  JsonParser(Isolate* isolate, Handle<String> source,
-             std::optional<ScriptDetails> script_details);
+  JsonParser(Isolate* isolate, Handle<String> source);
   ~JsonParser();
 
   // Parse a string containing a single JSON value.
@@ -242,23 +239,26 @@ class JsonParser final {
     advance();
   }
 
-  void Expect(JsonToken token,
-              std::optional<MessageTemplate> errorMessage = std::nullopt) {
+  V8_WARN_UNUSED_RESULT bool Expect(
+      JsonToken token,
+      std::optional<MessageTemplate> errorMessage = std::nullopt) {
     if (V8_LIKELY(peek() == token)) {
       advance();
-    } else {
-      errorMessage ? ReportUnexpectedToken(peek(), errorMessage.value())
-                   : ReportUnexpectedToken(peek());
+      return true;
     }
+    errorMessage ? ReportUnexpectedToken(peek(), errorMessage.value())
+                 : ReportUnexpectedToken(peek());
+    return false;
   }
 
-  void ExpectNext(JsonToken token,
-                  std::optional<MessageTemplate> errorMessage = std::nullopt) {
+  V8_WARN_UNUSED_RESULT bool ExpectNext(
+      JsonToken token,
+      std::optional<MessageTemplate> errorMessage = std::nullopt) {
     SkipWhitespace();
-    errorMessage ? Expect(token, errorMessage.value()) : Expect(token);
+    return errorMessage ? Expect(token, errorMessage.value()) : Expect(token);
   }
 
-  bool Check(JsonToken token) {
+  V8_WARN_UNUSED_RESULT bool Check(JsonToken token) {
     SkipWhitespace();
     if (next_ != token) return false;
     advance();
@@ -346,8 +346,6 @@ class JsonParser final {
                                            Handle<DescriptorArray> descriptors);
   V8_INLINE bool ParseJsonPropertyValue(const JsonString& key);
   V8_INLINE bool FastKeyMatch(const uint8_t* key_chars, uint32_t key_length);
-  V8_INLINE bool FastKeyMatch(const uint8_t* key_chars, uint32_t key_length,
-                              JsonString scanned_key);
 
   template <bool should_track_json_source>
   Handle<JSObject> BuildJsonObject(const JsonContinuation& cont,
@@ -416,16 +414,13 @@ class JsonParser final {
   uint32_t position() const { return static_cast<uint32_t>(cursor_ - chars_); }
 
   Isolate* isolate_;
+  const uint64_t hash_seed_;
   JsonToken next_;
   // Indicates whether the bytes underneath source_ can relocate during GC.
   bool chars_may_relocate_;
   Handle<JSFunction> object_constructor_;
   const Handle<String> original_source_;
   Handle<String> source_;
-  // Script details for error reporting. When provided, error Script
-  // objects will use this information instead of inferring from the
-  // stack frame.
-  std::optional<ScriptDetails> script_details_;
   // The parsed value's source to be passed to the reviver, if the reviver is
   // callable.
   MaybeHandle<Object> parsed_val_node_;

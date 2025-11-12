@@ -24,16 +24,12 @@ class Heap;
 class PageMetadata : public MutablePageMetadata {
  public:
   PageMetadata(Heap* heap, BaseSpace* space, size_t size, Address area_start,
-               Address area_end, VirtualMemory reservation,
-               Executability executability,
-               MemoryChunk::MainThreadFlags* trusted_flags);
+               Address area_end, VirtualMemory reservation);
 
   // Returns the page containing a given address. The address ranges
   // from [page_addr .. page_addr + kPageSize]. This only works if the object is
   // in fact in a page.
   V8_INLINE static PageMetadata* FromAddress(Address addr);
-  V8_INLINE static PageMetadata* FromAddress(const Isolate* isolate,
-                                             Address addr);
   V8_INLINE static PageMetadata* FromHeapObject(Tagged<HeapObject> o);
 
   static PageMetadata* cast(MemoryChunkMetadata* metadata) {
@@ -41,7 +37,7 @@ class PageMetadata : public MutablePageMetadata {
   }
 
   static PageMetadata* cast(MutablePageMetadata* metadata) {
-    DCHECK_IMPLIES(metadata, !metadata->is_large());
+    DCHECK_IMPLIES(metadata, !metadata->Chunk()->IsLargePage());
     return static_cast<PageMetadata*>(metadata);
   }
 
@@ -66,9 +62,8 @@ class PageMetadata : public MutablePageMetadata {
                                        FreeMode free_mode);
 
   V8_EXPORT_PRIVATE void MarkNeverAllocateForTesting();
-  void MarkEvacuationCandidate();
-  void ClearEvacuationCandidate();
-  void AbortEvacuation();
+  inline void MarkEvacuationCandidate();
+  inline void ClearEvacuationCandidate();
 
   PageMetadata* next_page() {
     return static_cast<PageMetadata*>(list_node_.next());

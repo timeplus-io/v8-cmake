@@ -68,10 +68,6 @@ MaglevGraphLabeller* MaglevCompilationUnit::graph_labeller() const {
   return info_->graph_labeller();
 }
 
-bool MaglevCompilationUnit::is_tracing_enabled() const {
-  return info_->is_tracing_enabled();
-}
-
 void MaglevCompilationUnit::RegisterNodeInGraphLabeller(const Node* node) {
   if (has_graph_labeller()) {
     graph_labeller()->RegisterNode(node);

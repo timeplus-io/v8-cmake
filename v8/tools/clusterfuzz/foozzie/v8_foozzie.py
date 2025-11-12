@@ -26,15 +26,31 @@ CONFIGS = dict(
         '--turbo-filter=~',
         '--no-turbofan',
         '--no-sparkplug',
-        '--liftoff-only',
+        '--liftoff',
         '--no-wasm-tier-up',
+        '--no-maglev',
+    ],
+    ignition_asm=[
+        '--turbo-filter=~',
+        '--no-turbofan',
+        '--no-sparkplug',
+        '--validate-asm',
+        '--stress-validate-asm',
+        '--no-maglev',
+    ],
+    ignition_eager=[
+        '--turbo-filter=~',
+        '--no-turbofan',
+        '--no-sparkplug',
+        '--no-lazy',
+        '--no-lazy-inner-functions',
         '--no-maglev',
     ],
     ignition_no_ic=[
         '--turbo-filter=~',
         '--no-turbofan',
         '--no-sparkplug',
-        '--liftoff-only',
+        '--liftoff',
         '--no-wasm-tier-up',
         '--no-use-ic',
         '--no-lazy-feedback-allocation',
@@ -44,19 +60,14 @@ CONFIGS = dict(
     ignition_turbo_no_ic=[
         '--no-use-ic',
     ],
-    prepare_opt=[
-        '--no-flush-bytecode',
-        '--no-lazy',
-        '--no-lazy-feedback-allocation',
+    ignition_turbo_opt=[
+        '--always-turbofan',
         '--no-liftoff',
     ],
-    # TODO(https://crbug.com/431974094): Remove this in 2026. Until then
-    # keep it aligned with the above for bisection stability.
-    ignition_turbo_opt=[
-        '--no-flush-bytecode',
+    ignition_turbo_opt_eager=[
+        '--always-turbofan',
         '--no-lazy',
-        '--no-lazy-feedback-allocation',
-        '--no-liftoff',
+        '--no-lazy-inner-functions',
     ],
     ignition_maglev=[
         '--maglev',
@@ -69,19 +80,9 @@ CONFIGS = dict(
     slow_path=[
         '--force-slow-path',
     ],
-    slow_path_prepare_opt=[
-        '--force-slow-path',
-        '--no-flush-bytecode',
-        '--no-lazy',
-        '--no-lazy-feedback-allocation',
-    ],
-    # TODO(https://crbug.com/431974094): Remove this in 2026. Until then
-    # keep it aligned with the above for bisection stability.
     slow_path_opt=[
+        '--always-turbofan',
         '--force-slow-path',
-        '--no-flush-bytecode',
-        '--no-lazy',
-        '--no-lazy-feedback-allocation',
     ],
 )
 
@@ -188,9 +189,6 @@ DISALLOWED_FLAGS = [
     '--expose-statistics',
     '--log',
     '--rcs',
-
-    # https://crbug.com/430624025
-    '--flush-denormals',
 ]
 
 # The same as above, but prefixes that either match multiple flags or flags
@@ -206,6 +204,7 @@ DISALLOWED_FLAG_PREFIXES = [
 # No need to list other contradictions, they are omitted by the
 # --fuzzing flag).
 CONTRADICTORY_FLAGS = [
+  ('--always-turbofan', '--jitless'),
   ('--assert-types', '--stress-concurrent-inlining'),
   ('--assert-types', '--stress-concurrent-inlining-attach-code'),
   ('--jitless', '--stress-concurrent-inlining'),

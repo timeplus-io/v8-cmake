@@ -87,7 +87,7 @@ Tagged<T> HeapVisitor<ConcreteVisitor>::Cast(Tagged<HeapObject> object,
   if constexpr (ConcreteVisitor::ShouldUseUncheckedCast()) {
     return i::UncheckedCast<T>(object);
   }
-  return i::TrustedCast<T>(object);
+  return i::Cast<T>(object);
 }
 
 template <typename ConcreteVisitor>
@@ -117,15 +117,6 @@ size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
 template <typename ConcreteVisitor>
 size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
                                            Tagged<HeapObject> object,
-                                           SafeHeapObjectSize object_size)
-  requires(ConcreteVisitor::UsePrecomputedObjectSize())
-{
-  return Visit(map, object, MaybeObjectSize(object_size));
-}
-
-template <typename ConcreteVisitor>
-size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
-                                           Tagged<HeapObject> object,
                                            MaybeObjectSize maybe_object_size) {
   if constexpr (ConcreteVisitor::UsePrecomputedObjectSize()) {
     DCHECK_EQ(maybe_object_size.AssumeSize(), object->SizeFromMap(map));
@@ -144,7 +135,7 @@ size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
      * might see trusted objects here before they've been migrated to trusted \
      * space, hence the second condition. */                                  \
     DCHECK(!InstanceTypeChecker::IsTrustedObject(map) ||                      \
-           !TrustedHeapLayout::InTrustedSpace(object));                       \
+           !HeapLayout::InTrustedSpace(object));                              \
     return visitor->Visit##TypeName(                                          \
         map, ConcreteVisitor::template Cast<TypeName>(object, heap_),         \
         maybe_object_size);
@@ -423,7 +414,7 @@ ConcurrentHeapVisitor<ConcreteVisitor>::ConcurrentHeapVisitor(Isolate* isolate)
 template <typename T>
 struct ConcurrentVisitorCastHelper {
   static V8_INLINE Tagged<T> Cast(Tagged<HeapObject> object) {
-    return i::TrustedCast<T>(object);
+    return i::Cast<T>(object);
   }
 };
 
@@ -446,7 +437,7 @@ Tagged<T> ConcurrentHeapVisitor<ConcreteVisitor>::Cast(
   if constexpr (ConcreteVisitor::EnableConcurrentVisitation()) {
     return ConcurrentVisitorCastHelper<T>::Cast(object);
   }
-  return i::TrustedCast<T>(object);
+  return i::Cast<T>(object);
 }
 
 #define VISIT_AS_LOCKED_STRING(VisitorId, TypeName)                          \

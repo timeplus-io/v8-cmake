@@ -24,7 +24,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::base
     absl::config
     absl::core_headers
     absl::type_traits
@@ -42,7 +41,6 @@ absl_cc_test(
     ${ABSL_TEST_COPTS}
   DEPS
     absl::any_invocable
-    absl::base
     absl::config
     absl::core_headers
     absl::type_traits

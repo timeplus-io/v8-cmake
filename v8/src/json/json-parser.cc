@@ -20,7 +20,6 @@
 #include "src/objects/elements-kind.h"
 #include "src/objects/field-type.h"
 #include "src/objects/hash-table-inl.h"
-#include "src/objects/heap-object.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/property-descriptor.h"
@@ -129,6 +128,15 @@ static const constexpr uint8_t character_json_scan_flags[256] = {
         INT_0_TO_127_LIST(CALL_GET_SCAN_FLAGS)
 #undef CALL_GET_SCAN_FLAGS
 };
+
+#define EXPECT_RETURN_ON_ERROR(token, msg, ret) \
+  if (V8_UNLIKELY(!Expect(token, msg))) {       \
+    return ret;                                 \
+  }
+#define EXPECT_NEXT_RETURN_ON_ERROR(token, msg, ret) \
+  if (V8_UNLIKELY(!ExpectNext(token, msg))) {        \
+    return ret;                                      \
+  }
 
 }  // namespace
 
@@ -301,12 +309,11 @@ bool JsonParseInternalizer::RecurseAndApply(Handle<JSReceiver> holder,
 }
 
 template <typename Char>
-JsonParser<Char>::JsonParser(Isolate* isolate, Handle<String> source,
-                             std::optional<ScriptDetails> script_details)
+JsonParser<Char>::JsonParser(Isolate* isolate, Handle<String> source)
     : isolate_(isolate),
+      hash_seed_(HashSeed(isolate)),
       object_constructor_(isolate_->object_function()),
-      original_source_(source),
-      script_details_(script_details) {
+      original_source_(source) {
   size_t start = 0;
   size_t length = source->length();
   PtrComprCageBase cage_base(isolate);
@@ -483,22 +490,13 @@ void JsonParser<Char>::ReportUnexpectedToken(
 
   Handle<Script> script(factory->NewScript(original_source_));
   DCHECK_IMPLIES(isolate_->NeedsSourcePositions(), script->has_line_ends());
-  if (script_details_.has_value()) {
-    const ScriptDetails& details = script_details_.value();
-    script->set_origin_options(details.origin_options);
-    {
-      DisallowGarbageCollection no_gc;
-      SetScriptFieldsFromDetails(isolate_, *script, details, &no_gc);
-    }
-  } else {
-    DebuggableStackFrameIterator it(isolate_);
-    if (!it.done() && it.is_javascript()) {
-      FrameSummary summary = it.GetTopValidFrame();
-      script->set_eval_from_shared(summary.AsJavaScript().function()->shared());
-      if (IsScript(*summary.script())) {
-        script->set_origin_options(
-            Cast<Script>(*summary.script())->origin_options());
-      }
+  DebuggableStackFrameIterator it(isolate_);
+  if (!it.done() && it.is_javascript()) {
+    FrameSummary summary = it.GetTopValidFrame();
+    script->set_eval_from_shared(summary.AsJavaScript().function()->shared());
+    if (IsScript(*summary.script())) {
+      script->set_origin_options(
+          Cast<Script>(*summary.script())->origin_options());
     }
   }
 
@@ -526,16 +524,16 @@ void JsonParser<Char>::ReportUnexpectedCharacter(base::uc32 c) {
 
 template <typename Char>
 JsonParser<Char>::~JsonParser() {
-  if (chars_may_relocate_) {
+  if (StringShape(*source_).IsExternal()) {
+    // Check that the string shape hasn't changed. Otherwise our GC hooks are
+    // broken.
+    Cast<SeqExternalString>(*source_);
+  } else {
     // Check that the string shape hasn't changed. Otherwise our GC hooks are
     // broken.
     Cast<SeqString>(*source_);
     isolate()->main_thread_local_heap()->RemoveGCEpilogueCallback(
         UpdatePointersCallback, this);
-  } else {
-    // Check that the string shape hasn't changed. Otherwise our GC hooks are
-    // broken.
-    Cast<SeqExternalString>(*source_);
   }
 }
 
@@ -947,7 +945,7 @@ class JSDataObjectBuilder {
     Tagged<DescriptorArray> descriptors =
         raw_object->map()->instance_descriptors();
 
-    WriteBarrierModeScope mode = raw_object->GetWriteBarrierMode(no_gc);
+    WriteBarrierMode mode = raw_object->GetWriteBarrierMode(no_gc);
     FoldedMutableHeapNumberAllocator hn_allocator(isolate_, &hn_allocation,
                                                   no_gc);
 
@@ -978,7 +976,7 @@ class JSDataObjectBuilder {
                 object->map()->GetInObjectPropertyOffset(i));
       FieldIndex index = FieldIndex::ForInObjectOffset(current_property_offset,
                                                        FieldIndex::kTagged);
-      raw_object->RawFastInobjectPropertyAtPut(index, value, *mode);
+      raw_object->RawFastInobjectPropertyAtPut(index, value, mode);
       current_property_offset += kTaggedSize;
     }
     DCHECK_EQ(current_property_offset, object->map()->GetInObjectPropertyOffset(
@@ -1333,14 +1331,14 @@ Handle<JSObject> JsonParser<Char>::BuildJsonObject(const JsonContinuation& cont,
           factory()->NewFixedArrayWithHoles(cont.max_index + 1);
       DisallowGarbageCollection no_gc;
       Tagged<FixedArray> raw_elements = *elms;
-      WriteBarrierModeScope mode = raw_elements->GetWriteBarrierMode(no_gc);
+      WriteBarrierMode mode = raw_elements->GetWriteBarrierMode(no_gc);
 
       for (int i = 0; i < length; i++) {
         const JsonProperty& property = property_stack_[start + i];
         if (!property.string.is_index()) continue;
         uint32_t index = property.string.index();
         DirectHandle<Object> value = property.value;
-        raw_elements->set(static_cast<int>(index), *value, *mode);
+        raw_elements->set(static_cast<int>(index), *value, mode);
       }
       elements = elms;
     }
@@ -1392,11 +1390,11 @@ Handle<Object> JsonParser<Char>::BuildJsonArray(size_t start) {
   } else {
     DisallowGarbageCollection no_gc;
     Tagged<FixedArray> elements = Cast<FixedArray>(array->elements());
-    WriteBarrierModeScope mode = kind == PACKED_SMI_ELEMENTS
-                                     ? WriteBarrierModeScope(SKIP_WRITE_BARRIER)
-                                     : elements->GetWriteBarrierMode(no_gc);
+    WriteBarrierMode mode = kind == PACKED_SMI_ELEMENTS
+                                ? SKIP_WRITE_BARRIER
+                                : elements->GetWriteBarrierMode(no_gc);
     for (int i = 0; i < length; i++) {
-      elements->set(i, *element_stack_[start + i], *mode);
+      elements->set(i, *element_stack_[start + i], mode);
     }
   }
   return array;
@@ -1495,17 +1493,10 @@ bool JsonParser<Char>::FastKeyMatch(const uint8_t* key_chars,
 }
 
 template <typename Char>
-bool JsonParser<Char>::FastKeyMatch(const uint8_t* key_chars,
-                                    uint32_t key_length,
-                                    JsonString scanned_key) {
-  return key_length == scanned_key.length() &&
-         CompareCharsEqual(key_chars, chars_ + scanned_key.start(), key_length);
-}
-
-template <typename Char>
 bool JsonParser<Char>::ParseJsonPropertyValue(const JsonString& key) {
-  ExpectNext(JsonToken::COLON,
-             MessageTemplate::kJsonParseExpectedColonAfterPropertyName);
+  EXPECT_NEXT_RETURN_ON_ERROR(
+      JsonToken::COLON,
+      MessageTemplate::kJsonParseExpectedColonAfterPropertyName, false);
   Handle<Object> value;
   if (V8_UNLIKELY(!ParseJsonValueRecursive().ToHandle(&value))) return false;
   property_stack_.emplace_back(key, value);
@@ -1551,7 +1542,7 @@ bool JsonParser<Char>::ParseJsonObjectProperties(
   using FastIterableState = DescriptorArray::FastIterableState;
   if constexpr (fast_iterable_state == FastIterableState::kJsonSlow) {
     do {
-      ExpectNext(JsonToken::STRING, first_token_msg);
+      EXPECT_NEXT_RETURN_ON_ERROR(JsonToken::STRING, first_token_msg, false);
       first_token_msg =
           MessageTemplate::kJsonParseExpectedDoubleQuotedPropertyName;
       JsonString key = ScanJsonPropertyKey(cont);
@@ -1561,7 +1552,7 @@ bool JsonParser<Char>::ParseJsonObjectProperties(
     DCHECK_GT(descriptors->number_of_descriptors(), 0);
     InternalIndex idx{0};
     do {
-      ExpectNext(JsonToken::STRING, first_token_msg);
+      EXPECT_NEXT_RETURN_ON_ERROR(JsonToken::STRING, first_token_msg, false);
       first_token_msg =
           MessageTemplate::kJsonParseExpectedDoubleQuotedPropertyName;
       bool key_match;
@@ -1636,7 +1627,7 @@ bool JsonParser<Char>::ParseJsonObjectProperties(
             const uint8_t* expected_chars =
                 GetFastKeyChars(isolate_, expected_key, key_map, no_gc);
             const uint32_t key_length = expected_key->length();
-            key_match = FastKeyMatch(expected_chars, key_length, key);
+            key_match = FastKeyMatch(expected_chars, key_length);
           }
         }
 
@@ -1729,7 +1720,8 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonObject(Handle<Map> feedback) {
     return {};
   }
 
-  Expect(JsonToken::RBRACE, MessageTemplate::kJsonParseExpectedCommaOrRBrace);
+  EXPECT_RETURN_ON_ERROR(JsonToken::RBRACE,
+                         MessageTemplate::kJsonParseExpectedCommaOrRBrace, {});
   Handle<Object> result = BuildJsonObject<false>(cont, feedback);
   property_stack_.resize(cont.index);
   return cont.scope.CloseAndEscape(result);
@@ -1775,8 +1767,9 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonArray() {
       SkipWhitespace();
       continue;
     } else {
-      Expect(JsonToken::RBRACK,
-             MessageTemplate::kJsonParseExpectedCommaOrRBrack);
+      EXPECT_RETURN_ON_ERROR(JsonToken::RBRACK,
+                             MessageTemplate::kJsonParseExpectedCommaOrRBrack,
+                             {});
       success = true;
       break;
     }
@@ -1844,7 +1837,8 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonArray() {
     element_stack_.emplace_back(value);
   }
 
-  Expect(JsonToken::RBRACK, MessageTemplate::kJsonParseExpectedCommaOrRBrack);
+  EXPECT_RETURN_ON_ERROR(JsonToken::RBRACK,
+                         MessageTemplate::kJsonParseExpectedCommaOrRBrack, {});
   Handle<Object> result = BuildJsonArray(start);
   element_stack_.resize(start);
   return handle_scope.CloseAndEscape(result);
@@ -1954,15 +1948,17 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonValue() {
                                   property_stack_.size());
 
           // Parse the property key.
-          ExpectNext(JsonToken::STRING,
-                     MessageTemplate::kJsonParseExpectedPropNameOrRBrace);
+          EXPECT_NEXT_RETURN_ON_ERROR(
+              JsonToken::STRING,
+              MessageTemplate::kJsonParseExpectedPropNameOrRBrace, {});
           property_stack_.emplace_back(ScanJsonPropertyKey(&cont));
           if constexpr (should_track_json_source) {
             property_val_node_stack.emplace_back(Handle<Object>());
           }
 
-          ExpectNext(JsonToken::COLON,
-                     MessageTemplate::kJsonParseExpectedColonAfterPropertyName);
+          EXPECT_NEXT_RETURN_ON_ERROR(
+              JsonToken::COLON,
+              MessageTemplate::kJsonParseExpectedColonAfterPropertyName, {});
 
           // Continue to start producing the first property value.
           continue;
@@ -2058,17 +2054,18 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonValue() {
 
           if (V8_LIKELY(Check(JsonToken::COMMA))) {
             // Parse the property key.
-            ExpectNext(
+            EXPECT_NEXT_RETURN_ON_ERROR(
                 JsonToken::STRING,
-                MessageTemplate::kJsonParseExpectedDoubleQuotedPropertyName);
+                MessageTemplate::kJsonParseExpectedDoubleQuotedPropertyName,
+                {});
 
             property_stack_.emplace_back(ScanJsonPropertyKey(&cont));
             if constexpr (should_track_json_source) {
               property_val_node_stack.emplace_back(Handle<Object>());
             }
-            ExpectNext(
+            EXPECT_NEXT_RETURN_ON_ERROR(
                 JsonToken::COLON,
-                MessageTemplate::kJsonParseExpectedColonAfterPropertyName);
+                MessageTemplate::kJsonParseExpectedColonAfterPropertyName, {});
 
             // Break to start producing the subsequent property value.
             break;
@@ -2088,8 +2085,9 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonValue() {
             }
           }
           value = BuildJsonObject<should_track_json_source>(cont, feedback);
-          Expect(JsonToken::RBRACE,
-                 MessageTemplate::kJsonParseExpectedCommaOrRBrace);
+          EXPECT_RETURN_ON_ERROR(
+              JsonToken::RBRACE,
+              MessageTemplate::kJsonParseExpectedCommaOrRBrace, {});
           // Return the object.
           if constexpr (should_track_json_source) {
             size_t start = cont.index;
@@ -2139,8 +2137,9 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonValue() {
           if (V8_LIKELY(Check(JsonToken::COMMA))) break;
 
           value = BuildJsonArray(cont.index);
-          Expect(JsonToken::RBRACK,
-                 MessageTemplate::kJsonParseExpectedCommaOrRBrack);
+          EXPECT_RETURN_ON_ERROR(
+              JsonToken::RBRACK,
+              MessageTemplate::kJsonParseExpectedCommaOrRBrack, {});
           // Return the array.
           if constexpr (should_track_json_source) {
             size_t start = cont.index;

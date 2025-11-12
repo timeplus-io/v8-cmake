@@ -28,8 +28,6 @@
   using Label = compiler::turboshaft::Label<Ts...>;                            \
   template <typename... Ts>                                                    \
   using LoopLabel = compiler::turboshaft::LoopLabel<Ts...>;                    \
-  template <typename... Args>                                                  \
-  using Tuple = compiler::turboshaft::Tuple<Args...>;                          \
   using Block = compiler::turboshaft::Block;                                   \
   using OpIndex = compiler::turboshaft::OpIndex;                               \
   using Word32 = compiler::turboshaft::Word32;                                 \
@@ -206,11 +204,6 @@ class FeedbackCollectorReducer : public Next {
                        __ SmiConstant(Smi::FromInt(checked_feedback)));
   }
 
-  V<Word32> FeedbackHas(int checked_feedback) {
-    V<Smi> mask = __ SmiConstant(Smi::FromInt(checked_feedback));
-    return __ SmiEqual(__ SmiBitwiseAnd(feedback_, mask), mask);
-  }
-
   V<FeedbackVectorOrUndefined> LoadFeedbackVector() {
     return V<FeedbackVectorOrUndefined>::Cast(
         __ LoadRegister(interpreter::Register::feedback_vector()));
@@ -260,7 +253,6 @@ class FeedbackCollectorReducer : public Next {
                  compiler::WriteBarrierKind::kNoWriteBarrier);
         return;
       }
-      case SKIP_WRITE_BARRIER_SCOPE:
       case UNSAFE_SKIP_WRITE_BARRIER:
         UNIMPLEMENTED();
       case UPDATE_WRITE_BARRIER:
@@ -334,18 +326,12 @@ class FeedbackCollectorReducer : public Next {
   }
 
   V<Smi> SmiBitwiseOr(V<Smi> a, V<Smi> b) {
-    return __ BitcastWordPtrToSmi(__ WordPtrBitwiseOr(
-        __ BitcastSmiToWordPtr(a), __ BitcastSmiToWordPtr(b)));
-  }
-
-  V<Smi> SmiBitwiseAnd(V<Smi> a, V<Smi> b) {
-    return __ BitcastWordPtrToSmi(__ WordPtrBitwiseAnd(
-        __ BitcastSmiToWordPtr(a), __ BitcastSmiToWordPtr(b)));
+    return __ BitcastWord32ToSmi(
+        __ Word32BitwiseOr(__ BitcastSmiToWord32(a), __ BitcastSmiToWord32(b)));
   }
 
   V<Word32> SmiEqual(V<Smi> a, V<Smi> b) {
-    return __ WordPtrEqual(__ BitcastSmiToWordPtr(a),
-                           __ BitcastSmiToWordPtr(b));
+    return __ Word32Equal(__ BitcastSmiToWord32(a), __ BitcastSmiToWord32(b));
   }
 
   V<WordPtr> ChangePositiveInt32ToIntPtr(V<Word32> input) {
@@ -389,7 +375,6 @@ class NoFeedbackCollectorReducer : public Next {
   void OverwriteFeedback(int new_feedback) {}
 
   V<Word32> FeedbackIs(int checked_feedback) { UNREACHABLE(); }
-  V<Word32> FeedbackHas(int checked_feedbac) { UNREACHABLE(); }
 
   void UpdateFeedback() {}
   void CombineExceptionFeedback() {}
@@ -415,7 +400,7 @@ class BuiltinsReducer : public Next {
     }
     // TODO(nicohartmann): CSA tracks some debug information here.
     // Emit stack check.
-    if (Builtins::KindOf(builtin_id) == Builtins::TFJ_TSA) {
+    if (Builtins::KindOf(builtin_id) == Builtins::TSJ) {
       __ PerformStackCheck(__ JSContextParameter());
     }
   }
@@ -573,7 +558,7 @@ class BuiltinsReducer : public Next {
         __ OverwriteFeedback(BinaryOperationFeedback::kNumberOrOddball);
         V<Float64> oddball_value =
             __ LoadField(V<Oddball>::Cast(value_heap_object),
-                         AccessBuilderTS::ForHeapNumberOrOddballValue());
+                         AccessBuilderTS::ForHeapNumberOrOddballOrHoleValue());
         GOTO(if_number, __ JSTruncateFloat64ToWord32(oddball_value));
       }
 
@@ -621,9 +606,6 @@ class TurboshaftBuiltinsAssembler
       : Base(data, graph, graph, phase_zone) {}
 
   using Base::Asm;
-
-  Isolate* isolate() { return Base::data()->isolate(); }
-  Factory* factory() { return isolate()->factory(); }
 };
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"

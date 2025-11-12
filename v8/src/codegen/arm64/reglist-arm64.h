@@ -5,8 +5,6 @@
 #ifndef V8_CODEGEN_ARM64_REGLIST_ARM64_H_
 #define V8_CODEGEN_ARM64_REGLIST_ARM64_H_
 
-#include <type_traits>
-
 #include "src/codegen/arm64/utils-arm64.h"
 #include "src/codegen/register-arch.h"
 #include "src/codegen/reglist-base.h"
@@ -27,7 +25,6 @@ constexpr int kRegListSizeInBits = sizeof(RegList) * kBitsPerByte;
 class V8_EXPORT_PRIVATE CPURegList {
  public:
   template <typename... CPURegisters>
-    requires(std::is_convertible_v<CPURegisters, CPURegister> && ...)
   explicit CPURegList(CPURegister reg0, CPURegisters... regs)
       : list_(((uint64_t{1} << reg0.code()) | ... |
                (regs.is_valid() ? uint64_t{1} << regs.code() : 0))),
@@ -108,21 +105,23 @@ class V8_EXPORT_PRIVATE CPURegList {
 
   bool IsEmpty() const { return list_ == 0; }
 
-  template <typename... CPURegisters>
-    requires(std::is_convertible_v<CPURegisters, CPURegister> && ...)
-  bool IncludesAliasOf(CPURegister other0, CPURegisters... others) const {
+  bool IncludesAliasOf(const CPURegister& other1,
+                       const CPURegister& other2 = NoCPUReg,
+                       const CPURegister& other3 = NoCPUReg,
+                       const CPURegister& other4 = NoCPUReg) const {
     uint64_t list = 0;
-    auto add_to_list = [&](CPURegister reg) {
-      if (!reg.IsNone() && (reg.type() == type_)) {
-        list |= (uint64_t{1} << reg.code());
-      }
-    };
-    // Add the first register to the list.
-    add_to_list(other0);
-    // Add the subsequent registers to the list, with some template pack
-    // fold expansion.
-    (add_to_list(others), ...);
-
+    if (!other1.IsNone() && (other1.type() == type_)) {
+      list |= (uint64_t{1} << other1.code());
+    }
+    if (!other2.IsNone() && (other2.type() == type_)) {
+      list |= (uint64_t{1} << other2.code());
+    }
+    if (!other3.IsNone() && (other3.type() == type_)) {
+      list |= (uint64_t{1} << other3.code());
+    }
+    if (!other4.IsNone() && (other4.type() == type_)) {
+      list |= (uint64_t{1} << other4.code());
+    }
     return (list_ & list) != 0;
   }
 

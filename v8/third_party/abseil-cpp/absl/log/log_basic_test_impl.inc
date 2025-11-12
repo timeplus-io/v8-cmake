@@ -94,7 +94,6 @@ TEST_P(BasicLogTest, Info) {
   absl::log_internal::ScopedMinLogLevel scoped_min_log_level(GetParam());
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   const int log_line = __LINE__ + 1;
   auto do_log = [] { ABSL_TEST_LOG(INFO) << "hello world"; };
@@ -126,7 +125,6 @@ TEST_P(BasicLogTest, Warning) {
   absl::log_internal::ScopedMinLogLevel scoped_min_log_level(GetParam());
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   const int log_line = __LINE__ + 1;
   auto do_log = [] { ABSL_TEST_LOG(WARNING) << "hello world"; };
@@ -158,7 +156,6 @@ TEST_P(BasicLogTest, Error) {
   absl::log_internal::ScopedMinLogLevel scoped_min_log_level(GetParam());
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   const int log_line = __LINE__ + 1;
   auto do_log = [] { ABSL_TEST_LOG(ERROR) << "hello world"; };
@@ -190,7 +187,6 @@ TEST_P(BasicLogTest, DoNotSubmit) {
   absl::log_internal::ScopedMinLogLevel scoped_min_log_level(GetParam());
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   const int log_line = __LINE__ + 1;
   auto do_log = [] { ABSL_TEST_LOG(DO_NOT_SUBMIT) << "hello world"; };
@@ -237,7 +233,6 @@ TEST_P(BasicLogDeathTest, Fatal) {
       {
         absl::ScopedMockLog test_sink(
             absl::MockLogDefault::kDisallowUnexpected);
-        EXPECT_CALL(test_sink, Send).Times(0);
 
         EXPECT_CALL(test_sink, Send)
             .Times(AnyNumber())
@@ -304,7 +299,6 @@ TEST_P(BasicLogDeathTest, QFatal) {
       {
         absl::ScopedMockLog test_sink(
             absl::MockLogDefault::kDisallowUnexpected);
-        EXPECT_CALL(test_sink, Send).Times(0);
 
         EXPECT_CALL(test_sink, Send)
             .Times(AnyNumber())
@@ -342,7 +336,6 @@ TEST_P(BasicLogTest, DFatal) {
   absl::log_internal::ScopedMinLogLevel scoped_min_log_level(GetParam());
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   const int log_line = __LINE__ + 1;
   auto do_log = [] { ABSL_TEST_LOG(DFATAL) << "hello world"; };
@@ -382,7 +375,6 @@ TEST_P(BasicLogDeathTest, DFatal) {
       {
         absl::ScopedMockLog test_sink(
             absl::MockLogDefault::kDisallowUnexpected);
-        EXPECT_CALL(test_sink, Send).Times(0);
 
         EXPECT_CALL(test_sink, Send)
             .Times(AnyNumber())
@@ -464,7 +456,6 @@ TEST_P(BasicLogTest, Level) {
   for (auto severity : {absl::LogSeverity::kInfo, absl::LogSeverity::kWarning,
                         absl::LogSeverity::kError}) {
     absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-    EXPECT_CALL(test_sink, Send).Times(0);
 
     const int log_line = __LINE__ + 2;
     auto do_log = [severity] {
@@ -515,7 +506,6 @@ TEST_P(BasicLogDeathTest, Level) {
       {
         absl::ScopedMockLog test_sink(
             absl::MockLogDefault::kDisallowUnexpected);
-        EXPECT_CALL(test_sink, Send).Times(0);
 
         EXPECT_CALL(test_sink, Send)
             .Times(AnyNumber())
@@ -577,7 +567,6 @@ TEST_P(BasicLogTest, LevelClampsNegativeValues) {
   }
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(LogSeverity(Eq(absl::LogSeverity::kInfo))));
 
@@ -594,7 +583,6 @@ TEST_P(BasicLogTest, LevelClampsLargeValues) {
   }
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(LogSeverity(Eq(absl::LogSeverity::kError))));
 

@@ -915,18 +915,18 @@ DEF_GETTER(Map, raw_native_context_or_null, Tagged<Object>) {
 ACCESSORS_CHECKED(Map, wasm_type_info, Tagged<WasmTypeInfo>,
                   kConstructorOrBackPointerOrNativeContextOffset,
                   IsWasmStructMap(*this) || IsWasmArrayMap(*this) ||
-                      IsWasmFuncRefMap(*this) ||
-                      IsWasmContinuationObjectMap(*this))
+                      IsWasmFuncRefMap(*this))
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 bool Map::IsPrototypeValidityCellValid() const {
   Tagged<Object> validity_cell = prototype_validity_cell(kRelaxedLoad);
-  if (validity_cell == Map::kNoValidityCellSentinel) {
+  if (IsSmi(validity_cell)) {
     // Smi validity cells should always be considered valid.
+    DCHECK_EQ(Cast<Smi>(validity_cell).value(), Map::kPrototypeChainValid);
     return true;
   }
-  return Cast<Cell>(validity_cell)->maybe_value() !=
-         Map::kPrototypeChainInvalid;
+  Tagged<Smi> cell_value = Cast<Smi>(Cast<Cell>(validity_cell)->value());
+  return cell_value == Smi::FromInt(Map::kPrototypeChainValid);
 }
 
 bool Map::BelongsToSameNativeContextAs(Tagged<Map> other_map) const {

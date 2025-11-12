@@ -77,14 +77,7 @@ void ThreadIsolation::Initialize(
   trusted_data_.initialized = true;
 #endif
 
-  bool enable = thread_isolated_allocator != nullptr;
-
-  if (v8_flags.jitless) {
-    enable = v8_flags.force_memory_protection_keys;
-  }
-
-  DCHECK_IMPLIES(v8_flags.force_memory_protection_keys,
-                 thread_isolated_allocator != nullptr);
+  bool enable = thread_isolated_allocator != nullptr && !v8_flags.jitless;
 
 #ifdef THREAD_SANITIZER
   // TODO(sroettger): with TSAN enabled, we get crashes because
@@ -97,10 +90,6 @@ void ThreadIsolation::Initialize(
 #if V8_HAS_PKU_JIT_WRITE_PROTECT
   if (!v8_flags.memory_protection_keys ||
       !base::MemoryProtectionKey::HasMemoryProtectionKeyAPIs()) {
-    DCHECK_IMPLIES(v8_flags.force_memory_protection_keys,
-                   v8_flags.memory_protection_keys);
-    DCHECK_IMPLIES(v8_flags.force_memory_protection_keys,
-                   base::MemoryProtectionKey::HasMemoryProtectionKeyAPIs());
     enable = false;
   }
 #endif
@@ -127,8 +116,6 @@ void ThreadIsolation::Initialize(
     ConstructNew(&trusted_data_.jit_pages_);
   }
 
-  CHECK_IMPLIES(v8_flags.force_memory_protection_keys, enable);
-
   if (!enable) {
     return;
   }
@@ -140,10 +127,10 @@ void ThreadIsolation::Initialize(
            GetPlatformPageAllocator()->CommitPageSize());
 
   // TODO(sroettger): make this immutable once there's OS support.
-  bool success = base::MemoryProtectionKey::SetPermissionsAndKey(
+  base::MemoryProtectionKey::SetPermissionsAndKey(
       {reinterpret_cast<Address>(&trusted_data_), sizeof(trusted_data_)},
-      PagePermissions::kRead, base::MemoryProtectionKey::kDefaultProtectionKey);
-  CHECK_IMPLIES(v8_flags.force_memory_protection_keys, success);
+      v8::PageAllocator::Permission::kRead,
+      base::MemoryProtectionKey::kDefaultProtectionKey);
 #endif
 }
 
@@ -477,7 +464,7 @@ bool ThreadIsolation::MakeExecutable(Address address, size_t size) {
 
 #if V8_HAS_PKU_JIT_WRITE_PROTECT
   return base::MemoryProtectionKey::SetPermissionsAndKey(
-      {address, size}, PagePermissions::kReadWriteExecute, pkey());
+      {address, size}, PageAllocator::Permission::kReadWriteExecute, pkey());
 #else   // V8_HAS_PKU_JIT_WRITE_PROTECT
   UNREACHABLE();
 #endif  // V8_HAS_PKU_JIT_WRITE_PROTECT
@@ -612,7 +599,8 @@ bool ThreadIsolation::WriteProtectMemory(
 
 #if V8_HEAP_USE_PKU_JIT_WRITE_PROTECT
   return base::MemoryProtectionKey::SetPermissionsAndKey(
-      {addr, size}, PagePermissions::kNoAccess, ThreadIsolation::pkey());
+      {addr, size}, PageAllocator::Permission::kNoAccess,
+      ThreadIsolation::pkey());
 #else
   UNREACHABLE();
 #endif

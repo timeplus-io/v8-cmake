@@ -44,7 +44,7 @@ class ArmOperandConverter final : public InstructionOperandConverter {
       case kFlags_conditional_branch:
       case kFlags_deoptimize:
       case kFlags_set:
-      case kFlags_conditional_trap:
+      case kFlags_conditional_set:
       case kFlags_trap:
       case kFlags_select:
         return SetCC;
@@ -687,8 +687,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
 #if V8_ENABLE_WEBASSEMBLY
     case kArchCallWasmFunction:
-    case kArchCallWasmFunctionIndirect:
-    case kArchResumeWasmContinuation: {
+    case kArchCallWasmFunctionIndirect: {
       if (instr->InputAt(0)->IsImmediate()) {
         DCHECK_EQ(arch_opcode, kArchCallWasmFunction);
         Constant constant = i.ToConstant(instr->InputAt(0));
@@ -697,9 +696,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else if (arch_opcode == kArchCallWasmFunctionIndirect) {
         __ CallWasmCodePointer(i.InputRegister(0));
       } else {
-        // TODO(thibaudm): Use a WasmCodePointer for
-        // kArchResumeWasmContinuation. Can this be merged with
-        // kArchCallWasmFunctionIndirect?
         __ Call(i.InputRegister(0));
       }
       RecordCallPosition(instr);
@@ -898,9 +894,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchNop:
       // don't emit code for nops.
       DCHECK_EQ(LeaveCC, i.OutputSBit());
-      break;
-    case kArchPause:
-      __ isb(SY);
       break;
     case kArchDeoptimize: {
       DeoptimizationExit* exit =
@@ -3455,22 +3448,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAtomicExchangeWord32:
       ASSEMBLE_ATOMIC_EXCHANGE_INTEGER(ldrex, strex);
       break;
-    case kAtomicExchangeWithWriteBarrier: {
-      ASSEMBLE_ATOMIC_EXCHANGE_INTEGER(ldrex, strex);
-      if (v8_flags.disable_write_barriers) break;
-      Register object = i.InputRegister(0);
-      Register offset = i.InputRegister(1);
-      Register value = i.InputRegister(2);
-      RecordWriteMode mode = RecordWriteMode::kValueIsAny;
-      auto ool = zone()->New<OutOfLineRecordWrite>(
-          this, object, Operand(offset), value, mode, DetermineStubCallMode(),
-          &unwinding_info_writer_);
-      __ JumpIfSmi(value, ool->exit());
-      __ CheckPageFlag(object, MemoryChunk::kPointersFromHereAreInterestingMask,
-                       ne, ool->entry());
-      __ bind(ool->exit());
-      break;
-    }
     case kAtomicCompareExchangeInt8:
       __ add(i.TempRegister(1), i.InputRegister(0), i.InputRegister(1));
       __ uxtb(i.TempRegister(2), i.InputRegister(2));
@@ -3502,25 +3479,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(ldrex, strex,
                                                i.InputRegister(2));
       break;
-    case kAtomicCompareExchangeWithWriteBarrier: {
-      __ add(i.TempRegister(1), i.InputRegister(0), i.InputRegister(1));
-      ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(ldrex, strex,
-                                               i.InputRegister(2));
-      if (v8_flags.disable_write_barriers) break;
-      // Emit the write barrier.
-      Register object = i.InputRegister(0);
-      Register offset = i.InputRegister(1);
-      Register new_value = i.InputRegister(3);
-      RecordWriteMode mode = RecordWriteMode::kValueIsAny;
-      auto ool = zone()->New<OutOfLineRecordWrite>(
-          this, object, Operand(offset), new_value, mode,
-          DetermineStubCallMode(), &unwinding_info_writer_);
-      __ JumpIfSmi(new_value, ool->exit());
-      __ CheckPageFlag(object, MemoryChunk::kPointersFromHereAreInterestingMask,
-                       ne, ool->entry());
-      __ bind(ool->exit());
-      break;
-    }
 #define ATOMIC_BINOP_CASE(op, inst)                    \
   case kAtomic##op##Int8:                              \
     ASSEMBLE_ATOMIC_BINOP(ldrexb, strexb, inst);       \
@@ -3737,12 +3695,9 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   __ mov(reg, Operand(1), LeaveCC, cc);
 }
 
-#if V8_ENABLE_WEBASSEMBLY
-void CodeGenerator::AssembleArchConditionalTrap(Instruction* instr,
-                                                FlagsCondition condition) {
+void CodeGenerator::AssembleArchConditionalBoolean(Instruction* instr) {
   UNREACHABLE();
 }
-#endif  // V8_ENABLE_WEBASSEMBLY
 
 void CodeGenerator::AssembleArchConditionalBranch(Instruction* instr,
                                                   BranchInfo* branch) {
@@ -3904,17 +3859,7 @@ void CodeGenerator::AssembleConstructFrame() {
             WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
             Operand(call_descriptor->ParameterSlotCount() * kSystemPointerSize +
                     CommonFrameConstants::kFixedFrameSizeAboveFp));
-        __ Call(static_cast<Address>(Builtin::kWasmHandleStackOverflow),
-                RelocInfo::WASM_STUB_CALL);
-        // If the call succesfully grew the stack, we don't expect it to have
-        // allocated any heap objects or otherwise triggered any GC.
-        // If it was not able to grow the stack, it may have triggered a GC when
-        // allocating the stack overflow exception object, but the call did not
-        // return in this case.
-        // So either way, we can just ignore any references and record an empty
-        // safepoint here.
-        ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
-        RecordSafepoint(reference_map);
+        __ CallBuiltin(Builtin::kWasmHandleStackOverflow);
         __ vldm(ia_w, sp, fp_regs_to_save.first(), fp_regs_to_save.last());
         __ ldm(ia_w, sp, regs_to_save);
       } else {

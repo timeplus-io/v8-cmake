@@ -6,9 +6,6 @@
 This module contains helper functions to compile V8.
 """
 
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-
 FlagInfo = provider("The value of an option.",
 fields = ["value"])
 
@@ -120,7 +117,6 @@ def _default_args():
                 "-Wno-implicit-int-float-conversion",
                 "-Wno-deprecated-copy",
                 "-Wno-non-virtual-dtor",
-                "-Wno-unnecessary-virtual-specifier",
                 "-isystem .",
             ],
             "//conditions:default": [],
@@ -217,7 +213,7 @@ def v8_binary(
         **kwargs):
     default = _default_args()
     if _should_emit_noicu_and_icu(noicu_srcs, noicu_deps, noicu_defines, icu_srcs, icu_deps, icu_defines):
-        cc_binary(
+        native.cc_binary(
             name = "noicu/" + name,
             srcs = srcs + noicu_srcs,
             deps = deps + noicu_deps + default.deps,
@@ -227,7 +223,7 @@ def v8_binary(
             linkopts = linkopts + default.linkopts,
             **kwargs
         )
-        cc_binary(
+        native.cc_binary(
             name = "icu/" + name,
             srcs = srcs + icu_srcs,
             deps = deps + icu_deps + default.deps,
@@ -238,7 +234,7 @@ def v8_binary(
             **kwargs
         )
     else:
-        cc_binary(
+        native.cc_binary(
             name = name,
             srcs = srcs,
             deps = deps + default.deps,
@@ -266,7 +262,7 @@ def v8_library(
         **kwargs):
     default = _default_args()
     if _should_emit_noicu_and_icu(noicu_srcs, noicu_deps, noicu_defines, icu_srcs, icu_deps, icu_defines):
-        cc_library(
+        native.cc_library(
             name = name + "_noicu",
             srcs = srcs + noicu_srcs,
             deps = deps + noicu_deps + default.deps,
@@ -285,7 +281,7 @@ def v8_library(
             name = "noicu/" + name,
             actual = name + "_noicu",
         )
-        cc_library(
+        native.cc_library(
             name = name + "_icu",
             srcs = srcs + icu_srcs,
             deps = deps + icu_deps + default.deps,
@@ -305,7 +301,7 @@ def v8_library(
             actual = name + "_icu",
         )
     else:
-        cc_library(
+        native.cc_library(
             name = name,
             srcs = srcs,
             deps = deps + default.deps,
@@ -585,7 +581,6 @@ def build_config_content(cpu, icu):
         ("pointer_compression", "true"),
         ("runtime_call_stats", "false"),
         ("sandbox", "false"),
-        ("sandbox_hardware_support", "false"),
         ("shared_ro_heap", "false"),
         ("simd_mips", "false"),
         ("simulator_run", "false"),

@@ -62,9 +62,6 @@ std::ostream& operator<<(std::ostream& os, const CallDescriptor::Kind& k) {
     case CallDescriptor::kCallWasmImportWrapper:
       os << "WasmImportWrapper";
       break;
-    case CallDescriptor::kResumeWasmContinuation:
-      os << "WasmResumeContinuation";
-      break;
 #endif  // V8_ENABLE_WEBASSEMBLY
     case CallDescriptor::kCallBuiltinPointer:
       os << "BuiltinPointer";
@@ -223,7 +220,6 @@ int CallDescriptor::CalculateFixedFrameSize(CodeKind code_kind) const {
     case kCallWasmFunction:
     case kCallWasmFunctionIndirect:
     case kCallWasmImportWrapper:
-    case kResumeWasmContinuation:
       return WasmFrameConstants::kFixedSlotCount;
     case kCallWasmCapiFunction:
       return WasmExitFrameConstants::kFixedSlotCount;
@@ -444,10 +440,8 @@ CallDescriptor* Linkage::GetRuntimeCallDescriptor(
   DCHECK_IMPLIES(lazy_deopt_on_throw == LazyDeoptOnThrow::kYes,
                  flags & CallDescriptor::kNeedsFrameState);
 
-  CallDescriptor* descriptor = GetCEntryStubCallDescriptor(
-      zone, return_count, js_parameter_count, debug_name, properties, flags);
-  descriptor->runtime_function_id_ = function_id;
-  return descriptor;
+  return GetCEntryStubCallDescriptor(zone, return_count, js_parameter_count,
+                                     debug_name, properties, flags);
 }
 
 CallDescriptor* Linkage::GetCEntryStubCallDescriptor(

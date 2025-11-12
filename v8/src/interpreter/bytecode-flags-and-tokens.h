@@ -44,7 +44,8 @@ class CreateClosureFlags {
   using PretenuredBit = base::BitField8<bool, 0, 1>;
   using FastNewClosureBit = PretenuredBit::Next<bool, 1>;
 
-  static uint8_t Encode(bool pretenure, bool is_function_scope);
+  static uint8_t Encode(bool pretenure, bool is_function_scope,
+                        bool might_always_turbofan);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(CreateClosureFlags);

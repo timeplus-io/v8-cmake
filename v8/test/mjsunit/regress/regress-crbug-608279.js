@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --no-lazy-feedback-allocation --no-lazy
-// Flags: --invocation-count-for-turbofan=1
+// Flags: --always-turbofan --no-lazy
 
 function __f_38() {
   try {

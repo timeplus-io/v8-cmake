@@ -84,18 +84,15 @@ namespace {
      * the RORoots, which is trivially true here. So, do a slow check of the  \
      * oddball kind instead. Do the casts via Tagged<Object> to satisfy cast  \
      * compatibility static_asserts in the Tagged class. */                   \
-    if constexpr (std::is_same_v<Type, Undefined>) {                          \
+    if (std::is_same_v<Type, Undefined>) {                                    \
       return Cast<Oddball>(Tagged<Object>(value))->kind() ==                  \
              Oddball::kUndefined;                                             \
-    } else if constexpr (std::is_same_v<Type, Null>) {                        \
+    } else if (std::is_same_v<Type, Null>) {                                  \
       return Cast<Oddball>(Tagged<Object>(value))->kind() == Oddball::kNull;  \
-    } else if constexpr (std::is_same_v<Type, True>) {                        \
+    } else if (std::is_same_v<Type, True>) {                                  \
       return Cast<Oddball>(Tagged<Object>(value))->kind() == Oddball::kTrue;  \
-    } else if constexpr (std::is_same_v<Type, False>) {                       \
+    } else if (std::is_same_v<Type, False>) {                                 \
       return Cast<Oddball>(Tagged<Object>(value))->kind() == Oddball::kFalse; \
-    } else if constexpr (std::is_base_of_v<Hole, Type>) {                     \
-      /* Skip verification of individual holes, just check for holeness */    \
-      return IsAnyHole(value);                                                \
     } else {                                                                  \
       return Is##Type(value);                                                 \
     }                                                                         \

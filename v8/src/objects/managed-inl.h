@@ -58,11 +58,10 @@ DirectHandle<TrustedManaged<CppType>> TrustedManaged<CppType>::From(
   destructor->external_memory_accounter_.Increase(
       reinterpret_cast<v8::Isolate*>(isolate), estimated_size);
   DirectHandle<TrustedManaged<CppType>> handle =
-      TrustedCast<TrustedManaged<CppType>>(
-          isolate->factory()->NewTrustedForeign(
-              reinterpret_cast<Address>(destructor), shared));
+      Cast<TrustedManaged<CppType>>(isolate->factory()->NewTrustedForeign(
+          reinterpret_cast<Address>(destructor), shared));
   IndirectHandle<Object> global_handle =
-      isolate->global_handles()->Create(Cast<Object>(*handle));
+      isolate->global_handles()->Create(*handle);
   destructor->global_handle_location_ = global_handle.location();
   GlobalHandles::MakeWeak(destructor->global_handle_location_, destructor,
                           &ManagedObjectFinalizer,

@@ -258,7 +258,6 @@ void InstructionScheduler::Schedule() {
 int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
   switch (instr->arch_opcode()) {
     case kArchNop:
-    case kArchPause:
     case kArchStackCheckOffset:
     case kArchFramePointer:
     case kArchParentFramePointer:
@@ -336,7 +335,6 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
 #if V8_ENABLE_WEBASSEMBLY
     case kArchCallWasmFunction:
     case kArchCallWasmFunctionIndirect:
-    case kArchResumeWasmContinuation:
 #endif  // V8_ENABLE_WEBASSEMBLY
     case kArchCallBuiltinPointer:
       // Calls can cause GC and GC may relocate objects. If a pure instruction
@@ -367,13 +365,11 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
     case kAtomicExchangeInt16:
     case kAtomicExchangeUint16:
     case kAtomicExchangeWord32:
-    case kAtomicExchangeWithWriteBarrier:
     case kAtomicCompareExchangeInt8:
     case kAtomicCompareExchangeUint8:
     case kAtomicCompareExchangeInt16:
     case kAtomicCompareExchangeUint16:
     case kAtomicCompareExchangeWord32:
-    case kAtomicCompareExchangeWithWriteBarrier:
     case kAtomicAddInt8:
     case kAtomicAddUint8:
     case kAtomicAddInt16:

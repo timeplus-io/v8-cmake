@@ -81,7 +81,6 @@ let kWasmSharedTypeForm = 0x65;
 let kWasmFunctionTypeForm = 0x60;
 let kWasmStructTypeForm = 0x5f;
 let kWasmArrayTypeForm = 0x5e;
-let kWasmContTypeForm = 0x5d;
 let kWasmSubtypeForm = 0x50;
 let kWasmSubtypeFinalForm = 0x4f;
 let kWasmRecursiveTypeGroupForm = 0x4e;
@@ -504,13 +503,7 @@ const kWasmOpcodes = {
   'RefEq': 0xd3,
   'RefAsNonNull': 0xd4,
   'BrOnNull': 0xd5,
-  'BrOnNonNull': 0xd6,
-  'ContNew': 0xe0,
-  'ContBind': 0xe1,
-  'Suspend': 0xe2,
-  'Resume': 0xe3,
-  'ResumeThrow': 0xe4,
-  'Switch': 0xe5
+  'BrOnNonNull': 0xd6
 };
 
 function defineWasmOpcode(name, value) {
@@ -728,7 +721,6 @@ let kExprI64AtomicCompareExchange16U = 0x4d;
 let kExprI64AtomicCompareExchange32U = 0x4e;
 
 // Atomic GC opcodes (shared-everything-threads).
-const kExprPause = 0x04;
 const kExprStructAtomicGet = 0x5c;
 const kExprStructAtomicGetS = 0x5d;
 const kExprStructAtomicGetU = 0x5e;
@@ -738,8 +730,6 @@ const kExprStructAtomicSub = 0x61;
 const kExprStructAtomicAnd = 0x62;
 const kExprStructAtomicOr = 0x63;
 const kExprStructAtomicXor = 0x64;
-const kExprStructAtomicExchange = 0x65;
-const kExprStructAtomicCompareExchange = 0x66;
 const kExprArrayAtomicGet = 0x67;
 const kExprArrayAtomicGetS = 0x68;
 const kExprArrayAtomicGetU = 0x69;
@@ -749,8 +739,6 @@ const kExprArrayAtomicSub = 0x6c;
 const kExprArrayAtomicAnd = 0x6d;
 const kExprArrayAtomicOr = 0x6e;
 const kExprArrayAtomicXor = 0x6f;
-const kExprArrayAtomicExchange = 0x70;
-const kExprArrayAtomicCompareExchange = 0x71;
 
 // Simd opcodes.
 let kExprS128LoadMem = 0x00;
@@ -1048,6 +1036,15 @@ let kExprF32x4PromoteLowF16x8 = wasmSignedLeb(0x14b);
 let kExprF16x8Qfma = wasmSignedLeb(0x14e);
 let kExprF16x8Qfms = wasmSignedLeb(0x14f);
 
+// Compilation hint constants.
+let kCompilationHintStrategyDefault = 0x00;
+let kCompilationHintStrategyLazy = 0x01;
+let kCompilationHintStrategyEager = 0x02;
+let kCompilationHintStrategyLazyBaselineEagerTopTier = 0x03;
+let kCompilationHintTierDefault = 0x00;
+let kCompilationHintTierBaseline = 0x01;
+let kCompilationHintTierOptimized = 0x02;
+
 let kTrapUnreachable = 0;
 let kTrapMemOutOfBounds = 1;
 let kTrapDivByZero = 2;
@@ -1074,10 +1071,6 @@ let kCatchNoRef = 0x0;
 let kCatchRef = 0x1;
 let kCatchAllNoRef = 0x2;
 let kCatchAllRef = 0x3;
-
-// Stack switching handler kinds.
-let kOnSuspend = 0x0;
-let kOnSwitch = 0x1;
 
 let kTrapMsgs = [
   'unreachable',                                    // --
@@ -1268,6 +1261,11 @@ class WasmFunctionBuilder {
     return this;
   }
 
+  setCompilationHint(strategy, baselineTier, topTier) {
+    this.module.setCompilationHint(strategy, baselineTier, topTier, this.index);
+    return this;
+  }
+
   addBody(body) {
     checkExpr(body);
     // Store a copy of the body, and automatically add the end opcode.
@@ -1402,15 +1400,6 @@ class WasmArray {
   }
 }
 
-class WasmCont {
-  constructor(type_index) {
-    this.type_index = type_index;
-    this.supertype = kNoSuperType;
-    this.is_final = true;
-    this.is_shared = false;
-  }
-}
-
 class WasmElemSegment {
   constructor(table, offset, type, elements, is_decl, is_shared) {
     this.table = table;
@@ -1458,11 +1447,11 @@ class WasmModuleBuilder {
     this.tags = [];
     this.memories = [];
     this.functions = [];
+    this.compilation_hints = [];
     this.element_segments = [];
     this.data_segments = [];
     this.explicit = [];
     this.rec_groups = [];
-    this.compilation_priorities = new Map();
     this.num_imported_funcs = 0;
     this.num_imported_globals = 0;
     this.num_imported_tables = 0;
@@ -1559,13 +1548,6 @@ class WasmModuleBuilder {
         new WasmArray(type, mutability, is_final, is_shared, supertype_idx));
     return this.types.length - 1;
   }
-
-  addCont(type) {
-    let type_index = (typeof type) == 'number' ? type : this.addType(type);
-    this.types.push(new WasmCont(type_index));
-    return this.types.length - 1;
-  }
-
 
   nextTypeIndex() { return this.types.length; }
 
@@ -1749,6 +1731,15 @@ class WasmModuleBuilder {
     return this;
   }
 
+  setCompilationHint(strategy, baselineTier, topTier, index) {
+    this.compilation_hints[index] = {
+      strategy: strategy,
+      baselineTier: baselineTier,
+      topTier: topTier
+    };
+    return this;
+  }
+
   addActiveDataSegment(memory_index, offset, data, is_shared = false) {
     checkExpr(offset);
     this.data_segments.push({
@@ -1863,13 +1854,6 @@ class WasmModuleBuilder {
     return this;
   }
 
-  setCompilationPriority(
-      function_index, compilation_priority, optimization_priority) {
-    this.compilation_priorities.set(function_index, {
-      compilation_priority, optimization_priority
-    });
-  }
-
   toBuffer(debug = false) {
     let binary = new Binary;
     let wasm = this;
@@ -1927,9 +1911,6 @@ class WasmModuleBuilder {
             section.emit_u8(kWasmArrayTypeForm);
             section.emit_type(type.type);
             section.emit_u8(type.mutability ? 1 : 0);
-          } else if (type instanceof WasmCont) {
-            section.emit_u8(kWasmContTypeForm);
-            section.emit_u32v(type.type_index);
           } else {
             section.emit_u8(kWasmFunctionTypeForm);
             section.emit_u32v(type.params.length);
@@ -2177,6 +2158,40 @@ class WasmModuleBuilder {
       });
     }
 
+    // If there are compilation hints add a custom section 'compilationHints'
+    // after the function section and before the code section.
+    if (wasm.compilation_hints.length > 0) {
+      if (debug) print('emitting compilation hints @ ' + binary.length);
+      // Build custom section payload.
+      let payloadBinary = new Binary();
+      let implicit_compilation_hints_count = wasm.functions.length;
+      payloadBinary.emit_u32v(implicit_compilation_hints_count);
+
+      // Defaults to the compiler's choice if no better hint was given (0x00).
+      let defaultHintByte = kCompilationHintStrategyDefault |
+          (kCompilationHintTierDefault << 2) |
+          (kCompilationHintTierDefault << 4);
+
+      // Emit hint byte for every function defined in this module.
+      for (let i = 0; i < implicit_compilation_hints_count; i++) {
+        let index = wasm.num_imported_funcs + i;
+        var hintByte;
+        if (index in wasm.compilation_hints) {
+          let hint = wasm.compilation_hints[index];
+          hintByte =
+              hint.strategy | (hint.baselineTier << 2) | (hint.topTier << 4);
+        } else {
+          hintByte = defaultHintByte;
+        }
+        payloadBinary.emit_u8(hintByte);
+      }
+
+      // Finalize as custom section.
+      let name = 'compilationHints';
+      let bytes = this.createCustomSection(name, payloadBinary.trunc_buffer());
+      binary.emit_bytes(bytes);
+    }
+
     // Add function bodies.
     if (wasm.functions.length > 0) {
       // emit function bodies
@@ -2294,28 +2309,6 @@ class WasmModuleBuilder {
           });
         }
       });
-    }
-
-    // Add compilation priorities.
-    if (this.compilation_priorities.size > 0) {
-      binary.emit_section(kUnknownSectionCode, section => {
-        section.emit_string("metadata.code.compilation_priority");
-        section.emit_u32v(this.compilation_priorities.size);
-        this.compilation_priorities.forEach((priority, index) => {
-          section.emit_u32v(index);
-          section.emit_u8(0);  // Byte offset 0 for function level hint.
-          let compilation_priority =
-              wasmUnsignedLeb(priority.compilation_priority);
-          let optimization_priority =
-              priority.optimization_priority != undefined ?
-              wasmUnsignedLeb(priority.optimization_priority) :
-              [];
-          section.emit_u32v(compilation_priority.length +
-                            optimization_priority.length);
-          section.emit_bytes(compilation_priority);
-          section.emit_bytes(optimization_priority);
-        })
-      })
     }
 
     return binary.trunc_buffer();

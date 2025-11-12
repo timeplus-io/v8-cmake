@@ -301,8 +301,6 @@ void StringStream::PrintName(Tagged<Object> name) {
 
 void StringStream::PrintUsingMap(Isolate* isolate, Tagged<JSObject> js_object) {
   Tagged<Map> map = js_object->map();
-  if (map->is_dictionary_map()) return;
-
   Tagged<DescriptorArray> descs = map->instance_descriptors(isolate);
   for (InternalIndex i : map->IterateOwnDescriptors()) {
     PropertyDetails details = descs->GetDetails(i);

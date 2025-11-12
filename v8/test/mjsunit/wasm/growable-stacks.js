@@ -18,17 +18,14 @@ function flatRange(upperBound, gen) {
 function growAndShrinkTwice(depth, paramType, constFn, addOp, result, heavy = false) {
   const builder = new WasmModuleBuilder();
   builder.addGlobal(kWasmI32, true).exportAs('depth');
-  // To cover the large frame stack check, make the import return 512 extra
-  // i64s. This makes the frame statically bigger than 4kb on both compilers.
-  let extra_returns = heavy ? 512 : 0;
   const numIntArgs = 10;
   const numTypes = Array(numIntArgs).fill(paramType);
   var sig = makeSig(numTypes, numTypes);
-  let import_index = builder.addImport("m", "import",
-      makeSig(numTypes, numTypes.concat(Array(extra_returns).fill(kWasmI64))));
+  builder.addImport('m', 'import', sig);
   let sig_if = builder.addType(makeSig([], numTypes));
   let deep_calc = builder.addFunction("deep_calc", sig);
   deep_calc
+    .addLocals(kWasmI64, heavy ? 512 : 0) // make a frame bigger than 4kb
     .addBody([
       // decrement global
       kExprGlobalGet, 0,
@@ -47,8 +44,7 @@ function growAndShrinkTwice(depth, paramType, constFn, addOp, result, heavy = fa
       // else
       kExprElse,
       ...flatRange(numIntArgs, i => [kExprLocalGet, i]),
-      kExprCallFunction, import_index,
-      ...Array(extra_returns).fill(kExprDrop),
+      kExprCallFunction, 0,
       kExprEnd
     ])
   builder.addFunction("test", makeSig([], numTypes))
@@ -66,7 +62,7 @@ function growAndShrinkTwice(depth, paramType, constFn, addOp, result, heavy = fa
       kExprCallFunction, deep_calc.index,
     ]).exportFunc();
   const js_import = new WebAssembly.Suspending((...args) => {
-    return Promise.resolve(args.concat(Array(extra_returns).fill(0n)))
+    return Promise.resolve(args)
   })
   const instance = builder.instantiate({ m: { import: js_import } });
   const wrapper = WebAssembly.promising(instance.exports.test);

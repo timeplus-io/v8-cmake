@@ -373,10 +373,7 @@ export class Profile {
     COMPILER: 4,
     OTHER: 5,
     EXTERNAL: 6,
-    ATOMICS_WAIT: 7,
-    IDLE: 8,
-    LOGGING: 9,
-    IDLE_EXTERNAL: 10,
+    IDLE: 7,
   }
 
   static CodeType = {
@@ -436,8 +433,6 @@ export class Profile {
         return 'Other';
       case this.VMState.EXTERNAL:
         return 'External';
-      case this.VMState.EXTERNAL_IDLE:
-        return 'ExternalIdle';
       case this.VMState.IDLE:
         return 'Idle';
     }

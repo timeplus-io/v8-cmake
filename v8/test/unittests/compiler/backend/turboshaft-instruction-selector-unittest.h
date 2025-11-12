@@ -396,7 +396,7 @@ class TurboshaftInstructionSelectorTest : public TestWithNativeContextAndZone {
     using Assembler::Projection;
     OpIndex Projection(OpIndex input, int index) {
       const Operation& input_op = output_graph().Get(input);
-      if (const MakeTupleOp* tuple = input_op.TryCast<MakeTupleOp>()) {
+      if (const TupleOp* tuple = input_op.TryCast<TupleOp>()) {
         DCHECK_LT(index, tuple->input_count);
         return tuple->input(index);
       }

@@ -489,8 +489,8 @@ std::ostream& operator<<(std::ostream& os, const FlagsMode& fm) {
       return os << "trap";
     case kFlags_select:
       return os << "select";
-    case kFlags_conditional_trap:
-      return os << "conditional trap";
+    case kFlags_conditional_set:
+      return os << "conditional set";
     case kFlags_conditional_branch:
       return os << "conditional branch";
   }
@@ -674,9 +674,8 @@ InstructionBlock::InstructionBlock(Zone* zone, RpoNumber rpo_number,
       deferred_(deferred),
       handler_(handler),
       table_switch_target_(false),
-      align_switch_targets_(false),
-      align_branch_targets_(false),
-      align_loop_headers_(false),
+      code_target_alignment_(false),
+      loop_header_alignment_(false),
       needs_frame_(!v8_flags.turbo_elide_frames),
       must_construct_frame_(false),
       must_deconstruct_frame_(false),
@@ -932,29 +931,15 @@ void InstructionSequence::ComputeAssemblyOrder() {
           ao_blocks_->push_back(loop_end);
           // This block will be the new machine-level loop header, so align
           // this block instead of the loop header block.
-          loop_end->set_align_loop_headers(true);
+          loop_end->set_loop_header_alignment(true);
           header_align = false;
         }
       }
-      block->set_align_loop_headers(header_align);
+      block->set_loop_header_alignment(header_align);
     }
-    if (block->loop_header().IsValid()) {
-      if (block->IsTableSwitchTarget()) {
-        block->set_align_switch_targets(true);
-      } else {
-        // If this block has no fallthrough predecessors then it can only be
-        // accessed via a jump.
-        RpoNumber ao_pred_block = ao_blocks_->back()->rpo_number();
-        if (std::none_of(block->predecessors().begin(),
-                         block->predecessors().end(),
-                         [&ao_pred_block](RpoNumber pred) {
-                           return pred == ao_pred_block;
-                         })) {
-          block->set_align_branch_targets(true);
-        }
-      }
+    if (block->loop_header().IsValid() && block->IsTableSwitchTarget()) {
+      block->set_code_target_alignment(true);
     }
-
     block->set_ao_number(RpoNumber::FromInt(ao++));
     ao_blocks_->push_back(block);
   }

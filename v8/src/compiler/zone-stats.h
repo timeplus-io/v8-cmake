@@ -46,7 +46,9 @@ class V8_EXPORT_PRIVATE ZoneStats final {
     }
 
     Zone* zone() {
-      if (zone_ == nullptr) zone_ = zone_stats_->NewEmptyZone(zone_name_);
+      if (zone_ == nullptr)
+        zone_ =
+            zone_stats_->NewEmptyZone(zone_name_, support_zone_compression_);
       return zone_;
     }
     void Destroy() {
@@ -96,7 +98,7 @@ class V8_EXPORT_PRIVATE ZoneStats final {
   size_t GetCurrentAllocatedBytes() const;
 
  private:
-  Zone* NewEmptyZone(const char* zone_name);
+  Zone* NewEmptyZone(const char* zone_name, bool support_zone_compression);
   void ReturnZone(Zone* zone);
 
   static const size_t kMaxUnusedSize = 3;

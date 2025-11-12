@@ -8,7 +8,6 @@
 // support for --single-threaded.
 // Flags: --no-enable-ssse3 --no-wasm-lazy-compilation --single-threaded
 // Flags: --wasm-allow-mixed-eh-for-testing
-// Flags: --experimental-fuzzing
 
 for (let i = 0; i < 100; i++) {
   %WasmGenerateRandomModule();

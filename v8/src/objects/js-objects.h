@@ -464,10 +464,8 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   DECL_GETTER(element_dictionary, Tagged<NumberDictionary>)
 
   // Requires: HasFastElements().
-  static inline void EnsureWritableFastElements(Isolate* isolate,
-                                                DirectHandle<JSObject> object);
-  V8_NOINLINE V8_PRESERVE_MOST static void MakeElementsWritable(
-      Isolate* isolate, DirectHandle<JSObject> object);
+  static void EnsureWritableFastElements(Isolate* isolate,
+                                         DirectHandle<JSObject> object);
 
   V8_WARN_UNUSED_RESULT static Maybe<InterceptorResult>
   SetPropertyWithInterceptor(LookupIterator* it,
@@ -492,8 +490,7 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
       PropertyAttributes attributes, Maybe<ShouldThrow> should_throw,
       AccessorInfoHandling handling = DONT_FORCE_FIELD,
       EnforceDefineSemantics semantics = EnforceDefineSemantics::kSet,
-      StoreOrigin store_origin = StoreOrigin::kNamed,
-      MaybeDirectHandle<Object> old_value = {});
+      StoreOrigin store_origin = StoreOrigin::kNamed);
 
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<Object> V8_EXPORT_PRIVATE
   SetOwnPropertyIgnoreAttributes(DirectHandle<JSObject> object,

@@ -21,6 +21,7 @@ assertNotNull = (value, name_opt) => { __prettyPrint(value); };
 assertUnoptimized = () => {};
 assertOptimized = () => {};
 isNeverOptimize = () => {};
+isAlwaysOptimize = () => {};
 isInterpreted = () => {};
 isBaseline = () => {};
 isUnoptimized = () => {};

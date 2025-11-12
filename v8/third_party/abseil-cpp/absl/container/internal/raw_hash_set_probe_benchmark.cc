@@ -71,7 +71,7 @@ struct Policy {
     return std::forward<F>(f)(arg, arg);
   }
 
-  template <class Hash, bool kIsDefault>
+  template <class Hash>
   static constexpr auto get_hash_slot_fn() {
     return nullptr;
   }

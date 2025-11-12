@@ -168,14 +168,6 @@ class V8_EXPORT_PRIVATE Sandbox {
   }
 
   /**
-   * Returns a PageAllocator weak pointer instance that allocates pages inside
-   * the sandbox. This version is for BackingStores that can outlive sandbox.
-   */
-  std::weak_ptr<v8::PageAllocator> page_allocator_weak() const {
-    return sandbox_page_allocator_;
-  }
-
-  /**
    * Returns true if the given address lies within the sandbox address space.
    */
   bool Contains(Address addr) const {
@@ -318,7 +310,7 @@ class V8_EXPORT_PRIVATE Sandbox {
   std::unique_ptr<v8::VirtualAddressSpace> address_space_;
 
   // The page allocator instance for this sandbox.
-  std::shared_ptr<v8::PageAllocator> sandbox_page_allocator_;
+  std::unique_ptr<v8::PageAllocator> sandbox_page_allocator_;
 
   // Constant objects inside this sandbox.
   SandboxedPointerConstants constants_;

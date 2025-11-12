@@ -407,8 +407,7 @@ CreateArgumentsType const& CreateArgumentsTypeOf(const Operator* op) {
 bool operator==(CreateArrayParameters const& lhs,
                 CreateArrayParameters const& rhs) {
   return lhs.arity() == rhs.arity() &&
-         AddressOrNull(lhs.site_) == AddressOrNull(rhs.site_) &&
-         lhs.call_feedback() == rhs.call_feedback();
+         AddressOrNull(lhs.site_) == AddressOrNull(rhs.site_);
 }
 
 
@@ -419,8 +418,7 @@ bool operator!=(CreateArrayParameters const& lhs,
 
 
 size_t hash_value(CreateArrayParameters const& p) {
-  return base::hash_combine(p.arity(), AddressOrNull(p.site_),
-                            FeedbackSource::Hash()(p.feedback_));
+  return base::hash_combine(p.arity(), AddressOrNull(p.site_));
 }
 
 
@@ -429,7 +427,6 @@ std::ostream& operator<<(std::ostream& os, CreateArrayParameters const& p) {
   if (p.site_.has_value()) {
     os << ", " << Brief(*p.site_->object());
   }
-  os << ", " << p.call_feedback();
   return os;
 }
 
@@ -703,12 +700,18 @@ ForInParameters const& ForInParametersOf(const Operator* op) {
 
 #if V8_ENABLE_WEBASSEMBLY
 JSWasmCallParameters::JSWasmCallParameters(
-    wasm::NativeModule* native_module, int function_index,
-    SharedFunctionInfoRef shared_fct_info, FeedbackSource const& feedback)
-    : native_module_(native_module),
+    const wasm::WasmModule* module, const wasm::CanonicalSig* signature,
+    int function_index, SharedFunctionInfoRef shared_fct_info,
+    wasm::NativeModule* native_module, FeedbackSource const& feedback)
+    : module_(module),
+      signature_(signature),
       function_index_(function_index),
       shared_fct_info_(shared_fct_info),
-      feedback_(feedback) {}
+      native_module_(native_module),
+      feedback_(feedback) {
+  DCHECK_NOT_NULL(module);
+  DCHECK(wasm::GetTypeCanonicalizer()->Contains(signature));
+}
 
 JSWasmCallParameters const& JSWasmCallParametersOf(const Operator* op) {
   DCHECK_EQ(IrOpcode::kJSWasmCall, op->opcode());
@@ -716,35 +719,32 @@ JSWasmCallParameters const& JSWasmCallParametersOf(const Operator* op) {
 }
 
 std::ostream& operator<<(std::ostream& os, JSWasmCallParameters const& p) {
-  return os << p.native_module() << ", " << p.function_index() << ", "
-            << p.feedback();
+  return os << p.module() << ", " << p.signature() << ", " << p.feedback();
 }
 
 size_t hash_value(JSWasmCallParameters const& p) {
-  return base::hash_combine(p.native_module(), p.function_index(),
+  return base::hash_combine(p.module(), p.signature(),
                             FeedbackSource::Hash()(p.feedback()));
 }
 
 bool operator==(JSWasmCallParameters const& lhs,
                 JSWasmCallParameters const& rhs) {
-  return lhs.native_module() == rhs.native_module() &&
-         lhs.function_index() == rhs.function_index() &&
+  return lhs.module() == rhs.module() && lhs.signature() == rhs.signature() &&
          lhs.feedback() == rhs.feedback();
 }
 
 int JSWasmCallParameters::arity_without_implicit_args() const {
-  const wasm::WasmModule* module = native_module_->module();
-  const wasm::FunctionSig* sig = module->functions[function_index_].sig;
-  return static_cast<int>(sig->parameter_count());
+  return static_cast<int>(signature_->parameter_count());
 }
 
 int JSWasmCallParameters::input_count() const {
-  return arity_without_implicit_args() + JSWasmCallNode::kExtraInputCount;
+  return static_cast<int>(signature_->parameter_count()) +
+         JSWasmCallNode::kExtraInputCount;
 }
 
 // static
-Type JSWasmCallNode::TypeForWasmReturnKind(wasm::ValueKind kind) {
-  switch (kind) {
+Type JSWasmCallNode::TypeForWasmReturnType(wasm::CanonicalValueType type) {
+  switch (type.kind()) {
     case wasm::kI32:
       return Type::Signed32();
     case wasm::kI64:
@@ -754,6 +754,7 @@ Type JSWasmCallNode::TypeForWasmReturnKind(wasm::ValueKind kind) {
       return Type::Number();
     case wasm::kRef:
     case wasm::kRefNull:
+      CHECK(type.is_reference_to(wasm::HeapType::kExtern));
       return Type::Any();
     default:
       UNREACHABLE();
@@ -963,10 +964,15 @@ const Operator* JSOperatorBuilder::CallRuntime(
 
 #if V8_ENABLE_WEBASSEMBLY
 const Operator* JSOperatorBuilder::CallWasm(
-    wasm::NativeModule* native_module, int wasm_function_index,
-    SharedFunctionInfoRef shared_fct_info, FeedbackSource const& feedback) {
-  JSWasmCallParameters parameters(native_module, wasm_function_index,
-                                  shared_fct_info, feedback);
+    const wasm::WasmModule* wasm_module,
+    const wasm::CanonicalSig* wasm_signature, int wasm_function_index,
+    SharedFunctionInfoRef shared_fct_info, wasm::NativeModule* native_module,
+    FeedbackSource const& feedback) {
+  // TODO(clemensb): Drop wasm_module.
+  DCHECK_EQ(wasm_module, native_module->module());
+  JSWasmCallParameters parameters(wasm_module, wasm_signature,
+                                  wasm_function_index, shared_fct_info,
+                                  native_module, feedback);
   return zone()->New<Operator1<JSWasmCallParameters>>(
       IrOpcode::kJSWasmCall, Operator::kNoProperties,  // opcode
       "JSWasmCall",                                    // name
@@ -1082,13 +1088,6 @@ const Operator* JSOperatorBuilder::GetIterator(
       "JSGetIterator",                                    // name
       2, 1, 1, 1, 1, 2,                                   // counts
       access);                                            // parameter
-}
-
-const Operator* JSOperatorBuilder::ForOfNext() {
-  return zone()->New<Operator>(                         // --
-      IrOpcode::kJSForOfNext, Operator::kNoProperties,  // opcode
-      "JSForOfNext",                                    // name
-      2, 1, 1, 2, 1, 2);                                // counts
 }
 
 const Operator* JSOperatorBuilder::HasProperty(FeedbackSource const& feedback) {
@@ -1333,11 +1332,10 @@ const Operator* JSOperatorBuilder::CreateArguments(CreateArgumentsType type) {
 }
 
 const Operator* JSOperatorBuilder::CreateArray(size_t arity,
-                                               OptionalAllocationSiteRef site,
-                                               const FeedbackSource& feedback) {
+                                               OptionalAllocationSiteRef site) {
   // constructor, new_target, arg1, ..., argN
   int const value_input_count = static_cast<int>(arity) + 2;
-  CreateArrayParameters parameters(arity, site, feedback);
+  CreateArrayParameters parameters(arity, site);
   return zone()->New<Operator1<CreateArrayParameters>>(   // --
       IrOpcode::kJSCreateArray, Operator::kNoProperties,  // opcode
       "JSCreateArray",                                    // name

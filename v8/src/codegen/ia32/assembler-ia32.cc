@@ -285,9 +285,15 @@ Register Operand::reg() const {
 
 bool operator!=(Operand op, XMMRegister r) { return !op.is_reg(r); }
 
-void Assembler::PatchInHeapNumberRequest(Address pc,
-                                         Handle<HeapNumber> object) {
-  WriteUnalignedValue(pc, object);
+void Assembler::AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate) {
+  DCHECK_IMPLIES(isolate == nullptr, heap_number_requests_.empty());
+  for (auto& request : heap_number_requests_) {
+    Handle<HeapObject> object =
+        isolate->factory()->NewHeapNumber<AllocationType::kOld>(
+            request.heap_number());
+    Address pc = reinterpret_cast<Address>(buffer_start_) + request.offset();
+    WriteUnalignedValue(pc, object);
+  }
 }
 
 // -----------------------------------------------------------------------------

@@ -69,24 +69,9 @@ static_assert(
 #undef STR
 #undef XSTR
 
-START_PROHIBIT_SIGN_CONVERSION()
-
 namespace v8::internal {
 
 namespace {
-
-// Performs a SBXCHECK-ed conversion from V8 length to ICU length (int32_t).
-int32_t to_icu_length(uint32_t value) {
-  int32_t result = static_cast<int32_t>(value);
-  SBXCHECK_LE(0, result);
-  return result;
-}
-
-// Performs a SBXCHECK-ed conversion from ICU length (int32_t) to V8 length.
-uint32_t from_icu_length(int32_t value) {
-  SBXCHECK_LE(0, value);
-  return static_cast<uint32_t>(value);
-}
 
 inline constexpr uint8_t AsOneByte(uint16_t ch) {
   DCHECK_LE(ch, kMaxUInt8);
@@ -139,7 +124,7 @@ bool ToUpperFastASCII(base::Vector<const uint16_t> src,
                       DirectHandle<SeqOneByteString> result) {
   // Do a faster loop for the case where all the characters are ASCII.
   uint16_t ored = 0;
-  uint32_t index = 0;
+  int32_t index = 0;
   for (const uint16_t* it = src.begin(); it != src.end(); ++it) {
     uint16_t ch = *it;
     ored |= ch;
@@ -152,7 +137,7 @@ const uint16_t sharp_s = 0xDF;
 
 template <typename Char>
 bool ToUpperOneByte(base::Vector<const Char> src, uint8_t* dest,
-                    uint32_t* sharp_s_count) {
+                    int* sharp_s_count) {
   // Still pretty-fast path for the input with non-ASCII Latin-1 characters.
 
   // There are two special cases.
@@ -179,7 +164,7 @@ bool ToUpperOneByte(base::Vector<const Char> src, uint8_t* dest,
 template <typename Char>
 void ToUpperWithSharpS(base::Vector<const Char> src,
                        DirectHandle<SeqOneByteString> result) {
-  uint32_t dest_index = 0;
+  int32_t dest_index = 0;
   for (auto it = src.begin(); it != src.end(); ++it) {
     uint8_t ch = AsOneByte(*it);
     if (ch == sharp_s) {
@@ -191,8 +176,8 @@ void ToUpperWithSharpS(base::Vector<const Char> src,
   }
 }
 
-inline uint32_t FindFirstUpperOrNonAscii(Tagged<String> s, uint32_t length) {
-  for (uint32_t index = 0; index < length; ++index) {
+inline int FindFirstUpperOrNonAscii(Tagged<String> s, int length) {
+  for (int index = 0; index < length; ++index) {
     uint16_t ch = s->Get(index);
     if (V8_UNLIKELY(IsAsciiUpper(ch) || ch & ~0x7F)) {
       return index;
@@ -203,7 +188,7 @@ inline uint32_t FindFirstUpperOrNonAscii(Tagged<String> s, uint32_t length) {
 
 const UChar* GetUCharBufferFromFlat(const String::FlatContent& flat,
                                     std::unique_ptr<base::uc16[]>* dest,
-                                    uint32_t length) {
+                                    int32_t length) {
   DCHECK(flat.IsFlat());
   if (flat.IsOneByte()) {
     if (!*dest) {
@@ -233,7 +218,7 @@ const uint8_t* Intl::ToLatin1LowerTable() { return &kToLower[0]; }
 
 icu::UnicodeString Intl::ToICUUnicodeString(Isolate* isolate,
                                             DirectHandle<String> string,
-                                            uint32_t offset) {
+                                            int offset) {
   DCHECK(string->IsFlat());
   DisallowGarbageCollection no_gc;
   std::unique_ptr<base::uc16[]> sap;
@@ -247,47 +232,40 @@ icu::UnicodeString Intl::ToICUUnicodeString(Isolate* isolate,
   // attacker model) and we therefore need to use an unsigned int here when
   // comparing it against the kShortStringSize.
   uint32_t length = string->length();
+  // As the length is untrusted, we should also double-check the offset here.
+  // Technically it's fine for the offset to go out-of-bounds since it will
+  // only cause an OOB read (not write) outside the sandbox, but we still want
+  // to avoid these issues. An alternative would be for this function to
+  // allocate temporary buffers inside the sandbox, then there would be no need
+  // for additional bounds checks here (since we're using 32-bit sizes/offsets).
+  SBXCHECK_LE(offset, length);
   if (flat.IsOneByte() && length <= kShortStringSize) {
     CopyChars(short_string_buffer, flat.ToOneByteVector().begin(), length);
     uchar_buffer = short_string_buffer;
   } else {
     uchar_buffer = GetUCharBufferFromFlat(flat, &sap, length);
   }
-  // As the length is untrusted, we should also double-check the offset here.
-  // Technically it's fine for the offset to go out-of-bounds since it will
-  // only cause an OOB read (not write) outside the sandbox, but we still want
-  // to avoid these issues. An alternative would be for this function to
-  // allocate temporary buffers inside the sandbox, then there would be no need
-  // for additional bounds checks here (since we're using 32-bit sizes/offsets).
-  SBXCHECK_LE(offset, length);
-  return icu::UnicodeString(uchar_buffer + offset,
-                            to_icu_length(length - offset));
+  return icu::UnicodeString(uchar_buffer + offset, length - offset);
 }
 
 namespace {
 
 icu::StringPiece ToICUStringPiece(Isolate* isolate, DirectHandle<String> string,
-                                  uint32_t offset = 0) {
+                                  int offset = 0) {
   DCHECK(string->IsFlat());
   DisallowGarbageCollection no_gc;
 
   const String::FlatContent& flat = string->GetFlatContent(no_gc);
   if (!flat.IsOneByte()) return icu::StringPiece();
 
-  uint32_t length = string->length();
+  int32_t length = string->length();
   const char* char_buffer =
       reinterpret_cast<const char*>(flat.ToOneByteVector().begin());
   if (!String::IsAscii(char_buffer, length)) {
     return icu::StringPiece();
   }
-  // As the length is untrusted, we should also double-check the offset here.
-  // Technically it's fine for the offset to go out-of-bounds since it will
-  // only cause an OOB read (not write) outside the sandbox, but we still want
-  // to avoid these issues. An alternative would be for this function to
-  // allocate temporary buffers inside the sandbox, then there would be no need
-  // for additional bounds checks here (since we're using 32-bit sizes/offsets).
-  SBXCHECK_LE(offset, length);
-  return icu::StringPiece(char_buffer + offset, to_icu_length(length - offset));
+
+  return icu::StringPiece(char_buffer + offset, length - offset);
 }
 
 MaybeHandle<String> LocaleConvertCase(Isolate* isolate, DirectHandle<String> s,
@@ -313,10 +291,9 @@ MaybeHandle<String> LocaleConvertCase(Isolate* isolate, DirectHandle<String> s,
     String::FlatContent flat = s->GetFlatContent(no_gc);
     const UChar* src = GetUCharBufferFromFlat(flat, &sap, src_length);
     status = U_ZERO_ERROR;
-    dest_length = from_icu_length(
+    dest_length =
         case_converter(reinterpret_cast<UChar*>(result->GetChars(no_gc)),
-                       to_icu_length(dest_length), src,
-                       to_icu_length(src_length), lang, &status));
+                       dest_length, src, src_length, lang, &status);
     if (status != U_BUFFER_OVERFLOW_ERROR) break;
   }
 
@@ -348,14 +325,14 @@ Tagged<String> Intl::ConvertOneByteToLower(Tagged<String> src,
 
   DisallowGarbageCollection no_gc;
 
-  const uint32_t length = src->length();
+  const int length = src->length();
   String::FlatContent src_flat = src->GetFlatContent(no_gc);
   uint8_t* dst_data = Cast<SeqOneByteString>(dst)->GetChars(no_gc);
 
   if (src_flat.IsOneByte()) {
     const uint8_t* src_data = src_flat.ToOneByteVector().begin();
 
-    uint32_t ascii_prefix_length = FastAsciiConvert<unibrow::ToLowercase>(
+    int ascii_prefix_length = FastAsciiConvert<unibrow::ToLowercase>(
         reinterpret_cast<char*>(dst_data),
         reinterpret_cast<const char*>(src_data), length);
 
@@ -363,17 +340,17 @@ Tagged<String> Intl::ConvertOneByteToLower(Tagged<String> src,
 
     // If not ASCII, we keep the result up to index_to_first_unprocessed and
     // process the rest.
-    for (uint32_t index = ascii_prefix_length; index < length; ++index) {
+    for (int index = ascii_prefix_length; index < length; ++index) {
       dst_data[index] = ToLatin1Lower(src_data[index]);
     }
   } else {
     DCHECK(src_flat.IsTwoByte());
-    uint32_t index_to_first_unprocessed = FindFirstUpperOrNonAscii(src, length);
+    int index_to_first_unprocessed = FindFirstUpperOrNonAscii(src, length);
     if (index_to_first_unprocessed == length) return src;
 
     const uint16_t* src_data = src_flat.ToUC16Vector().begin();
     CopyChars(dst_data, src_data, index_to_first_unprocessed);
-    for (uint32_t index = index_to_first_unprocessed; index < length; ++index) {
+    for (int index = index_to_first_unprocessed; index < length; ++index) {
       // Truncating cast of two-byte src character to one-byte value. For valid
       // cases (where a one-byte sliced string points to a two-byte parent) this
       // will not lose any information, but we need to truncate anyway to
@@ -392,7 +369,7 @@ MaybeHandle<String> Intl::ConvertToLower(Isolate* isolate,
     return LocaleConvertCase(isolate, s, false, "");
   }
 
-  uint32_t length = s->length();
+  int length = s->length();
 
   // We depend here on the invariant that the length of a Latin1
   // string is invariant under ToLowerCase, and the result always
@@ -436,7 +413,7 @@ MaybeDirectHandle<String> Intl::ConvertToUpper(Isolate* isolate,
         isolate->factory()->NewRawOneByteString(length).ToHandleChecked();
 
     DCHECK(s->IsFlat());
-    uint32_t sharp_s_count;
+    int sharp_s_count;
     bool is_result_single_byte;
     {
       DisallowGarbageCollection no_gc;
@@ -528,8 +505,7 @@ Maybe<icu::Locale> CreateICULocale(const std::string& bcp47_locale) {
 MaybeHandle<String> Intl::ToString(Isolate* isolate,
                                    const icu::UnicodeString& string) {
   return isolate->factory()->NewStringFromTwoByte(base::Vector<const uint16_t>(
-      reinterpret_cast<const uint16_t*>(string.getBuffer()),
-      from_icu_length(string.length())));
+      reinterpret_cast<const uint16_t*>(string.getBuffer()), string.length()));
 }
 
 MaybeDirectHandle<String> Intl::ToString(Isolate* isolate,
@@ -541,7 +517,7 @@ MaybeDirectHandle<String> Intl::ToString(Isolate* isolate,
 namespace {
 
 Handle<JSObject> InnerAddElement(Isolate* isolate, DirectHandle<JSArray> array,
-                                 uint32_t index,
+                                 int index,
                                  DirectHandle<String> field_type_string,
                                  DirectHandle<String> value) {
   // let element = $array[$index] = {
@@ -567,15 +543,15 @@ Handle<JSObject> InnerAddElement(Isolate* isolate, DirectHandle<JSArray> array,
 
 }  // namespace
 
-void Intl::AddElement(Isolate* isolate, DirectHandle<JSArray> array,
-                      uint32_t index, DirectHandle<String> field_type_string,
+void Intl::AddElement(Isolate* isolate, DirectHandle<JSArray> array, int index,
+                      DirectHandle<String> field_type_string,
                       DirectHandle<String> value) {
   // Same as $array[$index] = {type: $field_type_string, value: $value};
   InnerAddElement(isolate, array, index, field_type_string, value);
 }
 
-void Intl::AddElement(Isolate* isolate, DirectHandle<JSArray> array,
-                      uint32_t index, DirectHandle<String> field_type_string,
+void Intl::AddElement(Isolate* isolate, DirectHandle<JSArray> array, int index,
+                      DirectHandle<String> field_type_string,
                       DirectHandle<String> value,
                       DirectHandle<String> additional_property_name,
                       DirectHandle<String> additional_property_value) {
@@ -741,12 +717,15 @@ Maybe<std::string> CanonicalizeLanguageTag(Isolate* isolate,
   if (IsString(*locale_in)) {
     locale_str = Cast<String>(locale_in);
   } else if (IsJSReceiver(*locale_in)) {
-    ASSIGN_RETURN_ON_EXCEPTION(isolate, locale_str,
-                               Object::ToString(isolate, locale_in));
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, locale_str,
+                                     Object::ToString(isolate, locale_in),
+                                     Nothing<std::string>());
   } else {
-    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kLanguageID));
+    THROW_NEW_ERROR_RETURN_VALUE(isolate,
+                                 NewTypeError(MessageTemplate::kLanguageID),
+                                 Nothing<std::string>());
   }
-  std::string locale = locale_str->ToStdString();
+  std::string locale(locale_str->ToCString().get());
   return Intl::ValidateAndCanonicalizeUnicodeLocaleId(isolate, locale);
 }
 
@@ -756,10 +735,11 @@ Maybe<std::string> CanonicalizeLanguageTag(Isolate* isolate,
 Maybe<std::string> Intl::ValidateAndCanonicalizeUnicodeLocaleId(
     Isolate* isolate, std::string_view locale_in) {
   if (!IsStructurallyValidLanguageTag(locale_in)) {
-    THROW_NEW_ERROR(
-        isolate, NewRangeError(
-                     MessageTemplate::kInvalidLanguageTag,
-                     isolate->factory()->NewStringFromAsciiChecked(locale_in)));
+    THROW_NEW_ERROR_RETURN_VALUE(
+        isolate,
+        NewRangeError(MessageTemplate::kInvalidLanguageTag,
+                      isolate->factory()->NewStringFromAsciiChecked(locale_in)),
+        Nothing<std::string>());
   }
 
   std::string locale(locale_in);
@@ -793,27 +773,33 @@ Maybe<std::string> Intl::ValidateAndCanonicalizeUnicodeLocaleId(
   icu::Locale icu_locale = icu::Locale::forLanguageTag(locale.c_str(), error);
 
   if (U_FAILURE(error) || icu_locale.isBogus()) {
-    THROW_NEW_ERROR(isolate,
-                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
-                                  isolate->factory()->NewStringFromAsciiChecked(
-                                      locale.c_str())));
+    THROW_NEW_ERROR_RETURN_VALUE(
+        isolate,
+        NewRangeError(
+            MessageTemplate::kInvalidLanguageTag,
+            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
+        Nothing<std::string>());
   }
 
   // Use LocaleBuilder to validate locale.
   icu_locale = icu::LocaleBuilder().setLocale(icu_locale).build(error);
   icu_locale.canonicalize(error);
   if (U_FAILURE(error) || icu_locale.isBogus()) {
-    THROW_NEW_ERROR(isolate,
-                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
-                                  isolate->factory()->NewStringFromAsciiChecked(
-                                      locale.c_str())));
+    THROW_NEW_ERROR_RETURN_VALUE(
+        isolate,
+        NewRangeError(
+            MessageTemplate::kInvalidLanguageTag,
+            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
+        Nothing<std::string>());
   }
   Maybe<std::string> maybe_to_language_tag = Intl::ToLanguageTag(icu_locale);
   if (maybe_to_language_tag.IsNothing()) {
-    THROW_NEW_ERROR(isolate,
-                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
-                                  isolate->factory()->NewStringFromAsciiChecked(
-                                      locale.c_str())));
+    THROW_NEW_ERROR_RETURN_VALUE(
+        isolate,
+        NewRangeError(
+            MessageTemplate::kInvalidLanguageTag,
+            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
+        Nothing<std::string>());
   }
 
   return maybe_to_language_tag;
@@ -852,11 +838,14 @@ Maybe<std::vector<std::string>> Intl::CanonicalizeLocaleList(
   // 4. Else,
   // 4a. Let O be ? ToObject(locales).
   DirectHandle<JSReceiver> o;
-  ASSIGN_RETURN_ON_EXCEPTION(isolate, o, Object::ToObject(isolate, locales));
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, o,
+                                   Object::ToObject(isolate, locales),
+                                   Nothing<std::vector<std::string>>());
   // 5. Let len be ? ToLength(? Get(O, "length")).
   DirectHandle<Object> length_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(isolate, length_obj,
-                             Object::GetLengthFromArrayLike(isolate, o));
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, length_obj,
+                                   Object::GetLengthFromArrayLike(isolate, o),
+                                   Nothing<std::vector<std::string>>());
   // TODO(jkummerow): Spec violation: strictly speaking, we have to iterate
   // up to 2^53-1 if {length_obj} says so. Since cases above 2^32 probably
   // don't happen in practice (and would be very slow if they do), we'll keep
@@ -876,7 +865,8 @@ Maybe<std::vector<std::string>> Intl::CanonicalizeLocaleList(
     if (!maybe_found.FromJust()) continue;
     // 7c i. Let kValue be ? Get(O, Pk).
     DirectHandle<Object> k_value;
-    ASSIGN_RETURN_ON_EXCEPTION(isolate, k_value, Object::GetProperty(&it));
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, k_value, Object::GetProperty(&it),
+                                     Nothing<std::vector<std::string>>());
     // 7c ii. If Type(kValue) is not String or Object, throw a TypeError
     // exception.
     // 7c iii. If Type(kValue) is Object and kValue has an [[InitializedLocale]]
@@ -1121,23 +1111,23 @@ constexpr int kCollationWeightsLength = arraysize(kCollationWeightsL1);
 static_assert(kCollationWeightsLength == arraysize(kCollationWeightsL3));
 // clang-format on
 
-// Converts the result of lhs vs. rhs comparison to UCollationResult.
-constexpr UCollationResult ToUCollationResult(uint32_t lhs, uint32_t rhs) {
-  return lhs == rhs ? UCollationResult::UCOL_EQUAL
-                    : (lhs < rhs ? UCollationResult::UCOL_LESS
-                                 : UCollationResult::UCOL_GREATER);
+// Normalize a comparison delta (usually `lhs - rhs`) to UCollationResult
+// values.
+constexpr UCollationResult ToUCollationResult(int delta) {
+  return delta < 0 ? UCollationResult::UCOL_LESS
+                   : (delta > 0 ? UCollationResult::UCOL_GREATER
+                                : UCollationResult::UCOL_EQUAL);
 }
 
 struct FastCompareStringsData {
   UCollationResult l1_result = UCollationResult::UCOL_EQUAL;
   UCollationResult l3_result = UCollationResult::UCOL_EQUAL;
-  uint32_t processed_until = 0;
-  // The first relevant diff (L1 if exists, else L3).
-  uint32_t first_diff_at = 0;
+  int processed_until = 0;
+  int first_diff_at = 0;  // The first relevant diff (L1 if exists, else L3).
   bool has_diff = false;
 
   std::optional<UCollationResult> FastCompareFailed(
-      uint32_t* processed_until_out) const {
+      int* processed_until_out) const {
     if (has_diff) {
       // Found some difference, continue there to ensure the generic algorithm
       // picks it up.
@@ -1146,7 +1136,7 @@ struct FastCompareStringsData {
       // No difference found, reprocess the last processed character since it
       // may be followed by a unicode combining character (which alters it's
       // meaning).
-      *processed_until_out = processed_until > 0 ? processed_until - 1 : 0;
+      *processed_until_out = std::max(processed_until - 1, 0);
     }
     return {};
   }
@@ -1158,9 +1148,9 @@ constexpr bool CanFastCompare(CharT c) {
 }
 
 template <class Char1T, class Char2T>
-bool FastCompareFlatString(const Char1T* lhs, const Char2T* rhs,
-                           uint32_t length, FastCompareStringsData* d) {
-  for (uint32_t i = 0; i < length; i++) {
+bool FastCompareFlatString(const Char1T* lhs, const Char2T* rhs, int length,
+                           FastCompareStringsData* d) {
+  for (int i = 0; i < length; i++) {
     const Char1T l = lhs[i];
     const Char2T r = rhs[i];
     if (!CanFastCompare(l) || !CanFastCompare(r)) {
@@ -1168,7 +1158,7 @@ bool FastCompareFlatString(const Char1T* lhs, const Char2T* rhs,
       return false;
     }
     UCollationResult l1_result =
-        ToUCollationResult(kCollationWeightsL1[l], kCollationWeightsL1[r]);
+        ToUCollationResult(kCollationWeightsL1[l] - kCollationWeightsL1[r]);
     if (l1_result != UCollationResult::UCOL_EQUAL) {
       d->has_diff = true;
       d->first_diff_at = i;
@@ -1181,7 +1171,7 @@ bool FastCompareFlatString(const Char1T* lhs, const Char2T* rhs,
       // L1 weights, that is our result. If not, use the first L3 weight
       // difference.
       UCollationResult l3_result =
-          ToUCollationResult(kCollationWeightsL3[l], kCollationWeightsL3[r]);
+          ToUCollationResult(kCollationWeightsL3[l] - kCollationWeightsL3[r]);
       d->l3_result = l3_result;
       if (!d->has_diff) {
         d->has_diff = true;
@@ -1194,8 +1184,8 @@ bool FastCompareFlatString(const Char1T* lhs, const Char2T* rhs,
 }
 
 bool FastCompareStringFlatContent(const String::FlatContent& lhs,
-                                  const String::FlatContent& rhs,
-                                  uint32_t length, FastCompareStringsData* d) {
+                                  const String::FlatContent& rhs, int length,
+                                  FastCompareStringsData* d) {
   if (lhs.IsOneByte()) {
     base::Vector<const uint8_t> l = lhs.ToOneByteVector();
     if (rhs.IsOneByte()) {
@@ -1219,13 +1209,13 @@ bool FastCompareStringFlatContent(const String::FlatContent& lhs,
 }
 
 bool CharIsAsciiOrOutOfBounds(const String::FlatContent& string,
-                              uint32_t string_length, uint32_t index) {
+                              int string_length, int index) {
   DCHECK_EQ(string.length(), string_length);
   return index >= string_length || isascii(string.Get(index));
 }
 
 bool CharCanFastCompareOrOutOfBounds(const String::FlatContent& string,
-                                     uint32_t string_length, uint32_t index) {
+                                     int string_length, int index) {
   DCHECK_EQ(string.length(), string_length);
   return index >= string_length || CanFastCompare(string.Get(index));
 }
@@ -1381,7 +1371,7 @@ bool CollatorAllowsFastComparison(const icu::Collator& icu_collator) {
 std::optional<UCollationResult> TryFastCompareStrings(
     Isolate* isolate, const icu::Collator& icu_collator,
     DirectHandle<String> string1, DirectHandle<String> string2,
-    uint32_t* processed_until_out) {
+    int* processed_until_out) {
   // TODO(jgruber): We could avoid the flattening (done by the caller) as well
   // by implementing comparison through string iteration. This has visible
   // performance benefits (e.g. 7% on CDJS) but complicates the code. Consider
@@ -1400,9 +1390,9 @@ std::optional<UCollationResult> TryFastCompareStrings(
   DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(*string1));
   DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(*string2));
 
-  const uint32_t length1 = string1->length();
-  const uint32_t length2 = string2->length();
-  uint32_t common_length = std::min(length1, length2);
+  const int length1 = string1->length();
+  const int length2 = string2->length();
+  int common_length = std::min(length1, length2);
 
   FastCompareStringsData d;
   DisallowGarbageCollection no_gc;
@@ -1426,7 +1416,7 @@ std::optional<UCollationResult> TryFastCompareStrings(
   }
 
   // Strings are L1-equal up to their common length, length differences win.
-  UCollationResult length_result = ToUCollationResult(length1, length2);
+  UCollationResult length_result = ToUCollationResult(length1 - length2);
   if (length_result != UCollationResult::UCOL_EQUAL) {
     // Strings of different lengths may still compare as equal if the longer
     // string has a fully ignored suffix, e.g. "a" vs. "a\u{1}".
@@ -1472,7 +1462,7 @@ int Intl::CompareStrings(Isolate* isolate, const icu::Collator& icu_collator,
   string1 = String::Flatten(isolate, string1);
   string2 = String::Flatten(isolate, string2);
 
-  uint32_t processed_until = 0;
+  int processed_until = 0;
   if (compare_strings_options == CompareStringsOptions::kTryFastPath) {
     std::optional<int> maybe_result = TryFastCompareStrings(
         isolate, icu_collator, string1, string2, &processed_until);
@@ -1604,31 +1594,35 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
 
   // 2. Let mnfd be ? Get(options, "minimumFractionDigits").
   DirectHandle<Object> mnfd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, mnfd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->minimumFractionDigits_string()));
+                              factory->minimumFractionDigits_string()),
+      Nothing<NumberFormatDigitOptions>());
 
   // 3. Let mxfd be ? Get(options, "maximumFractionDigits").
   DirectHandle<Object> mxfd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, mxfd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->maximumFractionDigits_string()));
+                              factory->maximumFractionDigits_string()),
+      Nothing<NumberFormatDigitOptions>());
 
   // 4.  Let mnsd be ? Get(options, "minimumSignificantDigits").
   DirectHandle<Object> mnsd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, mnsd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->minimumSignificantDigits_string()));
+                              factory->minimumSignificantDigits_string()),
+      Nothing<NumberFormatDigitOptions>());
 
   // 5. Let mxsd be ? Get(options, "maximumSignificantDigits").
   DirectHandle<Object> mxsd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION(
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, mxsd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->maximumSignificantDigits_string()));
+                              factory->maximumSignificantDigits_string()),
+      Nothing<NumberFormatDigitOptions>());
 
   digit_options.rounding_priority = RoundingPriority::kAuto;
   digit_options.minimum_significant_digits = 0;
@@ -1647,24 +1641,24 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
   // 8. If roundingIncrement is not in « 1, 2, 5, 10, 20, 25, 50, 100, 200, 250,
   // 500, 1000, 2000, 2500, 5000 », throw a RangeError exception.
   if (!IsValidRoundingIncrement(digit_options.rounding_increment)) {
-    THROW_NEW_ERROR(isolate,
-                    NewRangeError(MessageTemplate::kPropertyValueOutOfRange,
-                                  factory->roundingIncrement_string()));
+    THROW_NEW_ERROR_RETURN_VALUE(
+        isolate,
+        NewRangeError(MessageTemplate::kPropertyValueOutOfRange,
+                      factory->roundingIncrement_string()),
+        Nothing<NumberFormatDigitOptions>());
   }
 
   // 9. Let roundingMode be ? GetOption(options, "roundingMode", string, «
   // "ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor", "halfExpand",
   // "halfTrunc", "halfEven" », "halfExpand").
   Maybe<RoundingMode> maybe_rounding_mode = GetStringOption<RoundingMode>(
-      isolate, options, isolate->factory()->roundingMode_string(), service,
-      std::to_array<const std::string_view>(
-          {"ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor",
-           "halfExpand", "halfTrunc", "halfEven"}),
-      std::array{RoundingMode::kCeil, RoundingMode::kFloor,
-                 RoundingMode::kExpand, RoundingMode::kTrunc,
-                 RoundingMode::kHalfCeil, RoundingMode::kHalfFloor,
-                 RoundingMode::kHalfExpand, RoundingMode::kHalfTrunc,
-                 RoundingMode::kHalfEven},
+      isolate, options, "roundingMode", service,
+      {"ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor",
+       "halfExpand", "halfTrunc", "halfEven"},
+      {RoundingMode::kCeil, RoundingMode::kFloor, RoundingMode::kExpand,
+       RoundingMode::kTrunc, RoundingMode::kHalfCeil, RoundingMode::kHalfFloor,
+       RoundingMode::kHalfExpand, RoundingMode::kHalfTrunc,
+       RoundingMode::kHalfEven},
       RoundingMode::kHalfExpand);
   MAYBE_RETURN(maybe_rounding_mode, Nothing<NumberFormatDigitOptions>());
   digit_options.rounding_mode = maybe_rounding_mode.FromJust();
@@ -1674,12 +1668,10 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
 
   Maybe<RoundingPriority> maybe_rounding_priority =
       GetStringOption<RoundingPriority>(
-          isolate, options, isolate->factory()->roundingPriority_string(),
-          service,
-          std::to_array<const std::string_view>(
-              {"auto", "morePrecision", "lessPrecision"}),
-          std::array{RoundingPriority::kAuto, RoundingPriority::kMorePrecision,
-                     RoundingPriority::kLessPrecision},
+          isolate, options, "roundingPriority", service,
+          {"auto", "morePrecision", "lessPrecision"},
+          {RoundingPriority::kAuto, RoundingPriority::kMorePrecision,
+           RoundingPriority::kLessPrecision},
           RoundingPriority::kAuto);
   MAYBE_RETURN(maybe_rounding_priority, Nothing<NumberFormatDigitOptions>());
   digit_options.rounding_priority = maybe_rounding_priority.FromJust();
@@ -1688,11 +1680,9 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
   // string, « "auto", "stripIfInteger" », "auto").
   Maybe<TrailingZeroDisplay> maybe_trailing_zero_display =
       GetStringOption<TrailingZeroDisplay>(
-          isolate, options, isolate->factory()->trailingZeroDisplay_string(),
-          service,
-          std::to_array<const std::string_view>({"auto", "stripIfInteger"}),
-          std::array{TrailingZeroDisplay::kAuto,
-                     TrailingZeroDisplay::kStripIfInteger},
+          isolate, options, "trailingZeroDisplay", service,
+          {"auto", "stripIfInteger"},
+          {TrailingZeroDisplay::kAuto, TrailingZeroDisplay::kStripIfInteger},
           TrailingZeroDisplay::kAuto);
   MAYBE_RETURN(maybe_trailing_zero_display,
                Nothing<NumberFormatDigitOptions>());
@@ -1790,9 +1780,10 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
       } else if (mnfd > mxfd) {
         // v. Else if mnfd is greater than mxfd, throw a RangeError
         // exception.
-        THROW_NEW_ERROR(
+        THROW_NEW_ERROR_RETURN_VALUE(
             isolate,
-            NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str));
+            NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str),
+            Nothing<NumberFormatDigitOptions>());
       }
       // vi. Set intlObj.[[MinimumFractionDigits]] to mnfd.
       digit_options.minimum_fraction_digits = mnfd;
@@ -1842,15 +1833,18 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
     // a. If intlObj.[[RoundingType]] is not fractionDigits, throw a TypeError
     // exception.
     if (digit_options.rounding_type != RoundingType::kFractionDigits) {
-      THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kBadRoundingType));
+      THROW_NEW_ERROR_RETURN_VALUE(
+          isolate, NewTypeError(MessageTemplate::kBadRoundingType),
+          Nothing<NumberFormatDigitOptions>());
     }
     // b. If intlObj.[[MaximumFractionDigits]] is not equal to
     // intlObj.[[MinimumFractionDigits]], throw a RangeError exception.
     if (digit_options.maximum_fraction_digits !=
         digit_options.minimum_fraction_digits) {
-      THROW_NEW_ERROR(
+      THROW_NEW_ERROR_RETURN_VALUE(
           isolate,
-          NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str));
+          NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str),
+          Nothing<NumberFormatDigitOptions>());
     }
   }
   return Just(digit_options);
@@ -2403,12 +2397,12 @@ bool Intl::IsValidCollation(const icu::Locale& locale,
   return IsValidExtension<icu::Collator>(locale, "collation", value);
 }
 
-bool Intl::IsWellFormedCalendar(std::string_view value) {
+bool Intl::IsWellFormedCalendar(const std::string& value) {
   return JSLocale::Is38AlphaNumList(value);
 }
 
 // ecma402/#sec-iswellformedcurrencycode
-bool Intl::IsWellFormedCurrency(std::string_view currency) {
+bool Intl::IsWellFormedCurrency(const std::string& currency) {
   return JSLocale::Is3Alpha(currency);
 }
 
@@ -2651,7 +2645,7 @@ MaybeDirectHandle<String> Intl::Normalize(Isolate* isolate,
     }
   }
 
-  int32_t length = to_icu_length(string->length());
+  uint32_t length = string->length();
   string = String::Flatten(isolate, string);
   icu::UnicodeString result;
   std::unique_ptr<base::uc16[]> sap;
@@ -2662,7 +2656,7 @@ MaybeDirectHandle<String> Intl::Normalize(Isolate* isolate,
       icu::Normalizer2::getInstance(nullptr, form_name, form_mode, status);
   DCHECK(U_SUCCESS(status));
   DCHECK_NOT_NULL(normalizer);
-  int32_t normalized_prefix_length =
+  uint32_t normalized_prefix_length =
       normalizer->spanQuickCheckYes(input, status);
   // Quick return if the input is already normalized.
   if (length == normalized_prefix_length) return string;
@@ -2778,28 +2772,28 @@ Maybe<Intl::MatcherOption> Intl::GetLocaleMatcher(
     Isolate* isolate, DirectHandle<JSReceiver> options,
     const char* method_name) {
   return GetStringOption<Intl::MatcherOption>(
-      isolate, options, isolate->factory()->localeMatcher_string(), method_name,
-      std::to_array<const std::string_view>({"best fit", "lookup"}),
-      std::array{Intl::MatcherOption::kBestFit, Intl::MatcherOption::kLookup},
+      isolate, options, "localeMatcher", method_name, {"best fit", "lookup"},
+      {Intl::MatcherOption::kBestFit, Intl::MatcherOption::kLookup},
       Intl::MatcherOption::kBestFit);
 }
 
 Maybe<bool> Intl::GetNumberingSystem(Isolate* isolate,
                                      DirectHandle<JSReceiver> options,
                                      const char* method_name,
-                                     std::string& result) {
-  DirectHandle<String> output;
-  Maybe<bool> maybe = GetStringOption(
-      isolate, options, isolate->factory()->numberingSystem_string(),
-      method_name, &output);
+                                     std::unique_ptr<char[]>* result) {
+  const std::vector<const char*> empty_values = {};
+  Maybe<bool> maybe = GetStringOption(isolate, options, "numberingSystem",
+                                      empty_values, method_name, result);
   MAYBE_RETURN(maybe, Nothing<bool>());
-  if (maybe.FromJust()) {
-    result = output->ToStdString();
-    if (!IsWellFormedNumberingSystem(result)) {
-      THROW_NEW_ERROR(
+  if (maybe.FromJust() && *result != nullptr) {
+    if (!IsWellFormedNumberingSystem(result->get())) {
+      THROW_NEW_ERROR_RETURN_VALUE(
           isolate,
-          NewRangeError(MessageTemplate::kInvalid,
-                        isolate->factory()->numberingSystem_string(), output));
+          NewRangeError(
+              MessageTemplate::kInvalid,
+              isolate->factory()->numberingSystem_string(),
+              isolate->factory()->NewStringFromAsciiChecked(result->get())),
+          Nothing<bool>());
     }
     return Just(true);
   }
@@ -2951,6 +2945,28 @@ bool IsUnicodeStringValidTimeZoneName(const icu::UnicodeString& id) {
 }
 }  // namespace
 
+MaybeHandle<String> Intl::CanonicalizeTimeZoneName(
+    Isolate* isolate, DirectHandle<String> identifier) {
+  UErrorCode status = U_ZERO_ERROR;
+  std::string time_zone =
+      JSDateTimeFormat::CanonicalizeTimeZoneID(identifier->ToCString().get());
+  icu::UnicodeString time_zone_ustring =
+      icu::UnicodeString(time_zone.c_str(), -1, US_INV);
+  icu::UnicodeString canonical;
+  icu::TimeZone::getCanonicalID(time_zone_ustring, canonical, status);
+  CHECK(U_SUCCESS(status));
+
+  return JSDateTimeFormat::TimeZoneIdToString(isolate, canonical);
+}
+
+bool Intl::IsValidTimeZoneName(Isolate* isolate, DirectHandle<String> id) {
+  std::string time_zone =
+      JSDateTimeFormat::CanonicalizeTimeZoneID(id->ToCString().get());
+  icu::UnicodeString time_zone_ustring =
+      icu::UnicodeString(time_zone.c_str(), -1, US_INV);
+  return IsUnicodeStringValidTimeZoneName(time_zone_ustring);
+}
+
 bool Intl::IsValidTimeZoneName(const icu::TimeZone& tz) {
   icu::UnicodeString id;
   tz.getID(id);
@@ -2960,9 +2976,7 @@ bool Intl::IsValidTimeZoneName(const icu::TimeZone& tz) {
 // Function to support Temporal
 std::string Intl::TimeZoneIdFromIndex(int32_t index) {
 #ifdef V8_TEMPORAL_SUPPORT
-  // UTC index is 0
-  // TODO(b/401065166) Potentially store constant somewhere
-  if (index == 0) {
+  if (index == JSTemporalTimeZone::kUTCTimeZoneIndex) {
     return "UTC";
   }
 #endif  // V8_TEMPORAL_SUPPORT
@@ -3054,42 +3068,7 @@ DirectHandle<String> Intl::SourceString(Isolate* isolate,
   }
 }
 
-MaybeHandle<String> Intl::TimeZoneIdToString(Isolate* isolate,
-                                             const icu::UnicodeString& id) {
-  // In CLDR (http://unicode.org/cldr/trac/ticket/9943), Etc/UTC is made
-  // a separate timezone ID from Etc/GMT even though they're still the same
-  // timezone. We have Etc/UTC because 'UTC', 'Etc/Universal',
-  // 'Etc/Zulu' and others are turned to 'Etc/UTC' by ICU. Etc/GMT comes
-  // from Etc/GMT0, Etc/GMT+0, Etc/GMT-0, Etc/Greenwich.
-  // ecma402#sec-canonicalizetimezonename step 3
-  if (id == UNICODE_STRING_SIMPLE("Etc/UTC") ||
-      id == UNICODE_STRING_SIMPLE("Etc/GMT")) {
-    return isolate->factory()->UTC_string();
-  }
-  // If the id is in the format of GMT[+-]hh:mm, change it to
-  // [+-]hh:mm.
-  if (id.startsWith(u"GMT", 3)) {
-    return Intl::ToString(isolate, id.tempSubString(3));
-  }
-  return Intl::ToString(isolate, id);
-}
-
-// Same logic as above but for std::string
-std::string Intl::TimeZoneIdToString(const icu::UnicodeString& id) {
-  if (id == UNICODE_STRING_SIMPLE("Etc/UTC") ||
-      id == UNICODE_STRING_SIMPLE("Etc/GMT")) {
-    return "UTC";
-  }
-  std::string result;
-  if (id.startsWith(u"GMT", 3)) {
-    return id.tempSubString(3).toUTF8String(result);
-  } else {
-    id.toUTF8String(result);
-  }
-  return result;
-}
-
-std::string Intl::DefaultTimeZone() {
+DirectHandle<String> Intl::DefaultTimeZone(Isolate* isolate) {
   icu::UnicodeString id;
   {
     std::unique_ptr<icu::TimeZone> tz(icu::TimeZone::createDefault());
@@ -3099,7 +3078,8 @@ std::string Intl::DefaultTimeZone() {
   icu::UnicodeString canonical;
   icu::TimeZone::getCanonicalID(id, canonical, status);
   DCHECK(U_SUCCESS(status));
-  return Intl::TimeZoneIdToString(canonical);
+  return JSDateTimeFormat::TimeZoneIdToString(isolate, canonical)
+      .ToHandleChecked();
 }
 
 namespace {
@@ -3264,5 +3244,3 @@ int64_t Intl::GetTimeZoneOffsetNanoseconds(
 }
 
 }  // namespace v8::internal
-
-END_PROHIBIT_SIGN_CONVERSION()

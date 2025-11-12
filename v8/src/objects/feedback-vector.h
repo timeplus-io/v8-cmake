@@ -333,8 +333,6 @@ class FeedbackVector
 
   inline bool is_empty() const;
 
-  DECL_GETTER(has_metadata, bool)
-
   DECL_GETTER(metadata, Tagged<FeedbackMetadata>)
   DECL_ACQUIRE_GETTER(metadata, Tagged<FeedbackMetadata>)
 
@@ -835,8 +833,7 @@ class FeedbackMetadataIterator {
         next_slot_(FeedbackSlot(0)),
         slot_kind_(FeedbackSlotKind::kInvalid) {}
 
-  FeedbackMetadataIterator(Tagged<FeedbackMetadata> metadata,
-                           const DisallowGarbageCollection& no_gc)
+  explicit FeedbackMetadataIterator(Tagged<FeedbackMetadata> metadata)
       : metadata_(metadata),
         next_slot_(FeedbackSlot(0)),
         slot_kind_(FeedbackSlotKind::kInvalid) {}
@@ -1029,12 +1026,10 @@ class V8_EXPORT_PRIVATE FeedbackNexus final {
   // For KeyedLoad and KeyedStore ICs.
   IcCheckType GetKeyType() const;
   Tagged<Name> GetName() const;
-  bool IsOneMapManyNames() const;
 
   // For Call ICs.
   int GetCallCount();
   void SetSpeculationMode(SpeculationMode mode);
-  void NextSpeculationMode(SpeculationMode mode);
   SpeculationMode GetSpeculationMode();
   CallFeedbackContent GetCallFeedbackContent();
 
@@ -1042,9 +1037,9 @@ class V8_EXPORT_PRIVATE FeedbackNexus final {
   // count (taken from the type feedback vector).
   float ComputeCallFrequency();
 
-  using SpeculationModeField = base::BitField<SpeculationMode, 0, 2>;
-  using CallFeedbackContentField = base::BitField<CallFeedbackContent, 2, 1>;
-  using CallCountField = base::BitField<uint32_t, 3, 29>;
+  using SpeculationModeField = base::BitField<SpeculationMode, 0, 1>;
+  using CallFeedbackContentField = base::BitField<CallFeedbackContent, 1, 1>;
+  using CallCountField = base::BitField<uint32_t, 2, 30>;
 
   // For InstanceOf ICs.
   MaybeDirectHandle<JSObject> GetConstructorFeedback() const;

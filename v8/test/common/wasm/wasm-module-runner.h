@@ -11,7 +11,10 @@
 #include "src/wasm/wasm-objects.h"
 #include "src/wasm/wasm-result.h"
 
-namespace v8::internal::wasm::testing {
+namespace v8 {
+namespace internal {
+namespace wasm {
+namespace testing {
 
 // Returns a MaybeHandle to the JsToWasm wrapper of the wasm function exported
 // with the given name by the provided instance.
@@ -46,6 +49,12 @@ MaybeDirectHandle<WasmInstanceObject> CompileAndInstantiateForTesting(
 DirectHandleVector<Object> MakeDefaultArguments(Isolate* isolate,
                                                 const FunctionSig* sig);
 
-}  // namespace v8::internal::wasm::testing
+// Install function map, module symbol for testing
+void SetupIsolateForWasmModule(Isolate* isolate);
+
+}  // namespace testing
+}  // namespace wasm
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_WASM_MODULE_RUNNER_H_

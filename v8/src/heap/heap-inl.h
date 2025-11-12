@@ -19,7 +19,6 @@
 #include "src/common/code-memory-access-inl.h"
 #include "src/execution/isolate-data.h"
 #include "src/execution/isolate.h"
-#include "src/heap/code-range.h"
 #include "src/heap/heap-allocator-inl.h"
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier.h"
@@ -39,7 +38,6 @@
 #include "src/objects/slots-inl.h"
 #include "src/objects/visitors-inl.h"
 #include "src/roots/static-roots.h"
-#include "src/utils/allocation.h"
 #include "src/utils/ostreams.h"
 #include "src/zone/zone-list-inl.h"
 
@@ -70,12 +68,10 @@ uint64_t Heap::external_memory() const { return external_memory_.total(); }
 
 RootsTable& Heap::roots_table() { return isolate()->roots_table(); }
 
-#define ROOT_ACCESSOR(Type, name, CamelName)                     \
-  Tagged<Type> Heap::name() {                                    \
-    return TrustedCast<Type>(                                    \
-        Tagged<Object>(roots_table()[RootIndex::k##CamelName])); \
+#define ROOT_ACCESSOR(Type, name, CamelName)                                   \
+  Tagged<Type> Heap::name() {                                                  \
+    return Cast<Type>(Tagged<Object>(roots_table()[RootIndex::k##CamelName])); \
   }
-
 MUTABLE_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
@@ -293,9 +289,9 @@ Heap* Heap::FromWritableHeapObject(Tagged<HeapObject> obj) {
   return heap;
 }
 
-void Heap::CopyBlock(Address dst, Address src, size_t byte_size) {
+void Heap::CopyBlock(Address dst, Address src, int byte_size) {
   DCHECK(IsAligned(byte_size, kTaggedSize));
-  CopyTagged(dst, src, byte_size / kTaggedSize);
+  CopyTagged(dst, src, static_cast<size_t>(byte_size / kTaggedSize));
 }
 
 bool Heap::IsPendingAllocationInternal(Tagged<HeapObject> object) {
@@ -304,7 +300,7 @@ bool Heap::IsPendingAllocationInternal(Tagged<HeapObject> object) {
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
   if (chunk->InReadOnlySpace()) return false;
 
-  BaseSpace* base_space = chunk->Metadata(isolate())->owner();
+  BaseSpace* base_space = chunk->Metadata()->owner();
   Address addr = object.address();
 
   switch (base_space->identity()) {

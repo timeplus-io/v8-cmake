@@ -60,7 +60,6 @@ using ::testing::Truly;
 
 TEST(TailCallsModifiesTest, AtLocationFileLine) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(
       test_sink,
@@ -90,7 +89,6 @@ TEST(TailCallsModifiesTest, AtLocationFileLineLifetime) {
 
 TEST(TailCallsModifiesTest, NoPrefix) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(AllOf(Prefix(IsFalse()), TextPrefix(IsEmpty()),
                                     TextMessageWithPrefix(Eq("hello world")))));
@@ -101,7 +99,6 @@ TEST(TailCallsModifiesTest, NoPrefix) {
 
 TEST(TailCallsModifiesTest, NoPrefixNoMessageNoShirtNoShoesNoService) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink,
               Send(AllOf(Prefix(IsFalse()), TextPrefix(IsEmpty()),
@@ -113,7 +110,6 @@ TEST(TailCallsModifiesTest, NoPrefixNoMessageNoShirtNoShoesNoService) {
 
 TEST(TailCallsModifiesTest, WithVerbosity) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(Verbosity(Eq(2))));
 
@@ -123,7 +119,6 @@ TEST(TailCallsModifiesTest, WithVerbosity) {
 
 TEST(TailCallsModifiesTest, WithVerbosityNoVerbosity) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink,
               Send(Verbosity(Eq(absl::LogEntry::kNoVerbosityLevel))));
@@ -135,7 +130,6 @@ TEST(TailCallsModifiesTest, WithVerbosityNoVerbosity) {
 
 TEST(TailCallsModifiesTest, WithTimestamp) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(Timestamp(Eq(absl::UnixEpoch()))));
 
@@ -145,7 +139,6 @@ TEST(TailCallsModifiesTest, WithTimestamp) {
 
 TEST(TailCallsModifiesTest, WithThreadID) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink,
               Send(AllOf(ThreadID(Eq(absl::LogEntry::tid_t{1234})))));
@@ -164,7 +157,6 @@ TEST(TailCallsModifiesTest, WithMetadataFrom) {
   } forwarding_sink;
 
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(
       test_sink,
@@ -193,7 +185,6 @@ TEST(TailCallsModifiesTest, WithMetadataFrom) {
 
 TEST(TailCallsModifiesTest, WithPerror) {
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(
       test_sink,
@@ -220,7 +211,6 @@ TEST(ModifierMethodDeathTest, ToSinkOnlyQFatal) {
       {
         absl::ScopedMockLog test_sink(
             absl::MockLogDefault::kDisallowUnexpected);
-        EXPECT_CALL(test_sink, Send).Times(0);
 
         auto do_log = [&test_sink] {
           LOG(QFATAL).ToSinkOnly(&test_sink.UseAsLocalSink()) << "hello world";

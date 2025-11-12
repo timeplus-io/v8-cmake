@@ -58,20 +58,20 @@ class BasicPersistent final : public PersistentBase,
 
   // Null-state/sentinel constructors.
   BasicPersistent(  // NOLINT
-      SourceLocation loc = SourceLocation::Current())
+      const SourceLocation& loc = SourceLocation::Current())
       : LocationPolicy(loc) {}
 
   BasicPersistent(std::nullptr_t,  // NOLINT
-                  SourceLocation loc = SourceLocation::Current())
+                  const SourceLocation& loc = SourceLocation::Current())
       : LocationPolicy(loc) {}
 
   BasicPersistent(  // NOLINT
-      SentinelPointer s, SourceLocation loc = SourceLocation::Current())
+      SentinelPointer s, const SourceLocation& loc = SourceLocation::Current())
       : PersistentBase(s), LocationPolicy(loc) {}
 
   // Raw value constructors.
   BasicPersistent(T* raw,  // NOLINT
-                  SourceLocation loc = SourceLocation::Current())
+                  const SourceLocation& loc = SourceLocation::Current())
       : PersistentBase(raw), LocationPolicy(loc) {
     if (!IsValid()) return;
     SetNode(WeaknessPolicy::GetPersistentRegion(GetValue())
@@ -80,12 +80,12 @@ class BasicPersistent final : public PersistentBase,
   }
 
   BasicPersistent(T& raw,  // NOLINT
-                  SourceLocation loc = SourceLocation::Current())
+                  const SourceLocation& loc = SourceLocation::Current())
       : BasicPersistent(&raw, loc) {}
 
   // Copy ctor.
   BasicPersistent(const BasicPersistent& other,
-                  SourceLocation loc = SourceLocation::Current())
+                  const SourceLocation& loc = SourceLocation::Current())
       : BasicPersistent(other.Get(), loc) {}
 
   // Heterogeneous ctor.
@@ -96,13 +96,14 @@ class BasicPersistent final : public PersistentBase,
   BasicPersistent(
       const BasicPersistent<U, OtherWeaknessPolicy, OtherLocationPolicy,
                             OtherCheckingPolicy>& other,
-      SourceLocation loc = SourceLocation::Current())
+      const SourceLocation& loc = SourceLocation::Current())
       : BasicPersistent(other.Get(), loc) {}
 
   // Move ctor. The heterogeneous move ctor is not supported since e.g.
   // persistent can't reuse persistent node from weak persistent.
-  BasicPersistent(BasicPersistent&& other,
-                  SourceLocation loc = SourceLocation::Current()) noexcept
+  BasicPersistent(
+      BasicPersistent&& other,
+      const SourceLocation& loc = SourceLocation::Current()) noexcept
       : PersistentBase(std::move(other)), LocationPolicy(std::move(other)) {
     if (!IsValid()) return;
     GetNode()->UpdateOwner(this);
@@ -120,7 +121,7 @@ class BasicPersistent final : public PersistentBase,
   BasicPersistent(const internal::BasicMember<
                       U, MemberBarrierPolicy, MemberWeaknessTag,
                       MemberCheckingPolicy, MemberStorageType>& member,
-                  SourceLocation loc = SourceLocation::Current())
+                  const SourceLocation& loc = SourceLocation::Current())
       : BasicPersistent(member.Get(), loc) {}
 
   ~BasicPersistent() { Clear(); }

@@ -150,8 +150,6 @@ extern enum ContextSlot extends intptr constexpr 'Context::Field' {
   VALID_ITERATOR_WRAPPER_MAP_INDEX: Slot<NativeContext, Map>,
   JS_ARRAY_PACKED_ELEMENTS_MAP_INDEX: Slot<NativeContext, Map>,
   JS_ARRAY_PACKED_SMI_ELEMENTS_MAP_INDEX: Slot<NativeContext, Map>,
-  INITIAL_ARRAY_PROTOTYPE_INDEX: Slot<NativeContext, JSObject>,
-  INITIAL_ARRAY_PROTOTYPE_VALIDITY_CELL_INDEX: Slot<NativeContext, Cell>,
   JS_MAP_MAP_INDEX: Slot<NativeContext, Map>,
   JS_SET_MAP_INDEX: Slot<NativeContext, Map>,
   MATH_RANDOM_CACHE_INDEX: Slot<NativeContext, FixedDoubleArray>,
@@ -281,12 +279,12 @@ macro StoreContextElement(c: Context, i: constexpr int32, o: Object): void {
 
 macro LoadContextElementNoCellImpl(c: Context, i: intptr): Object {
   const val = c.elements[i];
-  dcheck(Is<TheHole>(val) || !Is<ContextCell>(val));
+  dcheck(!Is<ContextCell>(val));
   return val;
 }
 
 macro StoreContextElementNoCellImpl(c: Context, i: intptr, o: Object): void {
-  dcheck(Is<TheHole>(c.elements[i]) || !Is<ContextCell>(c.elements[i]));
+  dcheck(!Is<ContextCell>(c.elements[i]));
   c.elements[i] = o;
 }
 
@@ -477,7 +475,6 @@ macro StoreScriptContextElementImpl(
 
 macro LoadContextElementImpl(c: Context, i: intptr): Object {
   const val = c.elements[i];
-  if (val == TheHole) return val;
   const cell = Cast<ContextCell>(val) otherwise return val;
   dcheck(HasContextCells(c));
   dcheck(kContextCellConst == 0);
@@ -485,10 +482,8 @@ macro LoadContextElementImpl(c: Context, i: intptr): Object {
   if (cell.state <= kContextCellSmi) {
     return cell.tagged_value;
   } else if (cell.state == kContextCellInt32) {
-    const intValue = Convert<intptr>(cell.int32_value);
-    if (Convert<uintptr>(intValue) <= kSmiMaxValue) {
-      return Convert<Smi>(intValue);
-    }
+    // TODO(victorgomes): maybe this has a smi value, so we don't need to
+    // allocate a heap number.
     return AllocateHeapNumberWithValue(ChangeInt32ToFloat64(cell.int32_value));
   } else {
     dcheck(cell.state == kContextCellFloat64);

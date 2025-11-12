@@ -550,9 +550,8 @@ void Uint8ArrayToHexFastWithSSE(const char* bytes, uint8_t* output,
   for (i = 0; i + 8 <= length; i += 8) {
     index = 0;
     for (size_t j = i; j < i + 8; j++) {
-      uint8_t byte = static_cast<uint8_t>(bytes[j]);
-      nibbles_buffer[index++] = byte >> 4;    // High nibble
-      nibbles_buffer[index++] = byte & 0x0F;  // Low nibble
+      nibbles_buffer[index++] = bytes[j] >> 4;    // High nibble
+      nibbles_buffer[index++] = bytes[j] & 0x0F;  // Low nibble
     }
 
     // Load data into SSE registers
@@ -590,9 +589,8 @@ void Uint8ArrayToHexFastWithNeon(const char* bytes, uint8_t* output,
   for (i = 0; i + 8 <= length; i += 8) {
     index = 0;
     for (size_t j = i; j < i + 8; j++) {
-      uint8_t byte = static_cast<uint8_t>(bytes[j]);
-      nibbles_buffer[index++] = byte >> 4;    // High nibble
-      nibbles_buffer[index++] = byte & 0x0F;  // Low nibble
+      nibbles_buffer[index++] = bytes[j] >> 4;    // High nibble
+      nibbles_buffer[index++] = bytes[j] & 0x0F;  // Low nibble
     }
 
     // Load data into NEON registers

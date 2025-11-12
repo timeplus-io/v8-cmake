@@ -19,7 +19,6 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerRISCV
   RegExpMacroAssemblerRISCV(Isolate* isolate, Zone* zone, Mode mode,
                             int registers_to_save);
   ~RegExpMacroAssemblerRISCV() override;
-  void AbortedCodeGeneration() override;
   int stack_limit_slack_slot_count() override;
   void AdvanceCurrentPosition(int by) override;
   void AdvanceRegister(int reg, int by) override;
@@ -91,12 +90,6 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerRISCV
 #ifdef RISCV_HAS_NO_UNALIGNED
   bool CanReadUnaligned() const override;
 #endif
-
-  void RecordComment(std::string_view comment) override {
-    masm_->RecordComment(comment);
-  }
-  MacroAssembler* masm() override { return masm_.get(); }
-
   // Called from RegExp if the stack-guard is triggered.
   // If the code object is relocated, the return address is fixed before
   // returning.

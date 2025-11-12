@@ -166,10 +166,9 @@ class CompilationCacheTable
   inline Tagged<Object> PrimaryValueAt(InternalIndex entry);
   inline void SetPrimaryValueAt(InternalIndex entry, Tagged<Object> value,
                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline Tagged<UnionOf<TheHole, WeakFixedArray>> EvalJSFunctionsValueAt(
-      InternalIndex entry);
+  inline Tagged<Object> EvalJSFunctionsValueAt(InternalIndex entry);
   inline void SetEvalJSFunctionsValueAt(
-      InternalIndex entry, Tagged<UnionOf<TheHole, WeakFixedArray>> value,
+      InternalIndex entry, Tagged<Object> value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   // The initial placeholder insertion of the eval cache survives this many GCs.

@@ -18,7 +18,7 @@ class LargePageMetadata : public MutablePageMetadata {
   static constexpr int kMaxCodePageSize = 512 * MB;
 
   static LargePageMetadata* cast(MutablePageMetadata* metadata) {
-    DCHECK_IMPLIES(metadata, metadata->is_large());
+    DCHECK_IMPLIES(metadata, metadata->Chunk()->IsLargePage());
     return static_cast<LargePageMetadata*>(metadata);
   }
 
@@ -30,8 +30,9 @@ class LargePageMetadata : public MutablePageMetadata {
 
   LargePageMetadata(Heap* heap, BaseSpace* space, size_t chunk_size,
                     Address area_start, Address area_end,
-                    VirtualMemory reservation, Executability executable,
-                    MemoryChunk::MainThreadFlags* trusted_flags);
+                    VirtualMemory reservation, Executability executable);
+
+  MemoryChunk::MainThreadFlags InitialFlags(Executability executable) const;
 
   Tagged<HeapObject> GetObject() const {
     return HeapObject::FromAddress(area_start());

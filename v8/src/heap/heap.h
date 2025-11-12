@@ -311,12 +311,22 @@ class Heap final {
   // Don't apply pointer multiplier on Android since it has no swap space and
   // should instead adapt it's heap size based on available physical memory.
   static const int kPointerMultiplier = 1;
+  static const int kHeapLimitMultiplier = 1;
 #else
   static const int kPointerMultiplier = kTaggedSize / 4;
+  // The heap limit needs to be computed based on the system pointer size
+  // because we want a pointer-compressed heap to have larger limit than
+  // an ordinary 32-bit which that is constrained by 2GB virtual address space.
+  static const int kHeapLimitMultiplier = kSystemPointerSize / 4;
 #endif
+
+  static const size_t kMaxInitialOldGenerationSize =
+      256 * MB * kHeapLimitMultiplier;
 
   // These constants control heap configuration based on the physical memory.
   static constexpr size_t kPhysicalMemoryToOldGenerationRatio = 4;
+  static constexpr size_t kOldGenerationLowMemory =
+      128 * MB * kHeapLimitMultiplier;
   static constexpr size_t kNewLargeObjectSpaceToSemiSpaceRatio = 1;
 
   static const int kTraceRingBufferSize = 512;
@@ -325,26 +335,11 @@ class Heap final {
   // The minimum size of a HeapObject on the heap.
   static const int kMinObjectSizeInTaggedWords = 2;
 
-  V8_EXPORT_PRIVATE static size_t DefaultInitialOldGenerationSize(
-      uint64_t physical_memory);
-  V8_EXPORT_PRIVATE static size_t OldGenerationLowMemory(
-      uint64_t physical_memory);
-
-#if V8_OS_ANDROID
-  V8_EXPORT_PRIVATE static bool IsHighEndAndroid(uint64_t physical_memory);
-#endif
-  V8_EXPORT_PRIVATE static size_t HeapLimitMultiplier(uint64_t physical_memory);
-
   static size_t DefaultMinSemiSpaceSize();
-  V8_EXPORT_PRIVATE static size_t DefaultMaxSemiSpaceSize(
-      uint64_t physical_memory);
+  V8_EXPORT_PRIVATE static size_t DefaultMaxSemiSpaceSize();
   // Young generation size is the same for compressed heaps and 32-bit heaps.
-  static size_t OldGenerationToSemiSpaceRatio(uint64_t physical_memory);
-  static size_t OldGenerationToSemiSpaceRatioLowMemory(
-      uint64_t physical_memory);
-
-  V8_EXPORT_PRIVATE static size_t DefaulMinHeapSize(uint64_t physical_memory);
-  V8_EXPORT_PRIVATE static size_t DefaulMaxHeapSize(uint64_t physical_memory);
+  static size_t OldGenerationToSemiSpaceRatio();
+  static size_t OldGenerationToSemiSpaceRatioLowMemory();
 
   // Calculates the maximum amount of filler that could be required by the
   // given alignment.
@@ -370,7 +365,7 @@ class Heap final {
            collector == GarbageCollector::MINOR_MARK_SWEEPER;
   }
 
-  V8_EXPORT_PRIVATE bool IsFreeSpaceValid(const FreeSpace* object) const;
+  V8_EXPORT_PRIVATE static bool IsFreeSpaceValid(FreeSpace object);
 
   static inline GarbageCollector YoungGenerationCollector() {
     return (v8_flags.minor_ms) ? GarbageCollector::MINOR_MARK_SWEEPER
@@ -379,7 +374,7 @@ class Heap final {
 
   // Copy block of memory from src to dst. Size of block should be aligned
   // by pointer size.
-  static inline void CopyBlock(Address dst, Address src, size_t byte_size);
+  static inline void CopyBlock(Address dst, Address src, int byte_size);
 
   enum class StackScanMode { kNone, kFull, kSelective };
   StackScanMode ConservativeStackScanningModeForMinorGC() const {
@@ -387,7 +382,6 @@ class Heap final {
       return StackScanMode::kFull;
     }
     if (selective_stack_scan_start_address_.has_value()) {
-      DCHECK(IsGCWithStack());
       return StackScanMode::kSelective;
     }
     return StackScanMode::kNone;
@@ -397,7 +391,6 @@ class Heap final {
       return StackScanMode::kFull;
     }
     if (selective_stack_scan_start_address_.has_value()) {
-      DCHECK(IsGCWithStack());
       return StackScanMode::kSelective;
     }
     return StackScanMode::kNone;
@@ -469,8 +462,7 @@ class Heap final {
   V8_EXPORT_PRIVATE void CreateFillerObjectAt(
       Address addr, int size,
       ClearFreedMemoryMode clear_memory_mode =
-          ClearFreedMemoryMode::kDontClearFreedMemory,
-      std::optional<AllocationType> allocation_type = {});
+          ClearFreedMemoryMode::kDontClearFreedMemory);
 
   // Initialize a filler object at a specific address. Unlike
   // `CreateFillerObjectAt` this method will not perform slot verification since
@@ -480,6 +472,8 @@ class Heap final {
   bool CanMoveObjectStart(Tagged<HeapObject> object);
 
   bool IsImmovable(Tagged<HeapObject> object);
+
+  V8_EXPORT_PRIVATE static bool IsLargeObject(Tagged<HeapObject> object);
 
   // Trim the given array from the left. Note that this relocates the object
   // start and hence is only valid if there is only a single reference to it.
@@ -736,7 +730,8 @@ class Heap final {
   void ReplaceReadOnlySpace(SharedReadOnlySpace* shared_ro_space);
 
   // Sets up the heap memory without creating any objects.
-  void SetUpSpaces();
+  void SetUpSpaces(LinearAllocationArea& new_allocation_info,
+                   LinearAllocationArea& old_allocation_info);
 
   // Prepares the heap, setting up for deserialization.
   void InitializeMainThreadLocalHeap(LocalHeap* main_thread_local_heap);
@@ -977,9 +972,7 @@ class Heap final {
   // collect more garbage.
   V8_EXPORT_PRIVATE void CollectGarbage(
       AllocationSpace space, GarbageCollectionReason gc_reason,
-      const GCCallbackFlags gc_callback_flags = kNoGCCallbackFlags,
-      PerformHeapLimitCheck check_heap_limit_reached =
-          PerformHeapLimitCheck::kYes);
+      const GCCallbackFlags gc_callback_flags = kNoGCCallbackFlags);
 
   // Performs a full garbage collection.
   V8_EXPORT_PRIVATE void CollectAllGarbage(
@@ -1007,14 +1000,6 @@ class Heap final {
       LocalHeap* local_heap,
       GarbageCollectionReason gc_reason =
           GarbageCollectionReason::kBackgroundAllocationFailure);
-
-  // Performs a GC through CollectGarbage(). However, if the GC reaches the heap
-  // limit instead of crashing immediately, more and stronger GCs are performed
-  // until eventually CollectAllAvailableGarbage() is invoked as last resort GC.
-  V8_EXPORT_PRIVATE void CollectGarbageWithRetry(
-      AllocationSpace space, GCFlags gc_flags,
-      GarbageCollectionReason gc_reason,
-      const GCCallbackFlags gc_callback_flags);
 
   // Reports and external memory pressure event, either performs a major GC or
   // completes incremental marking in order to free external resources.
@@ -1301,30 +1286,23 @@ class Heap final {
   size_t MaxOldGenerationSize() { return max_old_generation_size(); }
 
   // Limit on the max old generation size imposed by the underlying allocator.
-  V8_EXPORT_PRIVATE static size_t AllocatorLimitOnMaxOldGenerationSize(
-      uint64_t physical_memory);
+  V8_EXPORT_PRIVATE static size_t AllocatorLimitOnMaxOldGenerationSize();
 
   V8_EXPORT_PRIVATE static size_t HeapSizeFromPhysicalMemory(
       uint64_t physical_memory);
   V8_EXPORT_PRIVATE static void GenerationSizesFromHeapSize(
-      uint64_t physical_memory, size_t heap_size, size_t* young_generation_size,
+      size_t heap_size, size_t* young_generation_size,
       size_t* old_generation_size);
   V8_EXPORT_PRIVATE static size_t YoungGenerationSizeFromOldGenerationSize(
-      uint64_t physical_memory, size_t old_generation_size);
+      size_t old_generation_size);
   V8_EXPORT_PRIVATE static size_t YoungGenerationSizeFromSemiSpaceSize(
       size_t semi_space_size);
   V8_EXPORT_PRIVATE static size_t SemiSpaceSizeFromYoungGenerationSize(
       size_t young_generation_size);
   V8_EXPORT_PRIVATE static size_t MinYoungGenerationSize();
   V8_EXPORT_PRIVATE static size_t MinOldGenerationSize();
-  V8_EXPORT_PRIVATE static size_t MaxOldGenerationSizeFromPhysicalMemory(
+  V8_EXPORT_PRIVATE static size_t MaxOldGenerationSize(
       uint64_t physical_memory);
-
-  uint64_t physical_memory() const {
-    // Prevent access before its initialization in ConfigureHeap().
-    DCHECK(configured_);
-    return physical_memory_;
-  }
 
   // Returns the capacity of the heap in bytes w/o growing. Heap grows when
   // more spaces are needed until it reaches the limit.
@@ -1804,9 +1782,6 @@ class Heap final {
                                           GarbageCollectionReason gc_reason,
                                           const char** reason) const;
 
-  void CheckHeapLimitReached();
-  bool ReachedHeapLimit();
-
   // Make all LABs of all threads iterable.
   void MakeLinearAllocationAreasIterable();
 
@@ -1920,7 +1895,7 @@ class Heap final {
   // some reporting/verification activities when compiled with DEBUG set.
   void GarbageCollectionPrologue(GarbageCollectionReason gc_reason,
                                  const v8::GCCallbackFlags gc_callback_flags);
-  void GarbageCollectionPrologueInSafepoint(GarbageCollector collector);
+  void GarbageCollectionPrologueInSafepoint();
   void GarbageCollectionEpilogue(GarbageCollector collector);
   void GarbageCollectionEpilogueInSafepoint(GarbageCollector collector);
 
@@ -1991,7 +1966,6 @@ class Heap final {
   static const int kMaxLoadTimeMs = 7000;
 
   V8_EXPORT_PRIVATE bool ShouldOptimizeForLoadTime() const;
-  V8_EXPORT_PRIVATE bool IsLoading() const;
   void NotifyLoadingStarted();
   void NotifyLoadingEnded();
 
@@ -2014,8 +1988,6 @@ class Heap final {
   size_t max_old_generation_size() const {
     return max_old_generation_size_.load(std::memory_order_relaxed);
   }
-
-  size_t max_global_memory_size() const { return max_global_memory_size_; }
 
   size_t min_old_generation_size() const { return min_old_generation_size_; }
 
@@ -2055,11 +2027,11 @@ class Heap final {
 
   void RecomputeLimits(GarbageCollector collector, base::TimeTicks time);
   void RecomputeLimitsAfterLoadingIfNeeded();
-  struct LimitsComputationResult {
+  struct LimitsCompuatationResult {
     size_t old_generation_allocation_limit;
     size_t global_allocation_limit;
   };
-  static LimitsComputationResult ComputeNewAllocationLimits(Heap* heap);
+  static LimitsCompuatationResult ComputeNewAllocationLimits(Heap* heap);
 
   // ===========================================================================
   // GC Tasks. =================================================================
@@ -2486,18 +2458,15 @@ class Heap final {
   // Time that the embedder started loading resources, or kLoadTimeNotLoading.
   std::atomic<double> load_start_time_ms_{kLoadTimeNotLoading};
 
+  bool update_allocation_limits_after_loading_ = false;
   // Full GC may trigger during loading due to overshooting allocation limits.
   // In such cases we may want to update the limits again once loading is
   // actually finished.
-  bool update_allocation_limits_after_loading_ = false;
+  bool is_full_gc_during_loading_ = false;
 
   // On-stack address used for selective consevative stack scanning. No value
   // means that selective conservative stack scanning is not enabled.
   std::optional<const void*> selective_stack_scan_start_address_;
-
-  // The amount of physical memory on the device passed in by the embedder. If
-  // no value was provided this will be 0.
-  uint64_t physical_memory_;
 
   // Classes in "heap" can be friends.
   friend class ActivateMemoryReducerTask;

@@ -310,7 +310,7 @@ void CodeEventLogger::CodeCreateEvent(CodeTag tag,
 #if V8_ENABLE_WEBASSEMBLY
 void CodeEventLogger::CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                                       wasm::WasmName name,
-                                      std::string_view source_url,
+                                      const char* source_url,
                                       int /*code_offset*/, int /*script_id*/) {
   DCHECK(is_listening_to_code_events());
   name_buffer_->Init(tag);
@@ -607,7 +607,7 @@ void ExternalLogEventListener::CodeCreateEvent(
 void ExternalLogEventListener::CodeCreateEvent(CodeTag tag,
                                                const wasm::WasmCode* code,
                                                wasm::WasmName name,
-                                               std::string_view source_url,
+                                               const char* source_url,
                                                int code_offset, int script_id) {
   // TODO(mmarchini): handle later
 }
@@ -1125,15 +1125,6 @@ class Ticker : public sampler::Sampler {
     if (IsActive()) Stop();
   }
 
-  void Start() {
-    // Check whether the sampler can be used. If this fails on test bots, the
-    // corresponding test probably needs to be disabled in the sandbox +
-    // hardware support configuration until crbug.com/429173713 is resolved.
-    CHECK(HardwareSandboxingDisabledOrSupportsSignalDeliveryInSandbox());
-
-    Sampler::Start();
-  }
-
   void SetProfiler(Profiler* profiler) {
     DCHECK_NULL(profiler_);
     profiler_ = profiler;
@@ -1153,13 +1144,8 @@ class Ticker : public sampler::Sampler {
     if (isolate->was_locker_ever_used() &&
         (!isolate->thread_manager()->IsLockedByThread(
              perThreadData_->thread_id()) ||
-         perThreadData_->thread_state() != nullptr)) {
+         perThreadData_->thread_state() != nullptr))
       return;
-    }
-    if (isolate->current_vm_state() == LOGGING) return;
-    if (!v8_flags.prof_include_idle && IsIdle(isolate->current_vm_state())) {
-      return;
-    }
     TickSample sample;
     sample.Init(isolate, state, TickSample::kIncludeCEntryFrame, true);
     profiler_->Insert(&sample);
@@ -1433,39 +1419,27 @@ void V8FileLogger::LogSourceCodeInformation(
       << V8FileLogger::kNext << script->id() << V8FileLogger::kNext
       << shared->StartPosition() << V8FileLogger::kNext << shared->EndPosition()
       << V8FileLogger::kNext;
+  // TODO(v8:11429): Clean-up baseline-replated code in source position
+  // iteration.
   bool hasInlined = false;
-  bool isBaseline = code->kind(cage_base) == CodeKind::BASELINE;
-  std::optional<baseline::BytecodeOffsetIterator> baseline_iterator;
-  if (isBaseline) {
-    Handle<BytecodeArray> bytecodes(shared->GetBytecodeArray(isolate_),
-                                    isolate_);
-    Handle<TrustedByteArray> bytecode_offsets(
-        code->GetCode()->bytecode_offset_table(), isolate_);
-    baseline_iterator.emplace(bytecode_offsets, bytecodes);
-  }
-  Handle<TrustedByteArray> source_position_table(
-      code->SourcePositionTable(isolate_, *shared), isolate_);
-  SourcePositionTableIterator iterator(source_position_table);
-  for (; !iterator.done(); iterator.Advance()) {
-    SourcePosition pos = iterator.source_position();
-    int code_offset = iterator.code_offset();
-    if (isBaseline) {
-      // Use the bytecode offset to calculate pc offset for baseline code.
-      baseline_iterator->AdvanceToBytecodeOffset(code_offset);
-      code_offset =
-          static_cast<int>(baseline_iterator->current_pc_start_offset());
-    }
-    msg << "C" << code_offset << "O" << pos.ScriptOffset();
-    if (pos.isInlined()) {
-      msg << "I" << pos.InliningId();
-      hasInlined = true;
+  if (code->kind(cage_base) != CodeKind::BASELINE) {
+    SourcePositionTableIterator iterator(
+        code->SourcePositionTable(isolate_, *shared));
+    for (; !iterator.done(); iterator.Advance()) {
+      SourcePosition pos = iterator.source_position();
+      msg << "C" << iterator.code_offset() << "O" << pos.ScriptOffset();
+      if (pos.isInlined()) {
+        msg << "I" << pos.InliningId();
+        hasInlined = true;
+      }
     }
   }
   msg << V8FileLogger::kNext;
   int maxInlinedId = -1;
   if (hasInlined) {
     Tagged<TrustedPodArray<InliningPosition>> inlining_positions =
-        CheckedCast<Code>(*code)->deoptimization_data()->InliningPositions();
+        Cast<DeoptimizationData>(Cast<Code>(code)->deoptimization_data())
+            ->InliningPositions();
     for (int i = 0; i < inlining_positions->length(); i++) {
       InliningPosition inlining_pos = inlining_positions->get(i);
       msg << "F";
@@ -1485,7 +1459,7 @@ void V8FileLogger::LogSourceCodeInformation(
   msg << V8FileLogger::kNext;
   if (hasInlined) {
     Tagged<DeoptimizationData> deopt_data =
-        CheckedCast<Code>(*code)->deoptimization_data();
+        Cast<DeoptimizationData>(Cast<Code>(code)->deoptimization_data());
     msg << std::hex;
     for (int i = 0; i <= maxInlinedId; i++) {
       msg << "S"
@@ -1508,12 +1482,12 @@ void V8FileLogger::LogCodeDisassemble(DirectHandle<AbstractCode> code) {
       << V8FileLogger::kNext;
   {
     std::ostringstream stream;
-    if (Tagged<Code> code_as_code; TryCast(*code, &code_as_code)) {
+    if (IsCode(*code, cage_base)) {
 #ifdef ENABLE_DISASSEMBLER
-      code_as_code->Disassemble(nullptr, stream, isolate_);
+      Cast<Code>(*code)->Disassemble(nullptr, stream, isolate_);
 #endif
     } else {
-      CheckedCast<BytecodeArray>(*code)->Disassemble(stream);
+      Cast<BytecodeArray>(*code)->Disassemble(stream);
     }
     std::string string = stream.str();
     msg.AppendString(string.c_str(), string.length());
@@ -1628,7 +1602,7 @@ void V8FileLogger::CodeCreateEvent(CodeTag tag, DirectHandle<AbstractCode> code,
 #if V8_ENABLE_WEBASSEMBLY
 void V8FileLogger::CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                                    wasm::WasmName name,
-                                   std::string_view /*source_url*/,
+                                   const char* /*source_url*/,
                                    int /*code_offset*/, int /*script_id*/) {
   if (!is_listening_to_code_events()) return;
   if (!v8_flags.log_code) return;
@@ -1992,10 +1966,6 @@ void V8FileLogger::RuntimeCallTimerEvent() {
 
 void V8FileLogger::TickEvent(TickSample* sample, bool overflow) {
   if (!v8_flags.prof_cpp) return;
-  if (sample->state == LOGGING) return;
-  if (!v8_flags.prof_include_idle && IsIdle(sample->state)) {
-    return;
-  }
   VMStateIfMainThread<LOGGING> state(isolate_);
   if (V8_UNLIKELY(TracingFlags::runtime_stats.load(std::memory_order_relaxed) ==
                   v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE)) {
@@ -2148,7 +2118,7 @@ EnumerateCompiledFunctions(Heap* heap) {
         // WasmFunctionData. They are also unreachable, but since we're walking
         // the entire heap here, we may still find them if no GC has cleaned
         // them up yet.
-        if (sfi->HasWasmFunctionData(isolate) &&
+        if (sfi->HasWasmFunctionData() &&
             sfi->HasUnpublishedTrustedData(isolate)) {
           continue;
         }
@@ -2277,7 +2247,7 @@ void V8FileLogger::LogAllMaps() {
   CombinedHeapObjectIterator iterator(heap);
   for (Tagged<HeapObject> obj = iterator.Next(); !obj.is_null();
        obj = iterator.Next()) {
-    if (IsAnyHole(obj) || !IsMap(obj)) continue;
+    if (!IsMap(obj)) continue;
     Tagged<Map> map = Cast<Map>(obj);
     MapCreate(map);
     MapDetails(map);
@@ -2587,10 +2557,6 @@ void ExistingCodeLogger::LogCodeObject(Tagged<AbstractCode> object) {
       description = "A Wasm to JavaScript adapter";
       tag = CodeTag::kStub;
       break;
-    case CodeKind::WASM_STACK_ENTRY:
-      description = "A Wasm continuation adapter";
-      tag = CodeTag::kStub;
-      break;
     case CodeKind::C_WASM_ENTRY:
       description = "A C to Wasm entry stub";
       tag = CodeTag::kStub;
@@ -2662,7 +2628,7 @@ void ExistingCodeLogger::LogCompiledFunctions(
     // objects are also in trusted space. Currently this breaks because we must
     // not compare objects in trusted space with ones inside the sandbox.
     static_assert(!kAllCodeObjectsLiveInTrustedSpace);
-    if (!TrustedHeapLayout::InTrustedSpace(*pair.second) &&
+    if (!HeapLayout::InTrustedSpace(*pair.second) &&
         pair.second.is_identical_to(BUILTIN_CODE(isolate_, CompileLazy))) {
       continue;
     }
@@ -2731,7 +2697,7 @@ void ExistingCodeLogger::LogExistingFunction(
       }
     }
 #if V8_ENABLE_WEBASSEMBLY
-  } else if (shared->HasWasmJSFunctionData(isolate_)) {
+  } else if (shared->HasWasmJSFunctionData()) {
     CALL_CODE_EVENT_HANDLER(
         CodeCreateEvent(CodeTag::kFunction, code, "wasm-to-js"));
 #endif  // V8_ENABLE_WEBASSEMBLY

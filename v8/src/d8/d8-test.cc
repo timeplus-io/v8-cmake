@@ -38,8 +38,6 @@ namespace {
     return;                                                                 \
   }
 
-constexpr v8::EmbedderDataTypeTag kFastCApiTag = 1;
-
 class FastCApiObject {
  public:
   static FastCApiObject& instance();
@@ -232,12 +230,6 @@ class FastCApiObject {
 
   static Type AddAllSequenceJSArrayHelper(v8::Isolate* isolate,
                                           Local<Array> seq_arg) {
-    if (i::v8_flags.fuzzing) {
-      // TODO(418936518): The code below may trigger deopt. Once deopt support
-      // for fast API calls with return values is supported, remove this early
-      // return here again.
-      return 0;
-    }
     Type sum = 0;
     uint32_t length = seq_arg->Length();
     if (length > 1024) {
@@ -1501,7 +1493,7 @@ void CreateFastCAPIObject(const FunctionCallbackInfo<Value>& info) {
   Local<Object> api_object = info.This();
   api_object->SetAlignedPointerInInternalField(
       FastCApiObject::kV8WrapperObjectIndex,
-      reinterpret_cast<void*>(&kFastCApiObject), kFastCApiTag);
+      reinterpret_cast<void*>(&kFastCApiObject));
   api_object->SetAccessorProperty(
       String::NewFromUtf8Literal(info.GetIsolate(), "supports_fp_params"),
       FunctionTemplate::New(info.GetIsolate(), FastCApiObject::SupportsFPParams)

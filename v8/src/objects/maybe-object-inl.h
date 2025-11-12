@@ -17,13 +17,20 @@
 namespace v8 {
 namespace internal {
 
-inline Tagged<ClearedWeakValue> ClearedValue() {
+inline Tagged<ClearedWeakValue> ClearedValue(PtrComprCageBase cage_base) {
+  // Construct cleared weak ref value.
+  Address value;
 #ifdef V8_COMPRESS_POINTERS
-  return Tagged<ClearedWeakValue>(
-      V8HeapCompressionScheme::DecompressTagged(kClearedWeakHeapObjectLower32));
+  // This is necessary to make pointer decompression computation also
+  // suitable for cleared weak references.
+  value =
+      V8HeapCompressionScheme::DecompressTagged(kClearedWeakHeapObjectLower32);
 #else
-  return kClearedWeakValue;
+  value = kClearedWeakHeapObjectLower32;
 #endif
+  // The rest of the code will check only the lower 32-bits.
+  DCHECK_EQ(kClearedWeakHeapObjectLower32, static_cast<uint32_t>(value));
+  return Tagged<ClearedWeakValue>(value);
 }
 
 inline Tagged<ClearedWeakValue> ClearedTrustedValue() {
@@ -32,7 +39,7 @@ inline Tagged<ClearedWeakValue> ClearedTrustedValue() {
       TrustedSpaceCompressionScheme::DecompressTagged(
           kClearedWeakHeapObjectLower32));
 #else
-  return kClearedWeakValue;
+  return Tagged<ClearedWeakValue>(kClearedWeakHeapObjectLower32);
 #endif
 }
 

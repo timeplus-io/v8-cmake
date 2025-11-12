@@ -11,10 +11,10 @@ namespace v8 {
 namespace internal {
 
 RegExpMacroAssemblerTracer::RegExpMacroAssemblerTracer(
-    std::unique_ptr<RegExpMacroAssembler>&& assembler)
-    : RegExpMacroAssembler(*assembler), assembler_(std::move(assembler)) {
+    Isolate* isolate, RegExpMacroAssembler* assembler)
+    : RegExpMacroAssembler(isolate, assembler->zone()), assembler_(assembler) {
   PrintF("RegExpMacroAssembler%s();\n",
-         ImplementationToString(assembler_->Implementation()));
+         ImplementationToString(assembler->Implementation()));
 }
 
 RegExpMacroAssemblerTracer::~RegExpMacroAssemblerTracer() = default;
@@ -100,10 +100,9 @@ void RegExpMacroAssemblerTracer::PopRegister(int register_index) {
 void RegExpMacroAssemblerTracer::PushRegister(
     int register_index,
     StackCheckFlag check_stack_limit) {
-  PrintF(" PushRegister(register=%d, %s);\n", register_index,
-         check_stack_limit == StackCheckFlag::kCheckStackLimit
-             ? "check stack limit"
-             : "");
+  PrintF(" PushRegister(register=%d, %s);\n",
+         register_index,
+         check_stack_limit ? "check stack limit" : "");
   assembler_->PushRegister(register_index, check_stack_limit);
 }
 
@@ -460,25 +459,6 @@ void RegExpMacroAssemblerTracer::IfRegisterGE(int register_index,
   assembler_->IfRegisterGE(register_index, comparand, if_ge);
 }
 
-void RegExpMacroAssemblerTracer::set_global_mode(GlobalMode mode) {
-  RegExpMacroAssembler::set_global_mode(mode);
-  assembler_->set_global_mode(mode);
-}
-
-void RegExpMacroAssemblerTracer::set_slow_safe(bool ssc) {
-  RegExpMacroAssembler::set_slow_safe(ssc);
-  assembler_->set_slow_safe(ssc);
-}
-
-void RegExpMacroAssemblerTracer::set_backtrack_limit(uint32_t backtrack_limit) {
-  RegExpMacroAssembler::set_backtrack_limit(backtrack_limit);
-  assembler_->set_backtrack_limit(backtrack_limit);
-}
-
-void RegExpMacroAssemblerTracer::set_can_fallback(bool val) {
-  RegExpMacroAssembler::set_can_fallback(val);
-  assembler_->set_can_fallback(val);
-}
 
 RegExpMacroAssembler::IrregexpImplementation
     RegExpMacroAssemblerTracer::Implementation() {

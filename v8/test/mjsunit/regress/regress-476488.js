@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --no-lazy-feedback-allocation --expose-gc
-// Flags: --invocation-count-for-turbofan=1
+// Flags: --always-turbofan --expose-gc
 
 function __f_0(message, a) {
   eval(), message;
@@ -13,5 +12,4 @@ function __f_0(message, a) {
     gc();
   })();
 }
-__f_0();
 __f_0();

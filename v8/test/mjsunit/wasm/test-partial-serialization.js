@@ -35,7 +35,7 @@ const wire_bytes = create_builder().toBuffer();
 function testTierTestingFlag() {
   print(arguments.callee.name);
   const module = new WebAssembly.Module(wire_bytes);
-  const buff = d8.wasm.serializeModule(module);
+  const buff = %SerializeWasmModule(module);
   const instance = new WebAssembly.Instance(module);
   check(instance);
   return buff;
@@ -50,7 +50,7 @@ gc();
 
 (function testSerializedModule() {
   print(arguments.callee.name);
-  const module = d8.wasm.deserializeModule(serialized_module, wire_bytes);
+  const module = %DeserializeWasmModule(serialized_module, wire_bytes);
 
   const instance = new WebAssembly.Instance(module);
   check(instance);

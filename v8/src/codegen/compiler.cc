@@ -243,6 +243,27 @@ class CompilerTracer : public AllStatic {
     PrintTraceSuffix(scope);
   }
 
+  static void TraceOptimizeForAlwaysOpt(Isolate* isolate,
+                                        DirectHandle<JSFunction> function,
+                                        CodeKind code_kind) {
+    if (!v8_flags.trace_opt) return;
+    CodeTracer::Scope scope(isolate->GetCodeTracer());
+    PrintTracePrefix(scope, "optimizing", function, code_kind);
+    PrintF(scope.file(), " because --always-turbofan");
+    PrintTraceSuffix(scope);
+  }
+
+  static void TraceMarkForAlwaysOpt(Isolate* isolate,
+                                    DirectHandle<JSFunction> function) {
+    if (!v8_flags.trace_opt) return;
+    CodeTracer::Scope scope(isolate->GetCodeTracer());
+    PrintF(scope.file(), "[marking ");
+    ShortPrint(*function, scope.file());
+    PrintF(scope.file(),
+           " for optimized recompilation because --always-turbofan");
+    PrintF(scope.file(), "]\n");
+  }
+
  private:
   static void PrintTracePrefix(const CodeTracer::Scope& scope,
                                const char* header,
@@ -871,7 +892,7 @@ bool IterativelyExecuteAndFinalizeUnoptimizedCompilationJobs(
       // Compilation failed presumably because of stack overflow, make sure
       // the shared function info contains uncompiled data for the next
       // compilation attempts.
-      if (!shared_info->HasUncompiledData(isolate)) {
+      if (!shared_info->HasUncompiledData()) {
         SharedFunctionInfo::CreateAndSetUncompiledData(isolate, literal);
       }
       compilation_succeeded = false;
@@ -1806,8 +1827,9 @@ class MergeAssumptionChecker final : public ObjectVisitor {
                     &eval_from_shared_or_wrapped_arguments)) {
           visited_.insert(eval_from_shared_or_wrapped_arguments);
         }
-      } else if (Tagged<BytecodeArray> bytes; TryCast(current, &bytes)) {
-        Tagged<HeapObject> constants = bytes->constant_pool();
+      } else if (IsBytecodeArray(current)) {
+        Tagged<HeapObject> constants =
+            Cast<BytecodeArray>(current)->constant_pool();
         QueueVisit(constants, kConstantPool);
       }
       current_object_kind_ = pair.second;
@@ -1830,7 +1852,6 @@ class MergeAssumptionChecker final : public ObjectVisitor {
       Tagged<HeapObject> obj;
       bool is_weak = maybe_obj.IsWeak();
       if (maybe_obj.GetHeapObject(&obj)) {
-        if (SafeIsAnyHole(obj)) continue;
         if (IsSharedFunctionInfo(obj)) {
           CHECK((current_object_kind_ == kConstantPool && !is_weak) ||
                 (current_object_kind_ == kScriptInfosList && is_weak) ||
@@ -1911,9 +1932,6 @@ bool BackgroundCompileTask::is_streaming_compilation() const {
 }
 
 void BackgroundCompileTask::Run() {
-  base::FlushDenormalsScope flush_denormals_scope(
-      isolate_for_local_isolate_->flush_denormals());
-
   DCHECK_NE(ThreadId::Current(), isolate_for_local_isolate_->thread_id());
   LocalIsolate isolate(isolate_for_local_isolate_, ThreadKind::kBackground);
   UnparkedScope unparked_scope(&isolate);
@@ -1978,11 +1996,11 @@ void BackgroundCompileTask::Run(
     }
 
     // Get preparsed scope data from the function literal.
-    if (shared_info->HasUncompiledDataWithPreparseData(isolate)) {
+    if (shared_info->HasUncompiledDataWithPreparseData()) {
       info.set_consumed_preparse_data(ConsumedPreparseData::For(
           isolate,
           handle(shared_info->uncompiled_data_with_preparse_data(isolate)
-                     ->preparse_data(),
+                     ->preparse_data(isolate),
                  isolate)));
     }
   }
@@ -2946,7 +2964,7 @@ bool Compiler::Compile(Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
     return true;
   }
 
-  if (shared_info->HasUncompiledDataWithPreparseData(isolate)) {
+  if (shared_info->HasUncompiledDataWithPreparseData()) {
     parse_info.set_consumed_preparse_data(ConsumedPreparseData::For(
         isolate, handle(shared_info->uncompiled_data_with_preparse_data(isolate)
                             ->preparse_data(),
@@ -3037,6 +3055,34 @@ bool Compiler::Compile(Isolate* isolate, DirectHandle<JSFunction> function,
   function->ResetTieringRequests();
 
   function->UpdateCode(isolate, *code);
+
+  // Optimize now if --always-turbofan is enabled.
+#if V8_ENABLE_WEBASSEMBLY
+  if (v8_flags.always_turbofan && !function->shared()->HasAsmWasmData()) {
+#else
+  if (v8_flags.always_turbofan) {
+#endif  // V8_ENABLE_WEBASSEMBLY
+    DCHECK(!function->tiering_in_progress());
+    CompilerTracer::TraceOptimizeForAlwaysOpt(isolate, function,
+                                              CodeKindForTopTier());
+
+    const CodeKind code_kind = CodeKindForTopTier();
+    const ConcurrencyMode concurrency_mode = ConcurrencyMode::kSynchronous;
+
+    if (v8_flags.stress_concurrent_inlining &&
+        isolate->concurrent_recompilation_enabled() &&
+        isolate->node_observer() == nullptr) {
+      SpawnDuplicateConcurrentJobForStressTesting(isolate, function,
+                                                  concurrency_mode, code_kind);
+    }
+
+    DirectHandle<Code> maybe_code;
+    if (GetOrCompileOptimized(isolate, function, concurrency_mode, code_kind)
+            .ToHandle(&maybe_code)) {
+      code = maybe_code;
+      function->UpdateOptimizedCode(isolate, *code);
+    }
+  }
 
   // Install a feedback vector if necessary.
   if (code->kind() == CodeKind::BASELINE) {
@@ -3198,8 +3244,13 @@ void Compiler::CompileOptimized(Isolate* isolate,
   DCHECK_IMPLIES(function->IsTieringRequestedOrInProgress() &&
                      !function->IsLoggingRequested(isolate),
                  function->tiering_in_progress());
-  DCHECK_IMPLIES(!tiering_was_in_progress && function->tiering_in_progress(),
-                 function->ChecksTieringState(isolate));
+  if (!v8_flags.always_turbofan) {
+    // Before a maglev optimization job is started we might have to compile
+    // bytecode. This can trigger a turbofan compilation if always_turbofan is
+    // set. Therefore we need to skip this dcheck in that case.
+    DCHECK_IMPLIES(!tiering_was_in_progress && function->tiering_in_progress(),
+                   function->ChecksTieringState(isolate));
+  }
   DCHECK_IMPLIES(!tiering_was_in_progress && function->tiering_in_progress(),
                  IsConcurrent(mode));
 #endif  // DEBUG
@@ -3251,7 +3302,8 @@ MaybeDirectHandle<JSFunction> Compiler::GetFunctionFromEval(
         feedback_cell->IncrementClosureCount(isolate);
     if (cell_transition == FeedbackCell::kOneToMany &&
         result->code(isolate)->is_context_specialized()) {
-      result->UpdateCode(isolate, *BUILTIN_CODE(isolate, CompileLazy));
+      result->UpdateCode(isolate,
+                         *BUILTIN_CODE(isolate, InterpreterEntryTrampoline));
     }
     result->set_context(*context, kReleaseStore);
     return result;
@@ -4299,7 +4351,7 @@ DirectHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
     // any preparsed data. If we produced preparsed data during this compile for
     // this function, replace the uncompiled data with one that includes it.
     if (literal->produced_preparse_data() != nullptr &&
-        existing->HasUncompiledDataWithoutPreparseData(isolate)) {
+        existing->HasUncompiledDataWithoutPreparseData()) {
       DirectHandle<UncompiledData> existing_uncompiled_data(
           existing->uncompiled_data(isolate), isolate);
       DCHECK_EQ(literal->start_position(),
@@ -4549,6 +4601,15 @@ void Compiler::PostInstantiation(Isolate* isolate,
       }
     }
 #endif  // !V8_ENABLE_LEAPTIERING
+
+    if (v8_flags.always_turbofan && shared->allows_lazy_compilation() &&
+        !shared->optimization_disabled(CodeKind::TURBOFAN_JS) &&
+        !function->HasAvailableOptimizedCode(isolate)) {
+      CompilerTracer::TraceMarkForAlwaysOpt(isolate, function);
+      JSFunction::EnsureFeedbackVector(isolate, function, is_compiled_scope);
+      function->RequestOptimization(isolate, CodeKind::TURBOFAN_JS,
+                                    ConcurrencyMode::kSynchronous);
+    }
   }
 
   if (shared->is_toplevel() || shared->is_wrapped()) {

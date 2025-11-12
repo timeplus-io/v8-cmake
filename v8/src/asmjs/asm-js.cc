@@ -438,10 +438,14 @@ MaybeDirectHandle<Object> AsmJs::InstantiateAsmWasm(
   ReportInstantiationSuccess(script, position,
                              instantiate_timer.Elapsed().InMillisecondsF());
 
-  LookupIterator it(isolate, instance,
-                    isolate->factory()->wasm_asm_single_function_symbol(),
-                    LookupIterator::OWN_SKIP_INTERCEPTOR);
-  if (it.IsFound()) return it.GetDataValue();
+  DirectHandle<Name> single_function_name(
+      isolate->factory()->InternalizeUtf8String(AsmJs::kSingleFunctionName));
+  MaybeDirectHandle<Object> single_function =
+      Object::GetProperty(isolate, instance, single_function_name);
+  if (!single_function.is_null() &&
+      !IsUndefined(*single_function.ToHandleChecked(), isolate)) {
+    return single_function;
+  }
 
   // Here we rely on the fact that the exports object is eagerly created.
   // The following check is a weak indicator for that. If this ever changes,

@@ -7102,17 +7102,17 @@ TEST(RunChangeInt64ToFloat64) {
 
 TEST(RunBitcastInt64ToFloat64) {
   int64_t input = 1;
-  uint64_t output;
+  Float64 output;
   RawMachineAssemblerTester<int32_t> m;
   m.StoreToPointer(
-      &output, MachineRepresentation::kFloat64,
+      output.get_bits_address(), MachineRepresentation::kFloat64,
       m.BitcastInt64ToFloat64(m.LoadFromPointer(&input, MachineType::Int64())));
   m.Return(m.Int32Constant(11));
   FOR_INT64_INPUTS(i) {
     input = i;
     CHECK_EQ(11, m.Call());
     Float64 expected = Float64::FromBits(input);
-    CHECK_EQ(expected.get_bits(), output);
+    CHECK_EQ(expected.get_bits(), output.get_bits());
   }
 }
 
@@ -7503,17 +7503,17 @@ TEST(RunRoundUint32ToFloat32) {
 
 TEST(RunBitcastInt32ToFloat32) {
   int32_t input = 1;
-  uint32_t output;
+  Float32 output;
   RawMachineAssemblerTester<int32_t> m;
   m.StoreToPointer(
-      &output, MachineRepresentation::kFloat32,
+      output.get_bits_address(), MachineRepresentation::kFloat32,
       m.BitcastInt32ToFloat32(m.LoadFromPointer(&input, MachineType::Int32())));
   m.Return(m.Int32Constant(11));
   FOR_INT32_INPUTS(i) {
     input = i;
     CHECK_EQ(11, m.Call());
     Float32 expected = Float32::FromBits(input);
-    CHECK_EQ(expected.get_bits(), output);
+    CHECK_EQ(expected.get_bits(), output.get_bits());
   }
 }
 

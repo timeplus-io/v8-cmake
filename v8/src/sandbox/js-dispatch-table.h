@@ -246,7 +246,8 @@ class V8_EXPORT_PRIVATE JSDispatchTable
 
   // The following methods are used to pre allocate entries and then initialize
   // them later.
-  void PreAllocateEntries(Space* space, int num);
+  JSDispatchHandle PreAllocateEntries(Space* space, int num,
+                                      bool ensure_static_handles);
   bool PreAllocatedEntryNeedsInitialization(Space* space,
                                             JSDispatchHandle handle);
   void InitializePreAllocatedEntry(Space* space, JSDispatchHandle handle,
@@ -295,9 +296,9 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   // The base address of this table, for use in JIT compilers.
   Address base_address() const { return base(); }
 
-#if V8_VERIFY_WRITE_BARRIERS
+#ifdef DEBUG
   bool IsMarked(JSDispatchHandle handle);
-#endif  // V8_VERIFY_WRITE_BARRIERS
+#endif  // DEBUG
 #if defined(DEBUG) || defined(VERIFY_HEAP)
   inline void VerifyEntry(JSDispatchHandle handle, Space* space,
                           Space* ro_space);

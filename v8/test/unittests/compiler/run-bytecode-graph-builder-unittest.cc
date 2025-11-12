@@ -93,6 +93,7 @@ class BytecodeGraphTester {
   BytecodeGraphTester(Isolate* isolate, const char* script,
                       const char* filter = kFunctionName)
       : isolate_(isolate), script_(script) {
+    i::v8_flags.always_turbofan = false;
     i::v8_flags.allow_natives_syntax = true;
   }
   virtual ~BytecodeGraphTester() = default;

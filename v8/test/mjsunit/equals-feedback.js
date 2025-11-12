@@ -20,25 +20,6 @@ function testOneWay(a, b, eq, expectedEquals, expectedFeedback) {
   assertMatches(new RegExp('CompareOp:' + expectedFeedback), feedback[0][1]);
 }
 
-function testOneWayWithMultipleValues(valuesAndExpected, eq, expectedFeedback) {
-  const equalsFunction = eval(
-    'function f' + counter +'(a, b) { return a ' + eq + ' b;} f' + counter);
-  ++counter;
-  %PrepareFunctionForOptimization(equalsFunction);
-
-  for (let i = 0; i < valuesAndExpected.length; ++i) {
-    [a, b, expectedEquals] = valuesAndExpected[i];
-    assertEquals(expectedEquals, equalsFunction(a, b));
-  }
-
-  const feedback = %GetFeedback(equalsFunction);
-  if (feedback === undefined) {
-    // Feedback -> string conversion not enabled in this build.
-    return;
-  }
-  assertMatches(new RegExp('CompareOp:' + expectedFeedback), feedback[0][1]);
-}
-
 function testLoose(a, b, expectedEquals, expectedFeedback) {
   testOneWay(a, b, '==', expectedEquals, expectedFeedback);
   testOneWay(b, a, '==', expectedEquals, expectedFeedback);
@@ -286,37 +267,26 @@ testLoose(true, undefined, false, 'NumberOrOddball');
 testLoose(false, null, false, 'NumberOrOddball');
 testLoose(false, undefined, false, 'NumberOrOddball');
 
-// Multiple feedback types would be correct here, e.g.,
-// ReceiverOrNullOrUndefined, NumberOrOddball, StringOrOddball.
-test(undefined, undefined, true, 'NumberOrOddball');
+test(undefined, undefined, true, 'ReceiverOrNullOrUndefined');
 testLoose(undefined, null, true, 'ReceiverOrNullOrUndefined');
 testStrict(undefined, null, false, 'ReceiverOrNullOrUndefined');
-// Multiple feedback types would be correct here, e.g.,
-// ReceiverOrNullOrUndefined, NumberOrOddball, StringOrOddball.
-test(null, null, true, 'NumberOrOddball');
+test(null, null, true, 'ReceiverOrNullOrUndefined');
 
 // Oddball, internalized string
-testLoose(true, 'true', false, 'Any');
-testStrict(true, 'true', false, 'StringOrOddball');
+test(true, 'true', false, 'Any');
 testLoose(false, '', true, 'Any');
-testStrict(false, '', false, 'StringOrOddball');
-testLoose(undefined, '', false, 'Any');
-testStrict(undefined, '', false, 'StringOrOddball');
-testLoose(null, '', false, 'Any');
-testStrict(null, '', false, 'StringOrOddball');
+testStrict(false, '', false, 'Any');
+test(undefined, '', false, 'Any');
+test(null, '', false, 'Any');
 
 // Oddball, non-internalized string
 {
   const a = '100000000';
   const b = '4';
-  testLoose(true, a + b, false, 'Any');
-  testStrict(true, a + b, false, 'StringOrOddball');
-  testLoose(false, a + b, false, 'Any');
-  testStrict(false, a + b, false, 'StringOrOddball');
-  testLoose(undefined, a + b, false, 'Any');
-  testStrict(undefined, a + b, false, 'StringOrOddball');
-  testLoose(null, a + b, false, 'Any');
-  testStrict(null, a + b, false, 'StringOrOddball');
+  test(true, a + b, false, 'Any');
+  test(false, a + b, false, 'Any');
+  test(undefined, a + b, false, 'Any');
+  test(null, a + b, false, 'Any');
 }
 
 // Oddball, Symbol
@@ -375,14 +345,3 @@ test({}, {}, false, 'Receiver');
   const a = {};
   test(a, a, true, 'Receiver');
 }
-
-// Additional tests for the StringOrOddball type getting created across
-// multiple calls (first strings, then oddballs, or the other way around).
-// Not all cases are supported, see above e.g., true === false resulting
-// in the feedback type Any.
-testOneWayWithMultipleValues([[null, 'foo', false], ['foo', 'bar', false]], '===', 'StringOrOddball');
-testOneWayWithMultipleValues([[undefined, 'foo', false], ['foo', 'bar', false]], '===', 'StringOrOddball');
-testOneWayWithMultipleValues([['foo', null, false], ['foo', 'bar', false]], '===', 'StringOrOddball');
-testOneWayWithMultipleValues([['foo', undefined, false], ['foo', 'bar', false]], '===', 'StringOrOddball');
-testOneWayWithMultipleValues([['bar', 'bar', true], [null, 'bar', false]], '===', 'StringOrOddball');
-testOneWayWithMultipleValues([['bar', 'foo', false], [undefined, 'bar', false]], '===', 'StringOrOddball');

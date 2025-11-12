@@ -180,7 +180,7 @@ DISABLE_ASAN void TickSample::Init(Isolate* v8_isolate,
     return;
   }
 
-  if (!IsExternal(state)) {
+  if (state != StateTag::EXTERNAL) {
     state = info.vm_state;
   }
   pc = regs.pc;
@@ -394,7 +394,7 @@ bool TickSample::GetStackSample(Isolate* v8_isolate, RegisterState* regs,
 
 void TickSample::print() const {
   PrintF("TickSample: at %p\n", this);
-  PrintF(" - state: %s\n", ToString(state));
+  PrintF(" - state: %s\n", StateToString(state));
   PrintF(" - pc: %p\n", pc);
   PrintF(" - stack: (%u frames)\n", frames_count);
   for (unsigned i = 0; i < frames_count; i++) {

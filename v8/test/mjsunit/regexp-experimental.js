@@ -44,7 +44,6 @@ Test(/\w\d/, '?a??a3!!!', ['a3'], 0);
 // [💩] without unicode flag is a character range matching one of the two
 // surrogate characters that make up 💩.  The leading surrogate is 0xD83D.
 Test(/[💩]/, 'f💩', [String.fromCodePoint(0xd83d)], 0);
-Test(/[^\x00-\uFFFF]/, 'asdf', null, 0);
 
 // Greedy and non-greedy quantifiers.
 Test(/x*/, 'asdfxk', [''], 0);

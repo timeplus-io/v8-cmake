@@ -201,7 +201,6 @@ void WriteJsCode(Isolate* isolate, const CodeTraceContext& ctx,
     case CodeKind::WASM_TO_JS_FUNCTION:
     case CodeKind::JS_TO_WASM_FUNCTION:
     case CodeKind::C_WASM_ENTRY:
-    case CodeKind::WASM_STACK_ENTRY:
       UNREACHABLE();
   }
 
@@ -290,11 +289,6 @@ void PerfettoLogger::CodeCreateEvent(CodeTag tag,
     case CodeKind::C_WASM_ENTRY:
       type = V8InternalCode::TYPE_C_WASM_ENTRY;
       break;
-    case CodeKind::WASM_STACK_ENTRY:
-      // TODO(thibaudm): Return TYPE_WASM_STACK_ENTRY once it has been added to
-      // perfetto's v8.proto.
-      type = V8InternalCode::TYPE_UNKNOWN;
-      break;
 
     case CodeKind::INTERPRETED_FUNCTION:
     case CodeKind::BASELINE:
@@ -363,8 +357,8 @@ void PerfettoLogger::CodeCreateEvent(CodeTag tag,
 #if V8_ENABLE_WEBASSEMBLY
 void PerfettoLogger::CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                                      wasm::WasmName name,
-                                     std::string_view source_url,
-                                     int code_offset, int script_id) {
+                                     const char* source_url, int code_offset,
+                                     int script_id) {
   DisallowGarbageCollection no_gc;
 
   CodeDataSource::Trace(

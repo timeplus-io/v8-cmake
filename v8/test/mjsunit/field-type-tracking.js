@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --allow-natives-syntax --track-field-types
-// Flags: --turbofan
+// Flags: --turbofan --no-always-turbofan
 
 (function() {
   var o = { text: "Hello World!" };

@@ -7,39 +7,17 @@
 
 #include <optional>
 
-#include "src/base/logging.h"
 #include "src/base/small-vector.h"
 #include "src/compiler/turboshaft/snapshot-table.h"
 #include "src/maglev/maglev-compilation-info.h"
+#include "src/maglev/maglev-graph-builder.h"
 #include "src/maglev/maglev-graph-processor.h"
-#include "src/maglev/maglev-reducer.h"
 
 namespace v8 {
 namespace internal {
 namespace maglev {
 
 class Graph;
-
-// Returns true if {op} is an untagging node.
-constexpr bool IsUntagging(Opcode op) {
-  switch (op) {
-    case Opcode::kCheckedSmiUntag:
-    case Opcode::kUnsafeSmiUntag:
-    case Opcode::kCheckedNumberToInt32:
-    case Opcode::kCheckedObjectToIndex:
-    case Opcode::kTruncateCheckedNumberOrOddballToInt32:
-    case Opcode::kTruncateUnsafeNumberOrOddballToInt32:
-    case Opcode::kCheckedNumberOrOddballToFloat64:
-    case Opcode::kUncheckedNumberOrOddballToFloat64:
-    case Opcode::kCheckedNumberOrOddballToHoleyFloat64:
-      return true;
-    default:
-      return false;
-  }
-}
-
-template <typename T>
-concept IsUntaggingT = IsUntagging(NodeBase::opcode_of<T>);
 
 class MaglevPhiRepresentationSelector {
   template <class Value>
@@ -48,13 +26,16 @@ class MaglevPhiRepresentationSelector {
   using Snapshot = SnapshotTable<ValueNode*>::Snapshot;
 
  public:
-  explicit MaglevPhiRepresentationSelector(Graph* graph);
+  explicit MaglevPhiRepresentationSelector(MaglevGraphBuilder* builder)
+      : builder_(builder),
+        phi_taggings_(builder->zone()),
+        predecessors_(builder->zone()),
+        new_nodes_at_start_(builder->zone()) {}
 
   void PreProcessGraph(Graph* graph) {
     if (v8_flags.trace_maglev_phi_untagging) {
       StdoutStream{} << "\nMaglevPhiRepresentationSelector\n";
     }
-    graph_ = graph;
   }
   void PostProcessGraph(Graph* graph) {
     if (v8_flags.trace_maglev_phi_untagging) {
@@ -88,11 +69,6 @@ class MaglevPhiRepresentationSelector {
     return UpdateNodeInputs(node, &state);
   }
 
-  DeoptFrame* GetDeoptFrameForEagerDeopt() {
-    DCHECK_NOT_NULL(eager_deopt_frame_);
-    return eager_deopt_frame_;
-  }
-
  private:
   enum class HoistType : uint8_t {
     kNone,
@@ -116,46 +92,49 @@ class MaglevPhiRepresentationSelector {
   // representation, then we don't need to do a kCheckedSmiUntag before using
   // it. UpdateNodeInputs(n) removes such untagging from {n}'s input (and insert
   // new conversions if needed, from Int32 to Float64 for instance).
-  template <IsUntaggingT UntaggingNodeT>
-  ProcessResult UpdateNodeInputs(UntaggingNodeT* node,
-                                 const ProcessingState* state) {
-    if (node->NodeBase::input(0).node()->template Is<Phi>() &&
-        node->NodeBase::input(0).node()->value_representation() !=
-            ValueRepresentation::kTagged) {
-      DCHECK_EQ(node->input_count(), 1);
-      // This untagging conversion is outdated, since its input has been
-      // untagged. Depending on the conversion, it might need to be replaced
-      // by another untagged->untagged conversion, or it might need to be
-      // removed altogether (or rather, replaced by an identity node).
-      return UpdateUntaggingOfPhi(
-          node->NodeBase::input(0).node()->template Cast<Phi>(),
-          node->template Cast<ValueNode>());
-    }
-    return ProcessResult::kContinue;
-  }
+  template <class NodeT>
+  ProcessResult UpdateNodeInputs(NodeT* n, const ProcessingState* state) {
+    NodeBase* node = static_cast<NodeBase*>(n);
 
-  template <typename NodeT>
-  ProcessResult UpdateNodeInputs(NodeT* node, const ProcessingState* state) {
-    return UpdateNonUntaggingNodeInputs(node, state);
+    ProcessResult result = ProcessResult::kContinue;
+    if (IsUntagging(n->opcode())) {
+      if (node->input(0).node()->Is<Phi>() &&
+          node->input(0).node()->value_representation() !=
+              ValueRepresentation::kTagged) {
+        DCHECK_EQ(node->input_count(), 1);
+        // This untagging conversion is outdated, since its input has been
+        // untagged. Depending on the conversion, it might need to be replaced
+        // by another untagged->untagged conversion, or it might need to be
+        // removed alltogether (or rather, replaced by an identity node).
+        UpdateUntaggingOfPhi(node->input(0).node()->Cast<Phi>(),
+                             n->template Cast<ValueNode>());
+      }
+    } else {
+      result = UpdateNonUntaggingNodeInputs(n, state);
+    }
+
+    return result;
   }
 
   template <class NodeT>
-  ProcessResult UpdateNonUntaggingNodeInputs(NodeT* node,
+  ProcessResult UpdateNonUntaggingNodeInputs(NodeT* n,
                                              const ProcessingState* state) {
+    NodeBase* node = static_cast<NodeBase*>(n);
+
     // It would be bad to re-tag the input of an untagging node, so this
     // function should never be called on untagging nodes.
-    static_assert(!IsUntagging(NodeBase::opcode_of<NodeT>));
+    DCHECK(!IsUntagging(n->opcode()));
 
-    for (int i = 0; i < node->input_count(); i++) {
-      ValueNode* input = node->NodeBase::input(i).node();
+    for (int i = 0; i < n->input_count(); i++) {
+      ValueNode* input = node->input(i).node();
       if (input->Is<Identity>()) {
         // Bypassing the identity
-        node->change_input(i, input->NodeBase::input(0).node());
+        node->change_input(i, input->input(0).node());
       } else if (Phi* phi = input->TryCast<Phi>()) {
         // If the input is a Phi and it was used without any untagging, then
         // we need to retag it (with some additional checks/changes for some
         // nodes, cf the overload of UpdateNodePhiInput).
-        ProcessResult result = UpdateNodePhiInput(node, phi, i, state);
+        ProcessResult result = UpdateNodePhiInput(n, phi, i, state);
         if (V8_UNLIKELY(result == ProcessResult::kRemove)) {
           return ProcessResult::kRemove;
         }
@@ -183,10 +162,14 @@ class MaglevPhiRepresentationSelector {
 
   void EnsurePhiInputsTagged(Phi* phi);
 
+  // Returns true if {op} is an untagging node.
+  bool IsUntagging(Opcode op);
 
   // Updates {old_untagging} to reflect that its Phi input has been untagged and
   // that a different conversion is now needed.
-  ProcessResult UpdateUntaggingOfPhi(Phi* phi, ValueNode* old_untagging);
+  void UpdateUntaggingOfPhi(Phi* phi, ValueNode* old_untagging);
+
+  enum class NewNodePosition { kBeginingOfCurrentBlock, kEndOfBlock };
 
   // Returns a tagged node that represents a tagged version of {phi}.
   // If we are calling EnsurePhiTagged to ensure a Phi input of a Phi is tagged,
@@ -195,22 +178,17 @@ class MaglevPhiRepresentationSelector {
   // to find existing tagging for {phi} in the {predecessor_index}th predecessor
   // of the current block.
   ValueNode* EnsurePhiTagged(
-      Phi* phi, BasicBlock* block, BasicBlockPosition pos,
+      Phi* phi, BasicBlock* block, NewNodePosition pos,
       const ProcessingState* state,
       std::optional<int> predecessor_index = std::nullopt);
 
-  template <typename NodeT, typename... Args>
-  NodeT* AddNewNodeNoInputConversion(BasicBlock* block, BasicBlockPosition pos,
-                                     std::initializer_list<ValueNode*> inputs,
-                                     Args&&... args);
+  ValueNode* AddNodeAtBlockEnd(ValueNode* new_node, BasicBlock* block,
+                               DeoptFrame* deopt_frame = nullptr);
 
-  template <typename NodeT, typename... Args>
-  NodeT* AddNewNodeNoInputConversionAtBlockEnd(
-      BasicBlock* block, std::initializer_list<ValueNode*> inputs,
-      Args&&... args) {
-    return AddNewNodeNoInputConversion<NodeT>(
-        block, BasicBlockPosition::End(), inputs, std::forward<Args>(args)...);
-  }
+  ValueNode* AddNode(ValueNode* node, BasicBlock* block, NewNodePosition pos,
+                     const ProcessingState* state,
+                     DeoptFrame* deopt_frame = nullptr);
+  void RegisterNewNode(ValueNode* node);
 
   // If {block} is the start of a loop header, FixLoopPhisBackedge inserts the
   // necessary tagging on the backedge of the loop Phis of the loop header.
@@ -221,16 +199,13 @@ class MaglevPhiRepresentationSelector {
   void PreparePhiTaggings(BasicBlock* old_block, const BasicBlock* new_block);
 
   MaglevGraphLabeller* graph_labeller() const {
-    return graph_->graph_labeller();
+    return builder_->graph_labeller();
   }
 
   bool CanHoistUntaggingTo(BasicBlock* block);
 
-  Zone* zone() const { return graph_->zone(); }
-
-  Graph* graph_;
-
-  MaglevReducer<MaglevPhiRepresentationSelector> reducer_;
+  MaglevGraphBuilder* builder_ = nullptr;
+  BasicBlock* current_block_ = nullptr;
 
   // {phi_taggings_} is a SnapshotTable containing mappings from untagged Phis
   // to Tagged alternatives for those phis.
@@ -239,13 +214,13 @@ class MaglevPhiRepresentationSelector {
   // it, in order to save memory and not reallocate it for each merge.
   ZoneVector<Snapshot> predecessors_;
 
+  ZoneVector<Node*> new_nodes_at_start_;
+
   absl::flat_hash_map<BasicBlock::Id, Snapshot> snapshots_;
 
 #ifdef DEBUG
   std::unordered_set<NodeBase*> new_nodes_;
 #endif
-
-  DeoptFrame* eager_deopt_frame_ = nullptr;
 };
 
 }  // namespace maglev

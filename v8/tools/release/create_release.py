@@ -11,8 +11,8 @@ class Preparation(Step):
   MESSAGE = "Preparation."
 
   def RunStep(self):
-    self.GitCheckout("origin/main")
     self.Git("fetch origin +refs/heads/*:refs/heads/*")
+    self.GitCheckout("origin/main")
     self.DeleteBranch("work-branch")
 
 

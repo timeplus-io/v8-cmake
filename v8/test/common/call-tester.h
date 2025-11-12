@@ -28,7 +28,7 @@ class CallHelper {
     CSignature::VerifyParams<Params...>(csig_);
     Address entry = Generate();
     auto fn = GeneratedCode<R, Params...>::FromAddress(isolate_, entry);
-    return fn.CallSandboxed(args...);
+    return fn.Call(args...);
   }
 
  protected:
@@ -46,7 +46,7 @@ Tagged<Object> CallHelper<Tagged<Object>>::Call(Params... args) {
   CSignature::VerifyParams<Params...>(csig_);
   Address entry = Generate();
   auto fn = GeneratedCode<Address, Params...>::FromAddress(isolate_, entry);
-  return Tagged<Object>(fn.CallSandboxed(args...));
+  return Tagged<Object>(fn.Call(args...));
 }
 
 // A call helper that calls the given code object assuming C calling convention.

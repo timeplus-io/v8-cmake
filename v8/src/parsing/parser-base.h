@@ -1178,16 +1178,15 @@ class ParserBase {
              scope()->scope_type() == REPL_MODE_SCOPE) &&
             !scope()->is_nonlinear());
   }
-  bool IsNextUsingKeyword(bool is_await_using) {
+  bool IsNextUsingKeyword(Token::Value token_after_using, bool is_await_using) {
     // using and await using declarations in for-of statements must be followed
-    // by a non-pattern ForBinding.
+    // by a non-pattern ForBinding. In the case of synchronous `using`, `of` is
+    // disallowed as well with a negative lookahead.
     //
     // `of`: for ( [lookahead ≠ using of] ForDeclaration[?Yield, ?Await, +Using]
     //       of AssignmentExpression[+In, ?Yield, ?Await] )
     //
     // If `using` is not considered a keyword, it is parsed as an identifier.
-    Token::Value token_after_using =
-        is_await_using ? PeekAheadAhead() : PeekAhead();
     if (v8_flags.js_explicit_resource_management) {
       switch (token_after_using) {
         case Token::kIdentifier:
@@ -1202,16 +1201,7 @@ class ParserBase {
         case Token::kAsync:
           return true;
         case Token::kOf:
-          if (is_await_using) {
-            return true;
-          } else {
-            // In the case of synchronous `using`, `of` is disallowed as well
-            // with a negative lookahead for for-of loops. But, cursedly,
-            // `using of` is allowed as the initializer of C-style for loops,
-            // e.g. `for (using of = null;;)` parses.
-            Token::Value token_after_of = PeekAheadAhead();
-            return token_after_of == Token::kAssign;
-          }
+          return is_await_using;
         case Token::kFutureStrictReservedWord:
         case Token::kEscapedStrictReservedWord:
           return is_sloppy(language_mode());
@@ -1230,12 +1220,12 @@ class ParserBase {
     //    LineTerminator here] ForBinding[?Yield, +Await, ~Pattern]
     return ((peek() == Token::kUsing &&
              !scanner()->HasLineTerminatorAfterNext() &&
-             IsNextUsingKeyword(/* is_await_using */ false)) ||
+             IsNextUsingKeyword(PeekAhead(), /* is_await_using */ false)) ||
             (is_await_allowed() && peek() == Token::kAwait &&
              !scanner()->HasLineTerminatorAfterNext() &&
              PeekAhead() == Token::kUsing &&
              !scanner()->HasLineTerminatorAfterNextNext() &&
-             IsNextUsingKeyword(/* is_await_using */ true)));
+             IsNextUsingKeyword(PeekAheadAhead(), /* is_await_using */ true)));
   }
   const PendingCompilationErrorHandler* pending_error_handler() const {
     return pending_error_handler_;
@@ -2274,7 +2264,7 @@ ParserBase<Impl>::ParsePrimaryExpression() {
       return ParseTemplateLiteral(impl()->NullExpression(), beg_pos, false);
 
     case Token::kMod:
-      if (flags().allow_natives_syntax()) {
+      if (flags().allow_natives_syntax() || impl()->ParsingExtension()) {
         return ParseV8Intrinsic();
       }
       break;
@@ -4005,10 +3995,6 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
         int eval_scope_info_index = 0;
         if (CheckPossibleEvalCall(result, is_optional, scope())) {
           eval_scope_info_index = GetNextInfoId();
-          if (!Call::EvalScopeInfoIndexField::is_valid(eval_scope_info_index)) {
-            ReportMessage(MessageTemplate::kTooManyEvals);
-            return impl()->FailureExpression();
-          }
         }
 
         result = factory()->NewCall(result, args, pos, has_spread,
@@ -6260,7 +6246,6 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseWithStatement(
     ReportMessage(MessageTemplate::kStrictWith);
     return impl()->NullStatement();
   }
-  impl()->CountUsage(v8::Isolate::kWithStatement);
 
   Expect(Token::kLeftParen);
   ExpressionT expr = ParseExpression();

@@ -788,24 +788,15 @@ void ModuleDisassembler::PrintTypeDefinition(uint32_t type_index,
   uint32_t offset = offsets_->type_offset(type_index);
   out_.NextLine(offset);
   out_ << indentation << "(type ";
-  size_t num_closing_parens = 2;  // One for "(type", one for "(struct" etc.
   names_->PrintTypeName(out_, type_index, index_as_comment);
   const TypeDefinition& type = module_->types[type_index];
-  if (type.supertype != kNoSuperType) {
+  bool has_super = type.supertype != kNoSuperType;
+  if (has_super) {
     out_ << " (sub ";
-    num_closing_parens++;
     if (type.is_final) out_ << "final ";
-    names_->PrintTypeName(out_, type.supertype);
-  }
-  if (type.is_descriptor()) {
-    out_ << " (describes ";
-    num_closing_parens++;
-    names_->PrintTypeName(out_, type.describes);
-  }
-  if (type.has_descriptor()) {
-    out_ << " (descriptor ";
-    num_closing_parens++;
-    names_->PrintTypeName(out_, type.descriptor);
+    names_->PrintHeapType(out_,
+                          HeapType::Index(type.supertype, type.is_shared,
+                                          static_cast<RefTypeKind>(type.kind)));
   }
   if (type.kind == TypeDefinition::kArray) {
     const ArrayType* atype = type.array_type;
@@ -847,9 +838,8 @@ void ModuleDisassembler::PrintTypeDefinition(uint32_t type_index,
       out_ << ")";
     }
   }
-  constexpr const char* parens = ")))))";
-  DCHECK_LE(num_closing_parens, strlen(parens));
-  out_.write(parens, num_closing_parens);
+  // Closes "(type", "(sub", and "(array" / "(struct" / "(func".
+  out_ << (has_super ? ")))" : "))");
 }
 
 void ModuleDisassembler::PrintModule(Indentation indentation, size_t max_mb) {

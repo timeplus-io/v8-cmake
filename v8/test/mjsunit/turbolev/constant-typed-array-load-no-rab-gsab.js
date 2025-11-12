@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --turbofan --turbolev
+// Flags: --allow-natives-syntax --turbofan --turbolev --no-always-turbofan
 
 const ab = new ArrayBuffer(100, {maxByteLength: 300});
 var constTypedArray = new Uint16Array(ab);

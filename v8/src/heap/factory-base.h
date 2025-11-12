@@ -146,8 +146,7 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
 
   // Allocates a fixed array initialized with undefined values.
   Handle<FixedArray> NewFixedArray(
-      int length, AllocationType allocation = AllocationType::kYoung,
-      AllocationHint hint = AllocationHint());
+      int length, AllocationType allocation = AllocationType::kYoung);
 
   // Allocates a trusted fixed array in trusted space, initialized with zeros.
   Handle<TrustedFixedArray> NewTrustedFixedArray(
@@ -268,26 +267,25 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
   Handle<PreparseData> NewPreparseData(int data_length, int children_length);
 
   DirectHandle<UncompiledDataWithoutPreparseData>
-  NewUncompiledDataWithoutPreparseData(DirectHandle<String> inferred_name,
+  NewUncompiledDataWithoutPreparseData(Handle<String> inferred_name,
                                        int32_t start_position,
                                        int32_t end_position);
 
   DirectHandle<UncompiledDataWithPreparseData>
-  NewUncompiledDataWithPreparseData(DirectHandle<String> inferred_name,
+  NewUncompiledDataWithPreparseData(Handle<String> inferred_name,
                                     int32_t start_position,
-                                    int32_t end_position,
-                                    DirectHandle<PreparseData>);
+                                    int32_t end_position, Handle<PreparseData>);
 
   DirectHandle<UncompiledDataWithoutPreparseDataWithJob>
-  NewUncompiledDataWithoutPreparseDataWithJob(
-      DirectHandle<String> inferred_name, int32_t start_position,
-      int32_t end_position);
+  NewUncompiledDataWithoutPreparseDataWithJob(Handle<String> inferred_name,
+                                              int32_t start_position,
+                                              int32_t end_position);
 
   DirectHandle<UncompiledDataWithPreparseDataAndJob>
-  NewUncompiledDataWithPreparseDataAndJob(DirectHandle<String> inferred_name,
+  NewUncompiledDataWithPreparseDataAndJob(Handle<String> inferred_name,
                                           int32_t start_position,
                                           int32_t end_position,
-                                          DirectHandle<PreparseData>);
+                                          Handle<PreparseData>);
 
   // Allocates a FeedbackMetadata object and zeroes the data section.
   Handle<FeedbackMetadata> NewFeedbackMetadata(
@@ -342,10 +340,10 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
   // characters of the string are uninitialized. Currently used in regexp code
   // only, where they are pretenured.
   V8_WARN_UNUSED_RESULT MaybeHandle<SeqOneByteString> NewRawOneByteString(
-      uint32_t length, AllocationType allocation = AllocationType::kYoung,
+      int length, AllocationType allocation = AllocationType::kYoung,
       AllocationHint hint = AllocationHint());
   V8_WARN_UNUSED_RESULT MaybeHandle<SeqTwoByteString> NewRawTwoByteString(
-      uint32_t length, AllocationType allocation = AllocationType::kYoung,
+      int length, AllocationType allocation = AllocationType::kYoung,
       AllocationHint hint = AllocationHint());
   // Create a new cons string object which consists of a pair of strings.
   template <template <typename> typename HandleType>
@@ -415,8 +413,7 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
   static constexpr int kNumberToStringBufferSize = 32;
 
   // Allocate memory for an uninitialized array (e.g., a FixedArray or similar).
-  Tagged<HeapObject> AllocateRawArray(int size, AllocationType allocation,
-                                      AllocationHint hint = AllocationHint());
+  Tagged<HeapObject> AllocateRawArray(int size, AllocationType allocation);
   Tagged<HeapObject> AllocateRawFixedArray(int length,
                                            AllocationType allocation);
   Tagged<HeapObject> AllocateRawWeakArrayList(int length,

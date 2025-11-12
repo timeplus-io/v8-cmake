@@ -78,7 +78,6 @@ Reduction TypedOptimization::Reduce(Node* node) {
     case IrOpcode::kStringEqual:
     case IrOpcode::kStringLessThan:
     case IrOpcode::kStringLessThanOrEqual:
-    case IrOpcode::kStringOrOddballStrictEqual:
       return ReduceStringComparison(node);
     case IrOpcode::kStringLength:
       return ReduceStringLength(node);
@@ -486,7 +485,6 @@ Reduction TypedOptimization::ReduceReferenceEqual(Node* node) {
 const Operator* TypedOptimization::NumberComparisonFor(const Operator* op) {
   switch (op->opcode()) {
     case IrOpcode::kStringEqual:
-    case IrOpcode::kStringOrOddballStrictEqual:
       return simplified()->NumberEqual();
     case IrOpcode::kStringLessThan:
       return simplified()->NumberLessThan();
@@ -503,7 +501,6 @@ Reduction TypedOptimization::
         Node* comparison, StringRef string, bool inverted) {
   switch (comparison->opcode()) {
     case IrOpcode::kStringEqual:
-    case IrOpcode::kStringOrOddballStrictEqual:
       if (string.length() != 1) {
         // String.fromCharCode(x) always has length 1.
         return Replace(jsgraph()->BooleanConstant(false));
@@ -583,8 +580,7 @@ TypedOptimization::TryReduceStringComparisonOfStringFromSingleCharCode(
 Reduction TypedOptimization::ReduceStringComparison(Node* node) {
   DCHECK(IrOpcode::kStringEqual == node->opcode() ||
          IrOpcode::kStringLessThan == node->opcode() ||
-         IrOpcode::kStringLessThanOrEqual == node->opcode() ||
-         IrOpcode::kStringOrOddballStrictEqual == node->opcode());
+         IrOpcode::kStringLessThanOrEqual == node->opcode());
   Node* const lhs = NodeProperties::GetValueInput(node, 0);
   Node* const rhs = NodeProperties::GetValueInput(node, 1);
   Type lhs_type = NodeProperties::GetType(lhs);

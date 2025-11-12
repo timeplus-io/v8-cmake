@@ -40,7 +40,6 @@ namespace internal {
   V(kInvalidJumpTableIndex, "Invalid jump table index")                        \
   V(kInvalidParametersAndRegistersInGenerator,                                 \
     "invalid parameters and registers in generator")                           \
-  V(kMaglevGraphBuildingFailed, "Maglev optimized graph construction failed")  \
   V(kMissingBytecodeArray, "Missing bytecode array from function")             \
   V(kObjectNotTagged, "The object is not tagged")                              \
   V(kObjectTagged, "The object is tagged")                                     \
@@ -106,12 +105,12 @@ namespace internal {
   V(kWrongFunctionContext, "Wrong context passed to function")                 \
   V(kWrongFunctionDispatchHandle,                                              \
     "Wrong value in dispatch handle register passed")                          \
+  V(kUnexpectedThreadInWasmSet, "thread_in_wasm flag was already set")         \
+  V(kUnexpectedThreadInWasmUnset, "thread_in_wasm flag was not set")           \
   V(kInvalidReceiver, "Expected JS object or primitive object")                \
   V(kUnexpectedInstanceType, "Unexpected instance type encountered")           \
   V(kTurboshaftTypeAssertionFailed,                                            \
     "A type assertion failed in Turboshaft-generated code")                    \
-  V(kTurboshaftLoadEliminationError,                                           \
-    "Turboshaft's load elimination wrongly eliminated a Load")                 \
   V(kMetadataAreaStartDoesNotMatch,                                            \
     "The metadata doesn't belong to the chunk")                                \
   V(kExternalPointerTagMismatch,                                               \
@@ -120,8 +119,7 @@ namespace internal {
   V(kWasmSignatureMismatch, "Signature mismatch during Wasm indirect call")    \
   V(kFastCallFallbackInvalid, "Fast call fallback returned incorrect type")    \
   V(k32BitValueInRegisterIsNotSignExtended,                                    \
-    "32 bit value in register is not sign-extended")                           \
-  V(kUnexpectedSandboxMode, "The sandboxing mode is not as expected")
+    "32 bit value in register is not sign-extended")
 
 #define TERMINAL_BAILOUT_MESSAGES_LIST(V)                                  \
   V(kFunctionTooBig, "Function is too big to be optimized")                \

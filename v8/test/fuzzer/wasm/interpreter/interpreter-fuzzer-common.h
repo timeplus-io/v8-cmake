@@ -11,7 +11,6 @@
 #include <memory>
 #include <random>
 
-#include "src/wasm/fuzzing/random-module-generation.h"
 #include "src/wasm/module-decoder.h"
 #include "src/wasm/wasm-module-builder.h"
 
@@ -33,15 +32,6 @@ typedef std::function<bool(Isolate*, Zone*, v8::base::Vector<const uint8_t>,
 
 int LLVMFuzzerTestOneInputCommon(const uint8_t* data, size_t size,
                                  GenerateModuleFunc generate_module);
-
-typedef std::function<bool(Isolate*, Zone*, v8::base::Vector<const uint8_t>,
-                           ZoneBuffer*, std::vector<ExportData>*,
-                           std::vector<ExportData>*)>
-    GenerateExportDataMultipleModulesFunc;
-
-int LLVMFuzzerTestTwoModulesCommon(
-    const uint8_t* data, size_t size,
-    GenerateExportDataMultipleModulesFunc generate_module);
 
 }  // namespace v8::internal::wasm::fuzzing
 

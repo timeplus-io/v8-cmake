@@ -35,7 +35,6 @@
 #include "src/common/globals.h"
 #include "src/handles/handles.h"
 #include "src/numbers/conversions.h"
-#include "src/numbers/hash-seed.h"
 #include "src/objects/name.h"
 #include "src/zone/zone.h"
 
@@ -300,7 +299,7 @@ class AstStringConstants final {
       0 SINGLE_CHARACTER_ASCII_AST_STRING_CONSTANTS(F);
 #undef F
 
-  AstStringConstants(Isolate* isolate, const HashSeed hash_seed);
+  AstStringConstants(Isolate* isolate, uint64_t hash_seed);
   AstStringConstants(const AstStringConstants&) = delete;
   AstStringConstants& operator=(const AstStringConstants&) = delete;
 
@@ -309,7 +308,7 @@ class AstStringConstants final {
   AST_STRING_CONSTANTS(F)
 #undef F
 
-  const HashSeed hash_seed() const { return hash_seed_; }
+  uint64_t hash_seed() const { return hash_seed_; }
   const AstRawStringMap* string_table() const { return &string_table_; }
   const AstRawString* one_character_string(int c) const {
     DCHECK_GE(c, 0);
@@ -330,7 +329,7 @@ class AstStringConstants final {
  private:
   Zone zone_;
   AstRawStringMap string_table_;
-  const HashSeed hash_seed_;
+  uint64_t hash_seed_;
 
 #define F(name, str) AstRawString* name##_;
   AST_STRING_CONSTANTS(F)
@@ -340,12 +339,12 @@ class AstStringConstants final {
 class AstValueFactory {
  public:
   AstValueFactory(Zone* zone, const AstStringConstants* string_constants,
-                  const HashSeed hash_seed)
+                  uint64_t hash_seed)
       : AstValueFactory(zone, zone, string_constants, hash_seed) {}
 
   AstValueFactory(Zone* ast_raw_string_zone, Zone* single_parse_zone,
                   const AstStringConstants* string_constants,
-                  const HashSeed hash_seed)
+                  uint64_t hash_seed)
       : string_table_(string_constants->string_table()),
         strings_(nullptr),
         strings_end_(&strings_),
@@ -434,7 +433,7 @@ class AstValueFactory {
   Zone* ast_raw_string_zone_;
   Zone* single_parse_zone_;
 
-  const HashSeed hash_seed_;
+  uint64_t hash_seed_;
 };
 
 extern template EXPORT_TEMPLATE_DECLARE(

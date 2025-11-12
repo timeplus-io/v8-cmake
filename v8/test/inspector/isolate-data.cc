@@ -24,9 +24,6 @@ namespace internal {
 
 namespace {
 
-const v8::EmbedderDataTypeTag kInspectorIsolateDataTag = 1;
-const v8::EmbedderDataTypeTag kContextGroupIdTag = 2;
-
 const int kIsolateDataIndex = 2;
 const int kContextGroupIdIndex = 3;
 
@@ -134,12 +131,10 @@ bool InspectorIsolateData::CreateContext(int context_group_id,
   v8::Local<v8::Context> context =
       v8::Context::New(isolate_.get(), nullptr, global_template);
   if (context.IsEmpty()) return false;
-  context->SetAlignedPointerInEmbedderData(kIsolateDataIndex, this,
-                                           kInspectorIsolateDataTag);
+  context->SetAlignedPointerInEmbedderData(kIsolateDataIndex, this);
   // Should be 2-byte aligned.
   context->SetAlignedPointerInEmbedderData(
-      kContextGroupIdIndex, reinterpret_cast<void*>(context_group_id * 2),
-      kContextGroupIdTag);
+      kContextGroupIdIndex, reinterpret_cast<void*>(context_group_id * 2));
   contexts_[context_group_id].emplace_back(isolate_.get(), context);
   if (inspector_) FireContextCreated(context, context_group_id, name);
   return true;
@@ -240,11 +235,7 @@ std::vector<uint8_t> InspectorIsolateData::DisconnectSession(
     int session_id, TaskRunner* context_task_runner) {
   v8::SealHandleScope seal_handle_scope(isolate());
   auto it = sessions_.find(session_id);
-  if (it == sessions_.end()) {
-    CHECK(v8_flags.fuzzing);
-    return {};
-  }
-
+  CHECK(it != sessions_.end());
   context_group_by_session_.erase(it->second.get());
   std::vector<uint8_t> result = it->second->state();
   sessions_.erase(it);

@@ -269,6 +269,10 @@ class BytecodeGraphBuilder {
       Node* receiver, FeedbackSlot slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedToNumber(
       Node* input, FeedbackSlot slot);
+  JSTypeHintLowering::LoweringResult TryBuildSimplifiedCall(const Operator* op,
+                                                            Node* const* args,
+                                                            int arg_count,
+                                                            FeedbackSlot slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedConstruct(
       const Operator* op, Node* const* args, int arg_count, FeedbackSlot slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedGetIterator(
@@ -2200,8 +2204,6 @@ void BytecodeGraphBuilder::BuildNamedStore(NamedStoreMode store_mode) {
   environment()->RecordAfterState(node, Environment::kAttachFrameState);
 }
 
-void BytecodeGraphBuilder::VisitSetPrototypeProperties() { UNREACHABLE(); }
-
 void BytecodeGraphBuilder::VisitSetNamedProperty() {
   BuildNamedStore(NamedStoreMode::kSet);
 }
@@ -2543,7 +2545,17 @@ void BytecodeGraphBuilder::BuildCall(ConvertReceiverMode receiver_mode,
                          speculation_mode, call_feedback_relation);
   DCHECK(IrOpcode::IsFeedbackCollectingOpcode(op->opcode()));
 
-  Node* node = MakeNode(op, static_cast<int>(arg_count), args);
+  JSTypeHintLowering::LoweringResult lowering = TryBuildSimplifiedCall(
+      op, args, static_cast<int>(arg_count), feedback.slot);
+  if (lowering.IsExit()) return;
+
+  Node* node = nullptr;
+  if (lowering.IsSideEffectFree()) {
+    node = lowering.value();
+  } else {
+    DCHECK(!lowering.Changed());
+    node = MakeNode(op, static_cast<int>(arg_count), args);
+  }
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 
@@ -2691,8 +2703,17 @@ void BytecodeGraphBuilder::VisitCallWithSpread() {
       speculation_mode);
   DCHECK(IrOpcode::IsFeedbackCollectingOpcode(op->opcode()));
 
-  Node* node =
-      MakeNode(op, JSCallWithSpreadNode::ArityForArgc(arg_count), args);
+  JSTypeHintLowering::LoweringResult lowering = TryBuildSimplifiedCall(
+      op, args, static_cast<int>(arg_count), feedback.slot);
+  if (lowering.IsExit()) return;
+
+  Node* node = nullptr;
+  if (lowering.IsSideEffectFree()) {
+    node = lowering.value();
+  } else {
+    DCHECK(!lowering.Changed());
+    node = MakeNode(op, JSCallWithSpreadNode::ArityForArgc(arg_count), args);
+  }
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 
@@ -3159,23 +3180,16 @@ void BytecodeGraphBuilder::VisitAdd() {
   BuildBinaryOp(javascript()->Add(feedback));
 }
 
-void BytecodeGraphBuilder::VisitAdd_StringConstant_Internalize() {
+void BytecodeGraphBuilder::VisitAdd_LhsIsStringConstant_Internalize() {
   Node* left =
       environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
   Node* right = environment()->LookupAccumulator();
   Node* slot = jsgraph()->SmiConstant(
       bytecode_iterator().GetSlotOperand(kBinaryOperationHintIndex).ToInt());
-  using ASVariant = AddStringConstantAndInternalizeVariant;
-  uint8_t flags = bytecode_iterator().GetFlag8Operand(2);
-  CHECK(flags == static_cast<uint8_t>(ASVariant::kLhsIsStringConstant) ||
-        flags == static_cast<uint8_t>(ASVariant::kRhsIsStringConstant));
-  const ASVariant as_variant = static_cast<ASVariant>(flags);
 
   // Lowered by js-intrinsic-lowering to call a builtin.
-  auto target = as_variant == ASVariant::kLhsIsStringConstant
-                    ? Runtime::kInlineAddLhsIsStringConstantInternalize
-                    : Runtime::kInlineAddRhsIsStringConstantInternalize;
-  const Operator* op = javascript()->CallRuntime(target);
+  const Operator* op = javascript()->CallRuntime(
+      Runtime::kInlineAddLhsIsStringConstantInternalize);
   Node* node = NewNode(op, left, right, slot, feedback_vector_node());
 
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
@@ -3865,19 +3879,6 @@ void BytecodeGraphBuilder::VisitForInStep() {
   environment()->BindRegister(index_reg, index, Environment::kAttachFrameState);
 }
 
-void BytecodeGraphBuilder::VisitForOfNext() {
-  PrepareEagerCheckpoint();
-  Node* iterator =
-      environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
-  Node* next_method =
-      environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(1));
-  auto value_done = bytecode_iterator().GetRegisterPairOperand(2);
-
-  Node* result_pair = NewNode(javascript()->ForOfNext(), iterator, next_method);
-
-  environment()->BindRegistersToProjections(value_done.first, result_pair);
-}
-
 void BytecodeGraphBuilder::VisitGetIterator() {
   PrepareEagerCheckpoint();
   Node* receiver =
@@ -4344,6 +4345,17 @@ BytecodeGraphBuilder::TryBuildSimplifiedToNumber(Node* value,
   JSTypeHintLowering::LoweringResult result =
       type_hint_lowering().ReduceToNumberOperation(value, effect, control,
                                                    slot);
+  ApplyEarlyReduction(result);
+  return result;
+}
+
+JSTypeHintLowering::LoweringResult BytecodeGraphBuilder::TryBuildSimplifiedCall(
+    const Operator* op, Node* const* args, int arg_count, FeedbackSlot slot) {
+  Node* effect = environment()->GetEffectDependency();
+  Node* control = environment()->GetControlDependency();
+  JSTypeHintLowering::LoweringResult result =
+      type_hint_lowering().ReduceCallOperation(op, args, arg_count, effect,
+                                               control, slot);
   ApplyEarlyReduction(result);
   return result;
 }

@@ -1922,63 +1922,6 @@ TEST(Inlining) {
   profile->Delete();
 }
 
-static const char* inlining_top_level_test_source =
-    "function action(n = 100) {\n"
-    "  var s = 0;\n"
-    "  for (var i = 0; i < n; ++i) s += i*i*i;\n"
-    "  return s;\n"
-    "}\n"
-    "function proxy() { return action(100); }\n"
-    "function start() {\n"
-    "  var n = 100;\n"
-    "  while (--n)\n"
-    "    proxy();\n"
-    "}"
-    "%PrepareFunctionForOptimization(action);\n"
-    "%PrepareFunctionForOptimization(proxy);\n"
-    "%PrepareFunctionForOptimization(start);\n"
-    "start();\n"
-    "%OptimizeFunctionOnNextCall(action);\n"
-    "%OptimizeFunctionOnNextCall(proxy);\n"
-    "%OptimizeFunctionOnNextCall(start);\n";
-
-// https://issues.chromium.org/issues/436562902
-// The test checks that the inlined stack for an optimized frame (start)
-// at the top of the stack is restored correctly
-//
-// [Top down]:
-//     0  (root):0:0 3 0 #1
-//     0    start:7:15 0 4 #4
-//     0      proxy:6:15 0 4 #5
-//    10        action:1:16 0 4 #6
-//    23    (program):0:0 3 0 #3
-//     0    (idle):0:0 3 0 #2
-TEST(InliningTopLevel) {
-  if (!v8_flags.turbofan) return;
-  if (v8_flags.optimize_on_next_call_optimizes_to_maglev) return;
-
-  i::v8_flags.allow_natives_syntax = true;
-  v8::HandleScope scope(CcTest::isolate());
-  v8::Local<v8::Context> env = CcTest::NewContext({PROFILER_EXTENSION_ID});
-  v8::Context::Scope context_scope(env);
-  ProfilerHelper helper(env);
-  // Ensure that source positions are collected everywhere.
-  CcTest::i_isolate()->SetIsProfiling(true);
-
-  CompileRun(inlining_top_level_test_source);
-  v8::Local<v8::Function> function = GetFunction(env, "start");
-
-  static const unsigned min_samples = 10;
-  v8::CpuProfile* profile = helper.Run(function, nullptr, 0, min_samples);
-
-  const v8::CpuProfileNode* root = profile->GetTopDownRoot();
-  const v8::CpuProfileNode* start_node = GetChild(env, root, "start");
-  const v8::CpuProfileNode* proxy_node = GetChild(env, start_node, "proxy");
-  GetChild(env, proxy_node, "action");
-
-  profile->Delete();
-}
-
 static const char* inlining_test_source2 = R"(
     function action(n) {
       var s = 0;
@@ -2327,12 +2270,12 @@ TEST(IdleTime) {
   const v8::CpuProfileNode* program_node =
       GetChild(env.local(), root, CodeEntry::kProgramEntryName);
   CHECK_EQ(0, program_node->GetChildrenCount());
-  CHECK_GE(program_node->GetHitCount(), 1u);
+  CHECK_GE(program_node->GetHitCount(), 2u);
 
   const v8::CpuProfileNode* idle_node =
       GetChild(env.local(), root, CodeEntry::kIdleEntryName);
   CHECK_EQ(0, idle_node->GetChildrenCount());
-  CHECK_GE(idle_node->GetHitCount(), 4u);
+  CHECK_GE(idle_node->GetHitCount(), 3u);
 
   profile->Delete();
   cpu_profiler->Dispose();
@@ -2410,7 +2353,8 @@ TEST(FunctionDetails) {
 }
 
 TEST(FunctionDetailsInlining) {
-  if (!CcTest::i_isolate()->use_optimizer()) return;
+  if (!CcTest::i_isolate()->use_optimizer() || i::v8_flags.always_turbofan)
+    return;
   i::v8_flags.allow_natives_syntax = true;
   v8::HandleScope scope(CcTest::isolate());
   v8::Local<v8::Context> env = CcTest::NewContext({PROFILER_EXTENSION_ID});
@@ -2618,7 +2562,7 @@ const char* GetBranchDeoptReason(v8::Local<v8::Context> context,
 
 // deopt at top function
 TEST(CollectDeoptEvents) {
-  if (!CcTest::i_isolate()->use_optimizer()) {
+  if (!CcTest::i_isolate()->use_optimizer() || i::v8_flags.always_turbofan) {
     return;
   }
   i::v8_flags.allow_natives_syntax = true;
@@ -2739,7 +2683,7 @@ TEST(CollectDeoptEvents) {
 }
 
 TEST(SourceLocation) {
-  i::v8_flags.allow_natives_syntax = true;
+  i::v8_flags.always_turbofan = true;
   LocalContext env;
   v8::HandleScope scope(env.isolate());
 
@@ -2747,9 +2691,6 @@ TEST(SourceLocation) {
       "function CompareStatementWithThis() {\n"
       "  if (this === 1) {}\n"
       "}\n"
-      "%PrepareFunctionForOptimization(CompareStatementWithThis);\n"
-      "CompareStatementWithThis();\n"
-      "%OptimizeFunctionOnNextCall(CompareStatementWithThis);\n"
       "CompareStatementWithThis();\n";
 
   v8::Script::Compile(env.local(), v8_str(source))
@@ -2765,7 +2706,8 @@ static const char* inlined_source =
 
 // deopt at the first level inlined function
 TEST(DeoptAtFirstLevelInlinedSource) {
-  if (!CcTest::i_isolate()->use_optimizer()) return;
+  if (!CcTest::i_isolate()->use_optimizer() || i::v8_flags.always_turbofan)
+    return;
   i::v8_flags.allow_natives_syntax = true;
   v8::HandleScope scope(CcTest::isolate());
   v8::Local<v8::Context> env = CcTest::NewContext({PROFILER_EXTENSION_ID});
@@ -2837,7 +2779,8 @@ TEST(DeoptAtFirstLevelInlinedSource) {
 
 // deopt at the second level inlined function
 TEST(DeoptAtSecondLevelInlinedSource) {
-  if (!CcTest::i_isolate()->use_optimizer()) return;
+  if (!CcTest::i_isolate()->use_optimizer() || i::v8_flags.always_turbofan)
+    return;
   i::v8_flags.allow_natives_syntax = true;
   v8::HandleScope scope(CcTest::isolate());
   v8::Local<v8::Context> env = CcTest::NewContext({PROFILER_EXTENSION_ID});
@@ -2915,7 +2858,8 @@ TEST(DeoptAtSecondLevelInlinedSource) {
 
 // deopt in untracked function
 TEST(DeoptUntrackedFunction) {
-  if (!CcTest::i_isolate()->use_optimizer()) return;
+  if (!CcTest::i_isolate()->use_optimizer() || i::v8_flags.always_turbofan)
+    return;
   i::v8_flags.allow_natives_syntax = true;
   v8::HandleScope scope(CcTest::isolate());
   v8::Local<v8::Context> env = CcTest::NewContext({PROFILER_EXTENSION_ID});
@@ -3460,7 +3404,6 @@ class IsolateThread : public v8::base::Thread {
   IsolateThread() : Thread(Options("IsolateThread")) {}
 
   void Run() override {
-    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Isolate::CreateParams create_params;
     create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
     v8::Isolate* isolate = v8::Isolate::New(create_params);
@@ -3524,7 +3467,6 @@ class UnlockingThread : public v8::base::Thread {
         threadNumber_(threadNumber) {}
 
   void Run() override {
-    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Isolate* isolate = CcTest::isolate();
     v8::Locker locker(isolate);
     v8::Isolate::Scope isolate_scope(isolate);
@@ -4253,7 +4195,9 @@ TEST(EmbedderStatePropagateNativeContextMove) {
 
     i::Address initial_address =
         CcTest::i_isolate()->current_embedder_state()->native_context_address();
-    CHECK(!PageMetadata::FromAddress(initial_address)->never_evacuate());
+    CHECK(!PageMetadata::FromAddress(initial_address)
+               ->Chunk()
+               ->IsFlagSet(MemoryChunk::NEVER_EVACUATE));
 
     // Install a function that triggers the native context to be moved.
     v8::Local<v8::FunctionTemplate> move_func_template =
@@ -4362,7 +4306,7 @@ int GetSourcePositionEntryCount(i::Isolate* isolate, const char* source,
   if (function->ActiveTierIsIgnition(isolate)) return -1;
   i::DirectHandle<i::Code> code(function->code(isolate), isolate);
   i::SourcePositionTableIterator iterator(
-      CheckedCast<TrustedByteArray>(code->source_position_table()));
+      Cast<TrustedByteArray>(code->source_position_table()));
 
   while (!iterator.done()) {
     if (mode == EntryCountMode::kAll ||
@@ -4419,6 +4363,7 @@ UNINITIALIZED_TEST(DetailedSourcePositionAPI_Inlining) {
   i::v8_flags.detailed_line_info = false;
   i::v8_flags.turbo_inlining = true;
   i::v8_flags.stress_inline = true;
+  i::v8_flags.always_turbofan = false;
   i::v8_flags.allow_natives_syntax = true;
   v8::Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
@@ -4671,6 +4616,9 @@ TEST(FastApiCPUProfiler) {
   FLAG_SCOPE(turbofan);
   FLAG_SCOPE(turbo_fast_api_calls);
   FLAG_SCOPE(allow_natives_syntax);
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  FLAG_VALUE_SCOPE(always_turbofan, false);
   FLAG_VALUE_SCOPE(prof_browser_mode, false);
 #if V8_ENABLE_MAGLEV
   FLAG_VALUE_SCOPE(maglev, false);
@@ -4681,6 +4629,8 @@ TEST(FastApiCPUProfiler) {
   LocalContext env;
   v8::Isolate* isolate = env.isolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   i::HandleScope scope(i_isolate);
 
@@ -4704,12 +4654,8 @@ TEST(FastApiCPUProfiler) {
 
   v8::Local<v8::Object> object =
       object_template->NewInstance(env.local()).ToLocalChecked();
-
-  constexpr v8::EmbedderDataTypeTag kFastApiReceiverTag = 1;
-
   object->SetAlignedPointerInInternalField(kV8WrapperObjectIndex,
-                                           reinterpret_cast<void*>(&receiver),
-                                           kFastApiReceiverTag);
+                                           reinterpret_cast<void*>(&receiver));
 
   int num_runs_arg = 100;
   env->Global()->Set(env.local(), v8_str("receiver"), object).Check();
@@ -4774,6 +4720,7 @@ TEST(FastApiCPUProfiler) {
 TEST(BytecodeFlushEventsEagerLogging) {
 #if !defined(V8_LITE_MODE) && defined(V8_ENABLE_TURBOFAN)
   v8_flags.turbofan = false;
+  v8_flags.always_turbofan = false;
   v8_flags.optimize_for_size = false;
 #endif  // !defined(V8_LITE_MODE) && defined(V8_ENABLE_TURBOFAN)
 #ifdef V8_ENABLE_SPARKPLUG

@@ -950,7 +950,7 @@ i::DirectHandle<i::String> VecToString(i::Isolate* isolate,
   // so let's be robust to that.
   if (length > 0 && chars[length - 1] == 0) length--;
   return isolate->factory()
-      ->NewStringFromUtf8(std::string_view{chars.get(), length})
+      ->NewStringFromUtf8({chars.get(), length})
       .ToHandleChecked();
 }
 
@@ -1582,7 +1582,7 @@ auto make_func(Store* store_abs, std::shared_ptr<FuncData> data) -> own<Func> {
   i::DirectHandle<i::WasmCapiFunction> function = i::WasmCapiFunction::New(
       isolate, reinterpret_cast<i::Address>(&FuncData::v8_callback),
       embedder_data, sig_index, sig);
-  i::TrustedCast<i::WasmImportData>(
+  i::Cast<i::WasmImportData>(
       function->shared()->wasm_capi_function_data()->internal()->implicit_arg())
       ->set_callable(*function);
   auto func = implement<Func>::type::make(store, function);
@@ -1814,13 +1814,14 @@ WASM_EXPORT auto Func::call(const vec<Val>& args, vec<Val>& results) const
       func->v8_object()->shared()->GetTrustedData(isolate);
 
   // WasmCapiFunctions can be called directly.
-  if (i::Tagged<i::WasmCapiFunctionData> data;
-      TryCast(raw_function_data, &data)) {
-    return CallWasmCapiFunction(data, args, results);
+  if (IsWasmCapiFunctionData(raw_function_data)) {
+    return CallWasmCapiFunction(
+        i::Cast<i::WasmCapiFunctionData>(raw_function_data), args, results);
   }
 
+  SBXCHECK(IsWasmExportedFunctionData(raw_function_data));
   i::DirectHandle<i::WasmExportedFunctionData> function_data{
-      i::SbxCast<i::WasmExportedFunctionData>(raw_function_data), isolate};
+      i::Cast<i::WasmExportedFunctionData>(raw_function_data), isolate};
   i::DirectHandle<i::WasmTrustedInstanceData> instance_data{
       function_data->instance_data(), isolate};
   int function_index = function_data->function_index();
@@ -1844,14 +1845,13 @@ WASM_EXPORT auto Func::call(const vec<Val>& args, vec<Val>& results) const
         instance_data->dispatch_table_for_imports()->implicit_arg(
             function_index),
         isolate);
-    if (i::Tagged<i::WasmImportData> import_data;
-        TryCast(*object_ref, &import_data)) {
-      i::Tagged<i::JSFunction> jsfunc =
-          i::Cast<i::JSFunction>(import_data->callable());
+    if (IsWasmImportData(*object_ref)) {
+      i::Tagged<i::JSFunction> jsfunc = i::Cast<i::JSFunction>(
+          i::Cast<i::WasmImportData>(*object_ref)->callable());
       i::Tagged<i::Object> data = jsfunc->shared()->GetTrustedData(isolate);
-      if (i::Tagged<i::WasmCapiFunctionData> trusted_data;
-          TryCast(data, &trusted_data)) {
-        return CallWasmCapiFunction(trusted_data, args, results);
+      if (IsWasmCapiFunctionData(data)) {
+        return CallWasmCapiFunction(i::Cast<i::WasmCapiFunctionData>(data),
+                                    args, results);
       }
       // TODO(jkummerow): Imported and then re-exported JavaScript functions
       // are not supported yet. If we support C-API + JavaScript, we'll need

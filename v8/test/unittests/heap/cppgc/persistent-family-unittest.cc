@@ -99,11 +99,12 @@ class TestRootVisitor final : public RootVisitorBase {
   }
 
  protected:
-  void VisitRoot(const void* t, TraceDescriptor desc, SourceLocation) final {
+  void VisitRoot(const void* t, TraceDescriptor desc,
+                 const SourceLocation&) final {
     desc.callback(nullptr, desc.base_object_payload);
   }
   void VisitWeakRoot(const void*, TraceDescriptor, WeakCallback callback,
-                     const void* object, SourceLocation) final {
+                     const void* object, const SourceLocation&) final {
     weak_callbacks_.emplace_back(callback, object);
   }
 
@@ -815,6 +816,7 @@ TEST_F(PersistentTest, ClearOnHeapDestruction) {
   EXPECT_EQ(kSentinelPointer, weak_persistent_sentinel);
 }
 
+#if V8_SUPPORTS_SOURCE_LOCATION
 TEST_F(PersistentTest, LocalizedPersistent) {
   GCed* gced = MakeGarbageCollected<GCed>(GetAllocationHandle());
   {
@@ -921,23 +923,25 @@ TEST_F(PersistentTest, LocalizedPersistent) {
   }
 }
 
+#endif
+
 namespace {
 
 class ExpectingLocationVisitor final : public RootVisitorBase {
  public:
-  explicit ExpectingLocationVisitor(SourceLocation expected_location)
+  explicit ExpectingLocationVisitor(const SourceLocation& expected_location)
       : expected_loc_(expected_location) {}
 
  protected:
   void VisitRoot(const void* t, TraceDescriptor desc,
-                 SourceLocation loc) final {
+                 const SourceLocation& loc) final {
     EXPECT_STREQ(expected_loc_.Function(), loc.Function());
     EXPECT_STREQ(expected_loc_.FileName(), loc.FileName());
     EXPECT_EQ(expected_loc_.Line(), loc.Line());
   }
 
  private:
-  SourceLocation expected_loc_;
+  const SourceLocation& expected_loc_;
 };
 
 }  // namespace
@@ -945,12 +949,16 @@ class ExpectingLocationVisitor final : public RootVisitorBase {
 TEST_F(PersistentTest, PersistentTraceLocation) {
   GCed* gced = MakeGarbageCollected<GCed>(GetAllocationHandle());
   {
-    // Make sure that the source location is on the same line as the persistent,
-    // by disabling formatting.
-    // clang-format off
-    // NOLINTNEXTLINE
-    LocalizedPersistent<GCed> p = gced; auto expected_loc = SourceLocation::Current();
-    // clang-format on
+#if V8_SUPPORTS_SOURCE_LOCATION
+    // Baseline for creating expected location which has a different line
+    // number.
+    const auto loc = SourceLocation::Current();
+    const auto expected_loc =
+        SourceLocation::Current(loc.Function(), loc.FileName(), loc.Line() + 6);
+#else   // !V8_SUPPORTS_SOURCE_LOCATION
+    const SourceLocation expected_loc;
+#endif  // !V8_SUPPORTS_SOURCE_LOCATION
+    LocalizedPersistent<GCed> p = gced;
     ExpectingLocationVisitor visitor(expected_loc);
     visitor.Trace(p);
   }

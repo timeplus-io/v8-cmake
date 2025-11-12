@@ -6,16 +6,12 @@
 
 #include "src/api/api-inl.h"
 #include "src/api/api.h"
-#include "src/debug/debug.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/frames.h"
 #include "src/objects/script.h"
-#include "src/wasm/constant-expression.h"
 #include "src/wasm/module-instantiate.h"
 #include "src/wasm/wasm-debug.h"
-#include "src/wasm/wasm-opcodes.h"
 #include "src/wasm/wasm-value.h"
-#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -121,10 +117,11 @@ std::vector<wasm_addr_t> WasmModuleDebug::GetCallStack(
                                            wasm.function_index()) +
                      wasm.code_offset();
             script = wasm.script();
+
             bool zeroth_frame = call_stack.empty();
             if (!zeroth_frame) {
               const NativeModule* native_module =
-                  wasm.wasm_instance()->module_object()->native_module();
+                  wasm.wasm_instance()->module_object().native_module();
               offset = ReturnPc(native_module, offset);
             }
           }
@@ -192,12 +189,12 @@ std::vector<FrameSummary> WasmModuleDebug::FindWasmFrame(
 }
 
 // static
-DirectHandle<WasmInstanceObject> WasmModuleDebug::GetWasmInstance(
+Handle<WasmInstanceObject> WasmModuleDebug::GetWasmInstance(
     Isolate* isolate, uint32_t frame_index) {
   DebuggableStackFrameIterator frame_it(isolate);
   std::vector<FrameSummary> frames = FindWasmFrame(&frame_it, &frame_index);
   if (frames.empty()) {
-    return DirectHandle<WasmInstanceObject>::null();
+    return Handle<WasmInstanceObject>::null();
   }
 
   int reversed_index = static_cast<int>(frames.size() - 1 - frame_index);
@@ -212,16 +209,13 @@ bool WasmModuleDebug::GetWasmGlobal(Isolate* isolate, uint32_t frame_index,
                                     uint32_t buffer_size, uint32_t* size) {
   HandleScope handles(isolate);
 
-  DirectHandle<WasmInstanceObject> instance =
-      GetWasmInstance(isolate, frame_index);
+  Handle<WasmInstanceObject> instance = GetWasmInstance(isolate, frame_index);
   if (!instance.is_null()) {
     Handle<WasmModuleObject> module_object(instance->module_object(), isolate);
-    const wasm::WasmModule* module = module_object->native_module()->module();
+    const wasm::WasmModule* module = module_object->module();
     if (index < module->globals.size()) {
-      DirectHandle<WasmTrustedInstanceData> trusted_data(
-          instance->trusted_data(isolate), isolate);
       wasm::WasmValue wasm_value =
-          trusted_data->GetGlobalValue(isolate, module->globals[index]);
+          WasmInstanceObject::GetGlobalValue(instance, module->globals[index]);
       return GetWasmValue(wasm_value, buffer, buffer_size, size);
     }
   }
@@ -243,18 +237,17 @@ bool WasmModuleDebug::GetWasmLocal(Isolate* isolate, uint32_t frame_index,
   int reversed_index = static_cast<int>(frames.size() - 1 - frame_index);
   const FrameSummary& summary = frames[reversed_index];
   if (summary.IsWasm()) {
-    DirectHandle<WasmInstanceObject> instance =
-        summary.AsWasm().wasm_instance();
+    Handle<WasmInstanceObject> instance = summary.AsWasm().wasm_instance();
     if (!instance.is_null()) {
       Handle<WasmModuleObject> module_object(instance->module_object(),
                                              isolate);
       wasm::NativeModule* native_module = module_object->native_module();
       DebugInfo* debug_info = native_module->GetDebugInfo();
-      if (static_cast<uint32_t>(debug_info->GetNumLocals(frame_it.frame()->pc(),
-                                                         isolate)) > index) {
+      if (static_cast<uint32_t>(
+              debug_info->GetNumLocals(frame_it.frame()->pc())) > index) {
         wasm::WasmValue wasm_value = debug_info->GetLocalValue(
             index, frame_it.frame()->pc(), frame_it.frame()->fp(),
-            frame_it.frame()->callee_fp(), isolate);
+            frame_it.frame()->callee_fp());
         return GetWasmValue(wasm_value, buffer, buffer_size, size);
       }
     }
@@ -277,18 +270,17 @@ bool WasmModuleDebug::GetWasmStackValue(Isolate* isolate, uint32_t frame_index,
   int reversed_index = static_cast<int>(frames.size() - 1 - frame_index);
   const FrameSummary& summary = frames[reversed_index];
   if (summary.IsWasm()) {
-    DirectHandle<WasmInstanceObject> instance =
-        summary.AsWasm().wasm_instance();
+    Handle<WasmInstanceObject> instance = summary.AsWasm().wasm_instance();
     if (!instance.is_null()) {
       Handle<WasmModuleObject> module_object(instance->module_object(),
                                              isolate);
       wasm::NativeModule* native_module = module_object->native_module();
       DebugInfo* debug_info = native_module->GetDebugInfo();
-      if (static_cast<uint32_t>(debug_info->GetStackDepth(
-              frame_it.frame()->pc(), isolate)) > index) {
+      if (static_cast<uint32_t>(
+              debug_info->GetStackDepth(frame_it.frame()->pc())) > index) {
         WasmValue wasm_value = debug_info->GetStackValue(
             index, frame_it.frame()->pc(), frame_it.frame()->fp(),
-            frame_it.frame()->callee_fp(), isolate);
+            frame_it.frame()->callee_fp());
         return GetWasmValue(wasm_value, buffer, buffer_size, size);
       }
     }
@@ -303,8 +295,8 @@ uint32_t WasmModuleDebug::GetWasmMemory(Isolate* isolate, uint32_t offset,
   uint32_t bytes_read = 0;
   Handle<WasmInstanceObject> instance = GetFirstWasmInstance();
   if (!instance.is_null()) {
-    uint8_t* mem_start = instance->trusted_data(isolate)->memory0_start();
-    size_t mem_size = instance->trusted_data(isolate)->memory0_size();
+    uint8_t* mem_start = instance->memory_start();
+    size_t mem_size = instance->memory_size();
     if (static_cast<uint64_t>(offset) + size <= mem_size) {
       memcpy(buffer, mem_start + offset, size);
       bytes_read = size;
@@ -316,39 +308,28 @@ uint32_t WasmModuleDebug::GetWasmMemory(Isolate* isolate, uint32_t offset,
   return bytes_read;
 }
 
-uint32_t WasmModuleDebug::GetWasmData(Zone* zone, Isolate* isolate,
-                                      uint32_t offset, uint8_t* buffer,
-                                      uint32_t size) {
+uint32_t WasmModuleDebug::GetWasmData(Isolate* isolate, uint32_t offset,
+                                      uint8_t* buffer, uint32_t size) {
   HandleScope handles(isolate);
 
   uint32_t bytes_read = 0;
   Handle<WasmInstanceObject> instance = GetFirstWasmInstance();
   if (!instance.is_null()) {
-    DirectHandle<WasmTrustedInstanceData> trusted_data(
-        instance->trusted_data(isolate), isolate);
-    DirectHandle<WasmTrustedInstanceData> shared_data(
-        trusted_data->shared_part(), isolate);
     Handle<WasmModuleObject> module_object(instance->module_object(), isolate);
-    const wasm::WasmModule* module = module_object->native_module()->module();
+    const wasm::WasmModule* module = module_object->module();
     if (!module->data_segments.empty()) {
       const WasmDataSegment& segment = module->data_segments[0];
-      wasm::ValueOrError result = wasm::EvaluateConstantExpression(
-          zone, segment.dest_addr, wasm::kWasmI32, module, isolate,
-          trusted_data, shared_data);
+      uint32_t data_offset = EvalUint32InitExpr(instance, segment.dest_addr);
+      offset += data_offset;
 
-      if (!wasm::is_error(result)) {
-        uint32_t data_offset = wasm::to_value(result).to_u32();
-        offset += data_offset;
-
-        uint8_t* mem_start = trusted_data->memory0_start();
-        size_t mem_size = trusted_data->memory0_size();
-        if (static_cast<uint64_t>(offset) + size <= mem_size) {
-          memcpy(buffer, mem_start + offset, size);
-          bytes_read = size;
-        } else if (offset < mem_size) {
-          bytes_read = static_cast<uint32_t>(mem_size) - offset;
-          memcpy(buffer, mem_start + offset, bytes_read);
-        }
+      uint8_t* mem_start = instance->memory_start();
+      size_t mem_size = instance->memory_size();
+      if (static_cast<uint64_t>(offset) + size <= mem_size) {
+        memcpy(buffer, mem_start + offset, size);
+        bytes_read = size;
+      } else if (offset < mem_size) {
+        bytes_read = static_cast<uint32_t>(mem_size) - offset;
+        memcpy(buffer, mem_start + offset, bytes_read);
       }
     }
   }
@@ -425,9 +406,7 @@ bool WasmModuleDebug::GetWasmValue(const wasm::WasmValue& wasm_value,
     case wasm::kRefNull:
     case wasm::kVoid:
     case wasm::kBottom:
-      // TODO(): Support references.
-      return false;
-    default:
+      // Not supported
       return false;
   }
 }

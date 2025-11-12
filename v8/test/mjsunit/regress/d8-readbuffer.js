@@ -27,7 +27,10 @@
 
 // Test that reading a file actually returns the file's contents.
 
-var a = new Uint8Array(readbuffer("test/mjsunit/regress/d8-readbuffer.js"));
+// Env: TEST_FILE_NAME
+assertEquals("string", typeof TEST_FILE_NAME);
+
+var a = new Uint8Array(readbuffer(TEST_FILE_NAME));
 
 // First line of this file.
 var expected = "// Copyright 2014 the V8 project authors. All rights reserved.";

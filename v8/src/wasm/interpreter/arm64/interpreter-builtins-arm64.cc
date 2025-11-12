@@ -197,7 +197,8 @@ void LoadFunctionDataAndWasmInstance(MacroAssembler* masm,
       function_data,
       FieldMemOperand(shared_function_info,
                       SharedFunctionInfo::kTrustedFunctionDataOffset),
-      kWasmFunctionDataIndirectPointerTag);
+
+      kUnknownIndirectPointerTag);
   shared_function_info = no_reg;
 
   Register trusted_instance_data = wasm_instance;
@@ -696,6 +697,13 @@ void Builtins::Generate_GenericJSToWasmInterpreterWrapper(
 
   __ bind(&prepare_for_wasm_call);
 
+  // Set thread_in_wasm_flag.
+  DEFINE_REG_W(scratch32);
+  __ Ldr(scratch, MemOperand(kRootRegister,
+                             Isolate::thread_in_wasm_flag_address_offset()));
+  __ Mov(scratch32, 1);  // 32 bit.
+  __ Str(scratch32, MemOperand(scratch, 0));
+
   DEFINE_PINNED(function_index, w15);
   __ Ldr(
       function_index,
@@ -727,6 +735,11 @@ void Builtins::Generate_GenericJSToWasmInterpreterWrapper(
   __ Ldr(array_start, MemOperand(fp, kArgRetsAddressOffset));
 
   __ Str(xzr, MemOperand(fp, kArgRetsIsArgsOffset));
+
+  // Unset thread_in_wasm_flag.
+  __ Ldr(scratch, MemOperand(kRootRegister,
+                             Isolate::thread_in_wasm_flag_address_offset()));
+  __ Str(wzr, MemOperand(scratch, 0));  // 32 bit.
 
   regs.ResetExcept(wasm_instance, array_start, scratch);
 
@@ -1480,6 +1493,11 @@ void Builtins::Generate_GenericWasmToJSInterpreterWrapper(
   // -------------------------------------------
   __ bind(&prepare_for_js_call);
 
+  // Reset thread_in_wasm_flag.
+  __ Ldr(scratch, MemOperand(kRootRegister,
+                             Isolate::thread_in_wasm_flag_address_offset()));
+  __ Str(wzr, MemOperand(scratch, 0));  // 32 bit.
+
   regs.ResetExcept(param, packed_args, valuetypes_array_ptr, context,
                    return_count, valuetype, scratch);
 
@@ -1663,8 +1681,7 @@ void Builtins::Generate_GenericWasmToJSInterpreterWrapper(
           RelocInfo::CODE_TARGET);
   __ Ldr(packed_args, MemOperand(fp, kPackedArrayOffset));
   __ Ldr(current_result_offset, MemOperand(fp, kCurrentResultOffset));
-  __ Str(kFPReturnRegister0.S(),
-         MemOperand(packed_args, current_result_offset));
+  __ Str(kFPReturnRegister0, MemOperand(packed_args, current_result_offset));
   __ Add(current_result_offset, current_result_offset,
          Immediate(sizeof(float)));
   __ jmp(&return_done);
@@ -1681,9 +1698,10 @@ void Builtins::Generate_GenericWasmToJSInterpreterWrapper(
 
   __ bind(&return_kWasmRef);
   __ Ldr(packed_args, MemOperand(fp, kPackedArrayOffset));
-  __ Str(return_reg, MemOperand(packed_args, current_result_offset));
+  __ Str(return_reg,
+         MemOperand(packed_args, result_index, LSL, kSystemPointerSizeLog2));
   __ Add(current_result_offset, current_result_offset,
-         Immediate(kSystemPointerSize));
+         Immediate(sizeof(double)));
 
   // A result converted.
   __ bind(&return_done);
@@ -1781,6 +1799,12 @@ void Builtins::Generate_GenericWasmToJSInterpreterWrapper(
   // -------------------------------------------
 
   __ bind(&all_done);
+  // Set thread_in_wasm_flag.
+  DEFINE_REG_W(scratch32);
+  __ Ldr(scratch, MemOperand(kRootRegister,
+                             Isolate::thread_in_wasm_flag_address_offset()));
+  __ Mov(scratch32, Immediate(1));
+  __ Str(scratch32, MemOperand(scratch, 0));  // 32 bit.
 
   // Deconstruct the stack frame.
   __ LeaveFrame(StackFrame::WASM_TO_JS);

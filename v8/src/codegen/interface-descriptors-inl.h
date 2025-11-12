@@ -125,8 +125,7 @@ void StaticCallInterfaceDescriptor<DerivedDescriptor>::Initialize(
   DCHECK_GE(return_double_registers.size(), DerivedDescriptor::kReturnCount);
   data->InitializeRegisters(
       DerivedDescriptor::flags(), DerivedDescriptor::kEntrypointTag,
-      DerivedDescriptor::kSandboxingMode, DerivedDescriptor::kReturnCount,
-      DerivedDescriptor::GetParameterCount(),
+      DerivedDescriptor::kReturnCount, DerivedDescriptor::GetParameterCount(),
       DerivedDescriptor::kStackArgumentOrder,
       DerivedDescriptor::GetRegisterParameterCount(), registers.data(),
       double_registers.data(), return_registers.data(),
@@ -315,7 +314,7 @@ constexpr RegList WriteBarrierDescriptor::ComputeSavedRegisters(
     saved_registers.set(SlotAddressRegister());
   }
 #elif V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_LOONG64 || \
-    V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_RISCV32
+    V8_TARGET_ARCH_MIPS64
   if (object != ObjectRegister()) saved_registers.set(ObjectRegister());
   // The slot address is always clobbered.
   saved_registers.set(SlotAddressRegister());
@@ -534,9 +533,6 @@ OnStackReplacementDescriptor::ExpectedParameterCountRegister() {
 
 // static
 constexpr auto VoidDescriptor::registers() { return RegisterArray(); }
-
-// static
-constexpr auto JSEntryDescriptor::registers() { return RegisterArray(); }
 
 // static
 constexpr auto AllocateDescriptor::registers() {
@@ -817,10 +813,9 @@ constexpr auto WasmToJSWrapperDescriptor::return_double_registers() {
     using type = DescriptorName##Descriptor;                          \
   };
 BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN,
-             /*TFC_TSA*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER,
+             /*TSC*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER,
              /*TFC*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER, IGNORE_BUILTIN,
              /*TFH*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER, IGNORE_BUILTIN,
-             IGNORE_BUILTIN,
              /*ASM*/ DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER)
 #undef DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER
 #define DEFINE_STATIC_BUILTIN_DESCRIPTOR_GETTER(Name, ...) \

@@ -1537,15 +1537,14 @@ void MacroAssembler::GenerateTailCallToReturnedCode(
     FrameScope scope(this, StackFrame::INTERNAL);
     // Push a copy of the target function, the new target, the actual
     // argument count, and the dispatch handle.
-    Register maybe_dispatch_handle = V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE_BOOL
-                                         ? kJavaScriptCallDispatchHandleRegister
-                                         : padreg;
+    Register lastreg = V8_ENABLE_LEAPTIERING_BOOL
+                           ? kJavaScriptCallDispatchHandleRegister
+                           : padreg;
     SmiTag(kJavaScriptCallArgCountRegister);
     // No need to SmiTag the dispatch handle as it always looks like a Smi.
     static_assert(kJSDispatchHandleShift > 0);
-    AssertSmi(maybe_dispatch_handle);
     Push(kJavaScriptCallTargetRegister, kJavaScriptCallNewTargetRegister,
-         kJavaScriptCallArgCountRegister, maybe_dispatch_handle);
+         kJavaScriptCallArgCountRegister, lastreg);
     // Push another copy as a parameter to the runtime call.
     PushArgument(kJavaScriptCallTargetRegister);
 
@@ -1556,7 +1555,7 @@ void MacroAssembler::GenerateTailCallToReturnedCode(
 
     // Restore target function, new target, actual argument count, and dispatch
     // handle.
-    Pop(maybe_dispatch_handle, kJavaScriptCallArgCountRegister,
+    Pop(lastreg, kJavaScriptCallArgCountRegister,
         kJavaScriptCallNewTargetRegister, kJavaScriptCallTargetRegister);
     SmiUntag(kJavaScriptCallArgCountRegister);
   }
@@ -3196,7 +3195,7 @@ void MacroAssembler::JumpIfCodeIsTurbofanned(Register code, Register scratch,
 }
 
 Operand MacroAssembler::ClearedValue() const {
-  return Operand(static_cast<int32_t>(i::kClearedWeakValue.ptr()));
+  return Operand(static_cast<int32_t>(i::ClearedValue(isolate()).ptr()));
 }
 
 Operand MacroAssembler::ReceiverOperand() { return Operand(0); }
@@ -3614,21 +3613,6 @@ void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
   Bind(&done);
 }
 
-void MacroAssembler::LoadInterpreterDataBytecodeArray(
-    Register destination, Register interpreter_data) {
-  LoadProtectedPointerField(
-      destination, FieldMemOperand(interpreter_data,
-                                   offsetof(InterpreterData, bytecode_array_)));
-}
-
-void MacroAssembler::LoadInterpreterDataInterpreterTrampoline(
-    Register destination, Register interpreter_data) {
-  LoadProtectedPointerField(
-      destination,
-      FieldMemOperand(interpreter_data,
-                      offsetof(InterpreterData, interpreter_trampoline_)));
-}
-
 // Sets condition flags based on comparison, and returns type in type_reg.
 void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
                                          InstanceType type) {
@@ -4036,72 +4020,6 @@ void MacroAssembler::LoadTrustedPointerField(Register destination,
 #endif
 }
 
-void MacroAssembler::LoadTrustedUnknownPointerField(
-    Register destination, MemOperand field_operand, Register scratch,
-    const std::initializer_list<std::tuple<InstanceType, Label*>>& cases) {
-  DCHECK(!AreAliased(destination, scratch));
-  Label done;
-
-#ifdef V8_ENABLE_SANDBOX
-  {
-    Register handle = scratch;
-    Ldr(handle.W(), field_operand);
-
-    bool handles_code_case = false;
-    constexpr int kCodePointerHandleMarkerBit = 0;
-    static_assert((1 << kCodePointerHandleMarkerBit) ==
-                  kCodePointerHandleMarker);
-    for (auto& [type, label] : cases) {
-      if (type == CODE_TYPE) {
-        handles_code_case = true;
-
-        Label not_code_handle;
-        Tbz(handle, kCodePointerHandleMarkerBit, &not_code_handle);
-
-        ResolveCodePointerHandle(destination, handle);
-        B(label);
-
-        bind(&not_code_handle);
-        break;
-      }
-    }
-    if (!handles_code_case) {
-      Tbnz(handle, kCodePointerHandleMarkerBit, &done);
-    }
-
-    ResolveTrustedPointerHandle(destination, handle,
-                                kUnknownIndirectPointerTag);
-  }
-#else
-  LoadTaggedField(destination, field_operand);
-#endif  // V8_ENABLE_SANDBOX
-
-#if V8_STATIC_ROOTS_BOOL
-  LoadCompressedMap(scratch, destination);
-  for (auto& [type, label] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
-    CompareInstanceTypeWithUniqueCompressedMap(scratch, Register::no_reg(),
-                                               type);
-    B(eq, label);
-  }
-#else
-  LoadMap(scratch, destination);
-  Ldrh(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
-  for (auto& [type, label] : cases) {
-    if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
-      continue;
-    }
-    Cmp(scratch, type);
-    B(eq, label);
-  }
-#endif  // V8_STATIC_ROOTS_BOOL
-
-  bind(&done);
-  Mov(destination, xzr);
-}
-
 void MacroAssembler::StoreTrustedPointerField(Register value,
                                               MemOperand dst_field_operand) {
 #ifdef V8_ENABLE_SANDBOX
@@ -4144,11 +4062,22 @@ void MacroAssembler::StoreIndirectPointerField(Register value,
 void MacroAssembler::ResolveIndirectPointerHandle(Register destination,
                                                   Register handle,
                                                   IndirectPointerTag tag) {
-  // This function must not be used to resolve kUnknownIndirectPointerTag. Use
-  // LoadTrustedUnknownPointerField for that instead.
-  CHECK_NE(tag, kUnknownIndirectPointerTag);
   // The tag implies which pointer table to use.
-  if (tag == kCodeIndirectPointerTag) {
+  if (tag == kUnknownIndirectPointerTag) {
+    // In this case we have to rely on the handle marking to determine which
+    // pointer table to use.
+    Label is_trusted_pointer_handle, done;
+    constexpr int kCodePointerHandleMarkerBit = 0;
+    static_assert((1 << kCodePointerHandleMarkerBit) ==
+                  kCodePointerHandleMarker);
+    Tbz(handle, kCodePointerHandleMarkerBit, &is_trusted_pointer_handle);
+    ResolveCodePointerHandle(destination, handle);
+    B(&done);
+    Bind(&is_trusted_pointer_handle);
+    ResolveTrustedPointerHandle(destination, handle,
+                                kUnknownIndirectPointerTag);
+    Bind(&done);
+  } else if (tag == kCodeIndirectPointerTag) {
     ResolveCodePointerHandle(destination, handle);
   } else {
     ResolveTrustedPointerHandle(destination, handle, tag);
@@ -4250,10 +4179,8 @@ void MacroAssembler::LoadEntrypointFromJSDispatchTable(
   DCHECK(!AreAliased(destination, scratch));
   ASM_CODE_COMMENT(this);
 
-  // The following is not isolate group independent and thus cannot be used in
-  // builtin code.
-  DCHECK_EQ(builtin(), Builtin::kNoBuiltinId);
-  Ldr(scratch, ExternalReference::js_dispatch_table_address());
+  CHECK(root_array_available());
+  Ldr(scratch, ExternalReferenceAsOperand(IsolateFieldId::kJSDispatchTable));
   // WARNING: This offset calculation is only safe if we have already stored a
   // RelocInfo for the dispatch handle, e.g. in CallJSDispatchEntry, (thus
   // keeping the dispatch entry alive) _and_ because the entrypoints are not

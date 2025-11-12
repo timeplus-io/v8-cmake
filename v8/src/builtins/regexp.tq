@@ -372,7 +372,7 @@ extern macro RegExpBuiltinsAssembler::AdvanceStringIndex(
 extern macro RegExpBuiltinsAssembler::AdvanceStringIndexFast(
     String, Smi, bool): Smi;
 extern macro RegExpBuiltinsAssembler::AdvanceStringIndexSlow(
-    String, Number, bool): Number;
+    String, Number, bool): Smi;
 
 const kRegExpMatchIsTrueishOnNonJSRegExp: constexpr UseCounterFeature
     generates 'v8::Isolate::kRegExpMatchIsTrueishOnNonJSRegExp';

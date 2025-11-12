@@ -289,8 +289,7 @@ TaggedArrayBase<D, S, P>::RawFieldOfElementAt(int index) const {
 // static
 template <class IsolateT>
 Handle<FixedArray> FixedArray::New(IsolateT* isolate, int capacity,
-                                   AllocationType allocation,
-                                   AllocationHint hint) {
+                                   AllocationType allocation) {
   if (V8_UNLIKELY(static_cast<unsigned>(capacity) >
                   FixedArrayBase::kMaxLength)) {
     FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
@@ -301,7 +300,7 @@ Handle<FixedArray> FixedArray::New(IsolateT* isolate, int capacity,
 
   std::optional<DisallowGarbageCollection> no_gc;
   Handle<FixedArray> result =
-      Cast<FixedArray>(Allocate(isolate, capacity, &no_gc, allocation, hint));
+      Cast<FixedArray>(Allocate(isolate, capacity, &no_gc, allocation));
   ReadOnlyRoots roots{isolate};
   MemsetTagged((*result)->RawFieldOfFirstElement(), roots.undefined_value(),
                capacity);
@@ -327,8 +326,8 @@ Handle<TrustedFixedArray> TrustedFixedArray::New(IsolateT* isolate,
   // The same is true for the other trusted-space arrays below.
 
   std::optional<DisallowGarbageCollection> no_gc;
-  Handle<TrustedFixedArray> result = TrustedCast<TrustedFixedArray>(
-      Allocate(isolate, capacity, &no_gc, allocation));
+  Handle<TrustedFixedArray> result =
+      Cast<TrustedFixedArray>(Allocate(isolate, capacity, &no_gc, allocation));
   MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
   return result;
 }
@@ -345,10 +344,9 @@ Handle<ProtectedFixedArray> ProtectedFixedArray::New(IsolateT* isolate,
   }
 
   std::optional<DisallowGarbageCollection> no_gc;
-  Handle<ProtectedFixedArray> result =
-      TrustedCast<ProtectedFixedArray>(Allocate(
-          isolate, capacity, &no_gc,
-          shared ? AllocationType::kSharedTrusted : AllocationType::kTrusted));
+  Handle<ProtectedFixedArray> result = Cast<ProtectedFixedArray>(Allocate(
+      isolate, capacity, &no_gc,
+      shared ? AllocationType::kSharedTrusted : AllocationType::kTrusted));
   MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
   return result;
 }
@@ -359,15 +357,15 @@ template <class IsolateT>
 Handle<D> TaggedArrayBase<D, S, P>::Allocate(
     IsolateT* isolate, int capacity,
     std::optional<DisallowGarbageCollection>* no_gc_out,
-    AllocationType allocation, AllocationHint hint) {
+    AllocationType allocation) {
   // Note 0-capacity is explicitly allowed since not all subtypes can be
   // assumed to have canonical 0-capacity instances.
   DCHECK_GE(capacity, 0);
   DCHECK_LE(capacity, kMaxCapacity);
   DCHECK(!no_gc_out->has_value());
 
-  Tagged<D> xs = UncheckedCast<D>(isolate->factory()->AllocateRawArray(
-      SizeFor(capacity), allocation, hint));
+  Tagged<D> xs = UncheckedCast<D>(
+      isolate->factory()->AllocateRawArray(SizeFor(capacity), allocation));
 
   ReadOnlyRoots roots{isolate};
   if (DEBUG_BOOL) no_gc_out->emplace();
@@ -653,7 +651,7 @@ Handle<TrustedWeakFixedArray> TrustedWeakFixedArray::New(IsolateT* isolate,
   }
 
   std::optional<DisallowGarbageCollection> no_gc;
-  Handle<TrustedWeakFixedArray> result = TrustedCast<TrustedWeakFixedArray>(
+  Handle<TrustedWeakFixedArray> result = Cast<TrustedWeakFixedArray>(
       Allocate(isolate, capacity, &no_gc, AllocationType::kTrusted));
   MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
   return result;
@@ -668,7 +666,7 @@ Handle<ProtectedWeakFixedArray> ProtectedWeakFixedArray::New(IsolateT* isolate,
           capacity);
   }
   std::optional<DisallowGarbageCollection> no_gc;
-  Handle<ProtectedWeakFixedArray> result = TrustedCast<ProtectedWeakFixedArray>(
+  Handle<ProtectedWeakFixedArray> result = Cast<ProtectedWeakFixedArray>(
       Allocate(isolate, capacity, &no_gc, AllocationType::kTrusted));
   MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
   return result;
@@ -793,7 +791,7 @@ Handle<TrustedByteArray> TrustedByteArray::New(IsolateT* isolate, int length,
   }
 
   std::optional<DisallowGarbageCollection> no_gc;
-  Handle<TrustedByteArray> result = TrustedCast<TrustedByteArray>(
+  Handle<TrustedByteArray> result = Cast<TrustedByteArray>(
       Allocate(isolate, length, &no_gc, allocation_type));
 
   int padding_size = SizeFor(length) - OffsetOfElementAt(length);
@@ -821,7 +819,7 @@ template <typename... MoreArgs>
 // static
 DirectHandle<FixedAddressArrayBase<Base>> FixedAddressArrayBase<Base>::New(
     Isolate* isolate, int length, MoreArgs&&... more_args) {
-  return TrustedCast<FixedAddressArrayBase>(
+  return Cast<FixedAddressArrayBase>(
       Underlying::New(isolate, length, std::forward<MoreArgs>(more_args)...));
 }
 
@@ -832,7 +830,7 @@ Handle<FixedIntegerArrayBase<T, Base>> FixedIntegerArrayBase<T, Base>::New(
     Isolate* isolate, int length, MoreArgs&&... more_args) {
   int byte_length;
   CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
-  return TrustedCast<FixedIntegerArrayBase<T, Base>>(
+  return Cast<FixedIntegerArrayBase<T, Base>>(
       Base::New(isolate, byte_length, std::forward<MoreArgs>(more_args)...));
 }
 
@@ -907,7 +905,7 @@ DirectHandle<TrustedPodArray<T>> TrustedPodArray<T>::New(Isolate* isolate,
                                                          int length) {
   int byte_length;
   CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
-  return TrustedCast<TrustedPodArray<T>>(
+  return Cast<TrustedPodArray<T>>(
       isolate->factory()->NewTrustedByteArray(byte_length));
 }
 
@@ -917,7 +915,7 @@ DirectHandle<TrustedPodArray<T>> TrustedPodArray<T>::New(LocalIsolate* isolate,
                                                          int length) {
   int byte_length;
   CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
-  return TrustedCast<TrustedPodArray<T>>(
+  return Cast<TrustedPodArray<T>>(
       isolate->factory()->NewTrustedByteArray(byte_length));
 }
 

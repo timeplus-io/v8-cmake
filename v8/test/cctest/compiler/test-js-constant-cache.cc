@@ -36,7 +36,8 @@ class JSConstantCacheTester : public HandleAndZoneScope,
                               public JSHeapBrokerTestBase {
  public:
   JSConstantCacheTester()
-      : JSCacheTesterHelper(main_zone()),
+      : HandleAndZoneScope(kCompressGraphZone),
+        JSCacheTesterHelper(main_zone()),
         JSGraph(main_isolate(), &main_graph_, &main_common_, &main_javascript_,
                 nullptr, &main_machine_),
         JSHeapBrokerTestBase(main_isolate(), main_zone()) {

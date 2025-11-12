@@ -46,7 +46,6 @@ bool OperatorProperties::NeedsExactContext(const Operator* op) {
     case IrOpcode::kJSForInEnumerate:
     case IrOpcode::kJSForInNext:
     case IrOpcode::kJSForInPrepare:
-    case IrOpcode::kJSForOfNext:
     case IrOpcode::kJSGeneratorRestoreContextNoCell:
     case IrOpcode::kJSGeneratorRestoreContinuation:
     case IrOpcode::kJSGeneratorRestoreInputOrDebugPos:

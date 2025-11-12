@@ -55,7 +55,7 @@ class Scavenger {
   struct PromotedListEntry {
     Tagged<HeapObject> heap_object;
     Tagged<Map> map;
-    SafeHeapObjectSize size;
+    int size;
   };
   using PromotedList =
       ::heap::base::Worklist<PromotedListEntry, kPromotedListSegmentSize>;
@@ -84,8 +84,8 @@ class Scavenger {
   // Returns true if the object is a large young object, and false otherwise.
   bool PromoteIfLargeObject(Tagged<HeapObject> object);
 
-  void PinAndPushObject(MutablePageMetadata* metadata,
-                        Tagged<HeapObject> object, MapWord map_word);
+  void PinAndPushObject(MemoryChunk* chunk, Tagged<HeapObject> object,
+                        MapWord map_word);
   void VisitPinnedObjects();
 
   size_t bytes_copied() const { return copied_size_; }
@@ -127,32 +127,23 @@ class Scavenger {
 
   // Copies |source| to |target| and sets the forwarding pointer in |source|.
   V8_INLINE bool MigrateObject(Tagged<Map> map, Tagged<HeapObject> source,
-                               Tagged<HeapObject> target,
-                               SafeHeapObjectSize size,
+                               Tagged<HeapObject> target, int size,
                                PromotionHeapChoice promotion_heap_choice);
 
   V8_INLINE SlotCallbackResult
   RememberedSetEntryNeeded(CopyAndForwardResult result);
 
-  template <typename THeapObjectSlot, typename OnSuccessCallback>
-  V8_INLINE bool TryMigrateObject(Tagged<Map> map, THeapObjectSlot slot,
-                                  Tagged<HeapObject> object,
-                                  SafeHeapObjectSize object_size,
-                                  AllocationSpace space,
-                                  PromotionHeapChoice promotion_heap_choice,
-                                  OnSuccessCallback on_success);
-
   template <typename THeapObjectSlot>
   V8_INLINE CopyAndForwardResult SemiSpaceCopyObject(
       Tagged<Map> map, THeapObjectSlot slot, Tagged<HeapObject> object,
-      SafeHeapObjectSize object_size, ObjectFields object_fields);
+      int object_size, ObjectFields object_fields);
 
   template <typename THeapObjectSlot,
             PromotionHeapChoice promotion_heap_choice = kPromoteIntoLocalHeap>
   V8_INLINE CopyAndForwardResult PromoteObject(Tagged<Map> map,
                                                THeapObjectSlot slot,
                                                Tagged<HeapObject> object,
-                                               SafeHeapObjectSize object_size,
+                                               int object_size,
                                                ObjectFields object_fields);
 
   template <typename THeapObjectSlot>
@@ -161,43 +152,42 @@ class Scavenger {
                                               Tagged<HeapObject> source);
 
   V8_INLINE bool HandleLargeObject(Tagged<Map> map, Tagged<HeapObject> object,
-                                   SafeHeapObjectSize object_size,
-                                   ObjectFields object_fields);
+                                   int object_size, ObjectFields object_fields);
 
   // Different cases for object evacuation.
   template <typename THeapObjectSlot,
             PromotionHeapChoice promotion_heap_choice = kPromoteIntoLocalHeap>
   V8_INLINE SlotCallbackResult EvacuateObjectDefault(
       Tagged<Map> map, THeapObjectSlot slot, Tagged<HeapObject> object,
-      SafeHeapObjectSize object_size, ObjectFields object_fields);
+      int object_size, ObjectFields object_fields);
 
   template <typename THeapObjectSlot>
   inline SlotCallbackResult EvacuateThinString(Tagged<Map> map,
                                                THeapObjectSlot slot,
                                                Tagged<ThinString> object,
-                                               SafeHeapObjectSize object_size);
+                                               int object_size);
 
   template <typename THeapObjectSlot>
-  inline SlotCallbackResult EvacuateShortcutCandidate(
-      Tagged<Map> map, THeapObjectSlot slot, Tagged<ConsString> object,
-      SafeHeapObjectSize object_size);
+  inline SlotCallbackResult EvacuateShortcutCandidate(Tagged<Map> map,
+                                                      THeapObjectSlot slot,
+                                                      Tagged<ConsString> object,
+                                                      int object_size);
 
   template <typename THeapObjectSlot>
   inline SlotCallbackResult EvacuateInPlaceInternalizableString(
       Tagged<Map> map, THeapObjectSlot slot, Tagged<String> string,
-      SafeHeapObjectSize object_size, ObjectFields object_fields);
+      int object_size, ObjectFields object_fields);
 
   void IterateAndScavengePromotedObject(Tagged<HeapObject> target,
-                                        Tagged<Map> map,
-                                        SafeHeapObjectSize object_size);
+                                        Tagged<Map> map, int size);
   void RememberPromotedEphemeron(Tagged<EphemeronHashTable> table, int index);
 
   V8_INLINE bool ShouldEagerlyProcessPromotedList() const;
 
   void PushPinnedObject(Tagged<HeapObject> object, Tagged<Map> map,
-                        SafeHeapObjectSize object_size);
+                        int object_size);
   void PushPinnedPromotedObject(Tagged<HeapObject> object, Tagged<Map> map,
-                                SafeHeapObjectSize object_size);
+                                int object_size);
 
   ScavengerCollector* const collector_;
   Heap* const heap_;
@@ -246,8 +236,7 @@ class ScavengerCollector {
   struct PinnedObjectEntry {
     Address address;
     MapWord map_word;
-    SafeHeapObjectSize size;
-    MutablePageMetadata* metadata;
+    size_t size;
   };
   using PinnedObjects = std::vector<PinnedObjectEntry>;
 

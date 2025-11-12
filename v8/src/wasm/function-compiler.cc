@@ -59,7 +59,7 @@ WasmCompilationResult WasmCompilationUnit::ExecuteCompilation(
     // - eager compilation mode,
     // - with lazy validation,
     // - with PGO (which compiles some functions eagerly), or
-    // - with compilation hints (which compiles some functions eagerly).
+    // - with compilation hints (which also compiles some functions eagerly).
     DCHECK(!v8_flags.wasm_lazy_compilation || v8_flags.wasm_lazy_validation ||
            v8_flags.experimental_wasm_pgo_from_file ||
            v8_flags.experimental_wasm_compilation_hints);
@@ -117,10 +117,6 @@ WasmCompilationResult WasmCompilationUnit::ExecuteCompilation(
           options.set_debug_sidetable(&unused_debug_sidetable);
           if (!for_debugging_) options.set_for_debugging(kForDebugging);
         }
-        if (v8_flags.wasm_code_coverage &&
-            options.for_debugging == kNotForDebugging) {
-          options.set_for_debugging(kForDebugging);
-        }
         result = ExecuteLiftoffCompilation(env, func_body, options);
         if (result.succeeded()) break;
       }
@@ -135,7 +131,6 @@ WasmCompilationResult WasmCompilationUnit::ExecuteCompilation(
       [[fallthrough]];
     }
     case ExecutionTier::kTurbofan: {
-#ifdef V8_ENABLE_TURBOFAN
       compiler::WasmCompilationData data(func_body);
       data.func_index = func_index_;
       data.wire_bytes_storage = wire_bytes_storage;
@@ -147,7 +142,6 @@ WasmCompilationResult WasmCompilationUnit::ExecuteCompilation(
       // set. In that case we set the for_debugging field for the TurboFan
       // result to match the requested for_debugging_.
       result.for_debugging = for_debugging_;
-#endif
       break;
     }
   }

@@ -163,7 +163,7 @@ class IterateAndScavengePromotedObjectsVisitor final
         SLOW_DCHECK(IsHeapObject(target));
         MemoryChunk* chunk = MemoryChunk::FromHeapObject(host);
         MutablePageMetadata* page =
-            MutablePageMetadata::cast(chunk->Metadata(heap_->isolate()));
+            MutablePageMetadata::cast(chunk->Metadata());
 
         // Sweeper is stopped during scavenge, so we can directly
         // insert into its remembered set here.
@@ -175,8 +175,7 @@ class IterateAndScavengePromotedObjectsVisitor final
 
     if (HeapLayout::InWritableSharedSpace(target)) {
       MemoryChunk* chunk = MemoryChunk::FromHeapObject(host);
-      MutablePageMetadata* page =
-          MutablePageMetadata::cast(chunk->Metadata(heap_->isolate()));
+      MutablePageMetadata* page = MutablePageMetadata::cast(chunk->Metadata());
       RememberedSet<OLD_TO_SHARED>::Insert<AccessMode::ATOMIC>(
           page, chunk->Offset(slot.address()));
     }
@@ -342,19 +341,17 @@ class GlobalHandlesWeakRootsUpdatingVisitor final : public RootVisitor {
     CHECK(first_word.IsForwardingAddress());
     Tagged<HeapObject> dest = first_word.ToForwardingAddress(heap_object);
     if (heap_object == dest) {
-      DCHECK(
-          HeapLayout::InAnyLargeSpace(heap_object) ||
-          MemoryChunkMetadata::FromHeapObject(heap_object)->is_quarantined());
+      DCHECK(Heap::IsLargeObject(heap_object) ||
+             MemoryChunk::FromHeapObject(heap_object)->IsQuarantined());
       return;
     }
     UpdateHeapObjectReferenceSlot(FullHeapObjectSlot(p), dest);
     // The destination object should be in the "to" space. However, it could
     // also be a large string if the original object was a shortcut candidate.
-    DCHECK_IMPLIES(
-        HeapLayout::InYoungGeneration(dest),
-        Heap::InToPage(dest) ||
-            (HeapLayout::InAnyLargeSpace(dest) && Heap::InFromPage(dest) &&
-             dest->map_word(kRelaxedLoad).IsForwardingAddress()));
+    DCHECK_IMPLIES(HeapLayout::InYoungGeneration(dest),
+                   Heap::InToPage(dest) ||
+                       (Heap::IsLargeObject(dest) && Heap::InFromPage(dest) &&
+                        dest->map_word(kRelaxedLoad).IsForwardingAddress()));
   }
 };
 
@@ -499,10 +496,7 @@ class ObjectPinningVisitorBase : public RootVisitor {
       // the page is only reachable from stack).
       return;
     }
-    MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
-    MutablePageMetadata* metadata =
-        MutablePageMetadata::cast(chunk->Metadata(heap_->isolate()));
-    DCHECK(!metadata->is_large());
+    DCHECK(!MemoryChunk::FromHeapObject(object)->IsLargePage());
     DCHECK(HeapLayout::InYoungGeneration(object));
     DCHECK(Heap::InFromPage(object));
     Address object_address = object.address();
@@ -513,18 +507,19 @@ class ObjectPinningVisitorBase : public RootVisitor {
         [object_address](ScavengerCollector::PinnedObjectEntry& entry) {
           return entry.address != object_address;
         }));
-    const auto object_size = object->SafeSizeFromMap(map_word.ToMap());
-    DCHECK_LT(0, object_size.value());
+    int object_size = object->SizeFromMap(map_word.ToMap());
+    DCHECK_LT(0, object_size);
     pinned_objects_.push_back(
-        {object_address, map_word, object_size, metadata});
-    if (!metadata->is_quarantined()) {
-      metadata->set_is_quarantined(true);
+        {object_address, map_word, static_cast<size_t>(object_size)});
+    MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
+    if (!chunk->IsQuarantined()) {
+      chunk->SetFlagNonExecutable(MemoryChunk::IS_QUARANTINED);
       if (v8_flags.scavenger_promote_quarantined_pages &&
           heap_->semi_space_new_space()->ShouldPageBePromoted(chunk)) {
-        metadata->set_will_be_promoted(true);
+        chunk->SetFlagNonExecutable(MemoryChunk::WILL_BE_PROMOTED);
       }
     }
-    scavenger_.PinAndPushObject(metadata, object, map_word);
+    scavenger_.PinAndPushObject(chunk, object, map_word);
   }
 
  private:
@@ -626,17 +621,16 @@ void RestorePinnedObjects(
   // for sweeping the quarantined pages (since there are no markbits).
   DCHECK_EQ(0, new_space.QuarantinedPageCount());
   size_t quarantined_objects_size = 0;
-  for (const auto& [object_address, map_word, object_size, metadata] :
-       pinned_objects) {
-    DCHECK(metadata->Contains(object_address));
+  for (const auto& [object_address, map_word, object_size] : pinned_objects) {
     DCHECK(!map_word.IsForwardingAddress());
     Tagged<HeapObject> object = HeapObject::FromAddress(object_address);
     DCHECK(HeapLayout::IsSelfForwarded(object));
     object->set_map_word(map_word.ToMap(), kRelaxedStore);
     DCHECK(!HeapLayout::IsSelfForwarded(object));
-    DCHECK(metadata->is_quarantined());
-    if (!metadata->will_be_promoted()) {
-      quarantined_objects_size += object_size.value();
+    MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
+    DCHECK(chunk->IsQuarantined());
+    if (!chunk->IsFlagSet(MemoryChunk::WILL_BE_PROMOTED)) {
+      quarantined_objects_size += object_size;
     }
   }
   new_space.SetQuarantinedSize(quarantined_objects_size);
@@ -647,28 +641,26 @@ void QuarantinePinnedPages(SemiSpaceNewSpace& new_space) {
   while (next_page) {
     PageMetadata* current_page = next_page;
     next_page = current_page->next_page();
-#ifdef DEBUG
     MemoryChunk* chunk = current_page->Chunk();
-#endif  // DEBUG
     DCHECK(chunk->IsFromPage());
-    if (!current_page->is_quarantined()) {
+    if (!chunk->IsQuarantined()) {
       continue;
     }
-    if (current_page->will_be_promoted()) {
+    if (chunk->IsFlagSet(MemoryChunk::WILL_BE_PROMOTED)) {
       // free list categories will be relinked by the quarantined page sweeper
       // after sweeping is done.
       new_space.PromotePageToOldSpace(current_page,
                                       FreeMode::kDoNotLinkCategory);
       DCHECK(!chunk->InYoungGeneration());
     } else {
-      new_space.MoveQuarantinedPage(current_page);
+      new_space.MoveQuarantinedPage(chunk);
       DCHECK(!chunk->IsFromPage());
       DCHECK(chunk->IsToPage());
     }
     DCHECK(current_page->marking_bitmap()->IsClean());
     DCHECK(!chunk->IsFromPage());
-    DCHECK(!current_page->is_quarantined());
-    DCHECK(!current_page->will_be_promoted());
+    DCHECK(!chunk->IsQuarantined());
+    DCHECK(!chunk->IsFlagSet(MemoryChunk::WILL_BE_PROMOTED));
   }
 }
 
@@ -709,13 +701,13 @@ void ScavengerCollector::QuarantinedPageSweeper::JobTask::Run(
       DCHECK(!HeapLayout::IsSelfForwarded(
           HeapObject::FromAddress(entry.address), heap_->isolate()));
       MemoryChunk* chunk = MemoryChunk::FromAddress(entry.address);
-      DCHECK(!chunk->Metadata(heap_->isolate())->is_quarantined());
+      DCHECK(!chunk->IsQuarantined());
       ObjectsAndSizes& objects_for_page = pinned_object_per_page_[chunk];
       DCHECK(!std::any_of(objects_for_page.begin(), objects_for_page.end(),
                           [entry](auto& object_and_size) {
                             return object_and_size.first == entry.address;
                           }));
-      objects_for_page.emplace_back(entry.address, entry.size.value());
+      objects_for_page.emplace_back(entry.address, entry.size);
     }
     // Initialize the iterator.
     next_page_iterator_ = pinned_object_per_page_.begin();
@@ -728,15 +720,13 @@ void ScavengerCollector::QuarantinedPageSweeper::JobTask::Run(
       return;
     }
     MemoryChunk* chunk = next_page_iterator_->first;
-    PageMetadata* page =
-        static_cast<PageMetadata*>(chunk->Metadata(heap_->isolate()));
+    PageMetadata* page = static_cast<PageMetadata*>(chunk->Metadata());
     DCHECK(!chunk->IsFromPage());
     if (chunk->IsToPage()) {
       SweepPage(CreateFillerFreeSpaceHandler, chunk, page,
                 next_page_iterator_->second);
     } else {
-      DCHECK_EQ(chunk->Metadata(heap_->isolate())->owner()->identity(),
-                OLD_SPACE);
+      DCHECK_EQ(chunk->Metadata()->owner()->identity(), OLD_SPACE);
       base::MutexGuard guard(page->mutex());
       // If for some reason the page is swept twice, this DCHECK will fail.
       DCHECK_EQ(page->area_size(), page->allocated_bytes());
@@ -771,10 +761,8 @@ void ScavengerCollector::QuarantinedPageSweeper::JobTask::
   if (should_zap) {
     heap::ZapBlock(address, size, heap::ZapValue());
   }
-  DCHECK_EQ(
-      OLD_SPACE,
-      PageMetadata::FromAddress(heap->isolate(), address)->owner()->identity());
-  DCHECK(PageMetadata::FromAddress(heap->isolate(), address)->SweepingDone());
+  DCHECK_EQ(OLD_SPACE, PageMetadata::FromAddress(address)->owner()->identity());
+  DCHECK(PageMetadata::FromAddress(address)->SweepingDone());
   OldSpace* const old_space = heap->old_space();
   old_space->FreeDuringSweep(address, size);
 }
@@ -782,7 +770,7 @@ void ScavengerCollector::QuarantinedPageSweeper::JobTask::
 size_t ScavengerCollector::QuarantinedPageSweeper::JobTask::SweepPage(
     FreeSpaceHandler free_space_handler, MemoryChunk* chunk, PageMetadata* page,
     ObjectsAndSizes& pinned_objects_on_page) {
-  DCHECK_EQ(page, chunk->Metadata(heap_->isolate()));
+  DCHECK_EQ(page, chunk->Metadata());
   DCHECK(!pinned_objects_on_page.empty());
   Address start = page->area_start();
   std::sort(pinned_objects_on_page.begin(), pinned_objects_on_page.end());
@@ -884,7 +872,9 @@ void ScavengerCollector::CollectGarbage() {
 
     const Heap::StackScanMode stack_scan_mode =
         heap_->ConservativeStackScanningModeForMinorGC();
-    if (stack_scan_mode != Heap::StackScanMode::kNone &&
+    DCHECK_IMPLIES(stack_scan_mode == Heap::StackScanMode::kSelective,
+                   heap_->IsGCWithStack());
+    if ((stack_scan_mode != Heap::StackScanMode::kNone) &&
         heap_->IsGCWithStack()) {
       // Pinning objects must be the first step and must happen before
       // scavenging any objects. Specifically we must all pin all objects
@@ -1087,7 +1077,7 @@ void ScavengerCollector::HandleSurvivingNewLargeObjects() {
     object->set_map_word(map, kRelaxedStore);
 
     LargePageMetadata* page = LargePageMetadata::FromHeapObject(object);
-    SBXCHECK(page->is_large());
+    SBXCHECK(page->IsLargePage());
     SBXCHECK_EQ(page->owner_identity(), NEW_LO_SPACE);
     heap_->lo_space()->PromoteNewLargeObject(page);
   }
@@ -1154,9 +1144,8 @@ Scavenger::Scavenger(ScavengerCollector* collector, Heap* heap, bool is_logging,
   DCHECK(!heap->incremental_marking()->IsMarking());
 }
 
-void Scavenger::IterateAndScavengePromotedObject(
-    Tagged<HeapObject> target, Tagged<Map> map,
-    SafeHeapObjectSize object_size) {
+void Scavenger::IterateAndScavengePromotedObject(Tagged<HeapObject> target,
+                                                 Tagged<Map> map, int size) {
   // We are not collecting slots on new space objects during mutation thus we
   // have to scan for pointers to evacuation candidates when we promote
   // objects. But we should not record any slots in non-black objects. Grey
@@ -1166,10 +1155,10 @@ void Scavenger::IterateAndScavengePromotedObject(
   IterateAndScavengePromotedObjectsVisitor visitor(this);
 
   // Iterate all outgoing pointers including map word.
-  visitor.Visit(map, target, object_size);
+  visitor.Visit(map, target, size);
 
   if (IsJSArrayBufferMap(map)) {
-    DCHECK(!MemoryChunkMetadata::FromHeapObject(target)->is_large());
+    DCHECK(!MemoryChunk::FromHeapObject(target)->IsLargePage());
     GCSafeCast<JSArrayBuffer>(target, heap_)->YoungMarkExtensionPromoted();
   }
 }
@@ -1201,7 +1190,7 @@ void Scavenger::ScavengePage(MutablePageMetadata* page) {
         &local_empty_chunks_);
   }
 
-  if (page->is_executable()) {
+  if (chunk->executable()) {
     std::vector<std::tuple<Tagged<HeapObject>, SlotType, Address>> slot_updates;
 
     // The code running write access to executable memory poses CFI attack
@@ -1370,15 +1359,13 @@ void Scavenger::Finalize() {
     // The ephemeron objects in the remembered set should be either large
     // objects, promoted to old space, or pinned objects on quarantined pages
     // that will be promoted.
-#ifdef DEBUG
-    auto* chunk = MemoryChunk::FromHeapObject(it.first);
-    auto* metadata = chunk->Metadata(heap_->isolate());
     DCHECK_IMPLIES(
-        !metadata->is_large(),
+        !MemoryChunk::FromHeapObject(it.first)->IsLargePage(),
         !HeapLayout::InYoungGeneration(it.first) ||
             (HeapLayout::IsSelfForwarded(it.first) &&
-             metadata->is_quarantined() && metadata->will_be_promoted()));
-#endif  // DEBUG
+             MemoryChunk::FromHeapObject(it.first)->IsQuarantined() &&
+             MemoryChunk::FromHeapObject(it.first)->IsFlagSet(
+                 MemoryChunk::WILL_BE_PROMOTED)));
     heap()->ephemeron_remembered_set()->RecordEphemeronKeyWrites(
         it.first, std::move(it.second));
   }
@@ -1432,22 +1419,22 @@ void Scavenger::CheckOldToNewSlotForSharedTyped(
 
 bool Scavenger::PromoteIfLargeObject(Tagged<HeapObject> object) {
   Tagged<Map> map = object->map();
-  return HandleLargeObject(map, object, object->SafeSizeFromMap(map),
+  return HandleLargeObject(map, object, object->SizeFromMap(map),
                            Map::ObjectFieldsFrom(map->visitor_id()));
 }
 
-void Scavenger::PinAndPushObject(MutablePageMetadata* metadata,
-                                 Tagged<HeapObject> object, MapWord map_word) {
-  DCHECK(metadata->Contains(object->address()));
+void Scavenger::PinAndPushObject(MemoryChunk* chunk, Tagged<HeapObject> object,
+                                 MapWord map_word) {
+  DCHECK(chunk->Metadata()->Contains(object->address()));
   DCHECK_EQ(map_word, object->map_word(kRelaxedLoad));
   Tagged<Map> map = map_word.ToMap();
-  const auto object_size = object->SafeSizeFromMap(map);
+  int object_size = object->SizeFromMap(map);
   PretenuringHandler::UpdateAllocationSite(heap_, map, object, object_size,
                                            &local_pretenuring_feedback_);
   object->set_map_word_forwarded(object, kRelaxedStore);
   DCHECK(object->map_word(kRelaxedLoad).IsForwardingAddress());
   DCHECK(HeapLayout::IsSelfForwarded(object));
-  if (metadata->will_be_promoted()) {
+  if (chunk->IsFlagSet(MemoryChunk::WILL_BE_PROMOTED)) {
     PushPinnedPromotedObject(object, map, object_size);
   } else {
     PushPinnedObject(object, map, object_size);
@@ -1455,22 +1442,23 @@ void Scavenger::PinAndPushObject(MutablePageMetadata* metadata,
 }
 
 void Scavenger::PushPinnedObject(Tagged<HeapObject> object, Tagged<Map> map,
-                                 SafeHeapObjectSize object_size) {
+                                 int object_size) {
   DCHECK(HeapLayout::IsSelfForwarded(object));
-  DCHECK(!MemoryChunkMetadata::FromHeapObject(object)->will_be_promoted());
-  DCHECK_EQ(object_size.value(), object->SafeSizeFromMap(map).value());
+  DCHECK(!MemoryChunk::FromHeapObject(object)->IsFlagSet(
+      MemoryChunk::WILL_BE_PROMOTED));
+  DCHECK_EQ(object_size, object->SizeFromMap(map));
   local_pinned_list_.Push(ObjectAndMap(object, map));
-  copied_size_ += object_size.value();
+  copied_size_ += object_size;
 }
 
 void Scavenger::PushPinnedPromotedObject(Tagged<HeapObject> object,
-                                         Tagged<Map> map,
-                                         SafeHeapObjectSize object_size) {
+                                         Tagged<Map> map, int object_size) {
   DCHECK(HeapLayout::IsSelfForwarded(object));
-  DCHECK(MemoryChunkMetadata::FromHeapObject(object)->will_be_promoted());
-  DCHECK_EQ(object_size.value(), object->SafeSizeFromMap(map).value());
+  DCHECK(MemoryChunk::FromHeapObject(object)->IsFlagSet(
+      MemoryChunk::WILL_BE_PROMOTED));
+  DCHECK_EQ(object_size, object->SizeFromMap(map));
   local_promoted_list_.Push({object, map, object_size});
-  promoted_size_ += object_size.value();
+  promoted_size_ += object_size;
 }
 
 void Scavenger::VisitPinnedObjects() {

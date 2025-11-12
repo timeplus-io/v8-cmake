@@ -111,16 +111,8 @@ RegExpMacroAssemblerRISCV::RegExpMacroAssemblerRISCV(Isolate* isolate,
   __ bind(&start_label_);  // And then continue from here.
 }
 
-RegExpMacroAssemblerRISCV::~RegExpMacroAssemblerRISCV() = default;
-
-void RegExpMacroAssemblerRISCV::AbortedCodeGeneration() {
-  // Tell the underlying assembler that we're aborting the code generation, so
-  // it can clean up and clear constant pools.
-  masm_->AbortedCodeGeneration();
-
-  // We are throwing away the assembler without calling GetCode, so we unuse
-  // all the labels to avoid running into issues when destructing linked, but
-  // not bound, labels.
+RegExpMacroAssemblerRISCV::~RegExpMacroAssemblerRISCV() {
+  // Unuse labels in case we throw away the assembler without calling GetCode.
   entry_label_.Unuse();
   start_label_.Unuse();
   success_label_.Unuse();
@@ -1096,7 +1088,7 @@ void RegExpMacroAssemblerRISCV::PushRegister(int register_index,
                                              StackCheckFlag check_stack_limit) {
   __ LoadWord(a0, register_location(register_index));
   Push(a0);
-  if (check_stack_limit == StackCheckFlag::kCheckStackLimit) {
+  if (check_stack_limit) {
     CheckStackLimit();
   } else if (V8_UNLIKELY(v8_flags.slow_debug_code)) {
     AssertAboveStackLimitMinusSlack();
@@ -1248,7 +1240,7 @@ int64_t RegExpMacroAssemblerRISCV::CheckStackGuardState(Address* return_address,
                                                         Address re_frame,
                                                         uintptr_t extra_space) {
   Tagged<InstructionStream> re_code =
-      SbxCast<InstructionStream>(Tagged<Object>(raw_code));
+      Cast<InstructionStream>(Tagged<Object>(raw_code));
   return NativeRegExpMacroAssembler::CheckStackGuardState(
       frame_entry<Isolate*>(re_frame, kIsolateOffset),
       static_cast<int>(frame_entry<int64_t>(re_frame, kStartIndexOffset)),

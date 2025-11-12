@@ -25,10 +25,6 @@ v8_source_set("inspector_test") {
     "../..:v8_libplatform",
     "../../src/inspector:inspector_test_headers",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 v8_executable("inspector-test") {
@@ -52,8 +48,4 @@ v8_executable("inspector-test") {
 
   cflags = []
   ldflags = []
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --no-lazy-feedback-allocation --minimum-invocations-before-optimization=1
-// Flags: --invocation-count-for-turbofan=1
+// Flags: --always-turbofan --minimum-invocations-before-optimization=0
 
 let x = 0;
 
@@ -12,5 +11,4 @@ function foo(a) {
   x = a;
 }
 
-assertEquals(undefined, foo());
 assertEquals(undefined, foo());

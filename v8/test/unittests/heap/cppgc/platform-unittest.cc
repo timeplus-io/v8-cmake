@@ -20,7 +20,7 @@ namespace {
 
 constexpr uintptr_t kHeapNeedle = 0x14;
 
-[[noreturn]] void CustomHandler(const std::string&, SourceLocation,
+[[noreturn]] void CustomHandler(const std::string&, const SourceLocation&,
                                 HeapBase* heap) {
   if (heap == reinterpret_cast<HeapBase*>(kHeapNeedle)) {
     GRACEFUL_FATAL("cust0m h4ndl3r with matching heap");

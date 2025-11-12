@@ -1134,7 +1134,7 @@ bool Debug::SetBreakpointForFunction(Handle<SharedFunctionInfo> shared,
       isolate_->factory()->NewBreakPoint(*id, condition);
   int source_position = 0;
 #if V8_ENABLE_WEBASSEMBLY
-  if (shared->HasWasmExportedFunctionData(isolate_)) {
+  if (shared->HasWasmExportedFunctionData()) {
     Tagged<WasmExportedFunctionData> function_data =
         shared->wasm_exported_function_data();
     int func_index = function_data->function_index();

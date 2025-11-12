@@ -1098,7 +1098,8 @@ class Cord {
       hash_state = combiner.add_buffer(std::move(hash_state), chunk.data(),
                                        chunk.size());
     });
-    return combiner.finalize(std::move(hash_state));
+    return H::combine(combiner.finalize(std::move(hash_state)),
+                      hash_internal::WeaklyMixedInteger{size()});
   }
 
   friend class CrcCord;

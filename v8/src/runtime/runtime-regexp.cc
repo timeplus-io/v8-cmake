@@ -357,7 +357,8 @@ bool CompiledReplacement::Compile(Isolate* isolate,
     if (capture_count > 0) {
       // capture_count > 0 implies IrRegExpData. Since capture_count is in
       // trusted space, this is not a SBXCHECK.
-      Tagged<IrRegExpData> re_data = TrustedCast<IrRegExpData>(*regexp_data);
+      DCHECK(Is<IrRegExpData>(*regexp_data));
+      Tagged<IrRegExpData> re_data = Cast<IrRegExpData>(*regexp_data);
 
       Tagged<Object> maybe_capture_name_map = re_data->capture_name_map();
       if (IsFixedArray(maybe_capture_name_map)) {
@@ -568,7 +569,7 @@ void TruncateRegexpIndicesList(Isolate* isolate) {
 }  // namespace
 
 template <typename ResultSeqString>
-V8_WARN_UNUSED_RESULT static Tagged<UnionOf<ExceptionHole, String>>
+V8_WARN_UNUSED_RESULT static Tagged<Object>
 StringReplaceGlobalAtomRegExpWithString(
     Isolate* isolate, DirectHandle<String> subject,
     DirectHandle<JSRegExp> pattern_regexp, DirectHandle<String> replacement,
@@ -649,8 +650,7 @@ StringReplaceGlobalAtomRegExpWithString(
   return *result;
 }
 
-V8_WARN_UNUSED_RESULT static Tagged<UnionOf<ExceptionHole, String>>
-StringReplaceGlobalRegExpWithString(
+V8_WARN_UNUSED_RESULT static Tagged<Object> StringReplaceGlobalRegExpWithString(
     Isolate* isolate, DirectHandle<String> subject,
     DirectHandle<JSRegExp> regexp, DirectHandle<RegExpData> regexp_data,
     DirectHandle<String> replacement,
@@ -676,11 +676,11 @@ StringReplaceGlobalRegExpWithString(
         replacement->IsOneByteRepresentation()) {
       return StringReplaceGlobalAtomRegExpWithString<SeqOneByteString>(
           isolate, subject, regexp, replacement, last_match_info,
-          TrustedCast<AtomRegExpData>(regexp_data));
+          Cast<AtomRegExpData>(regexp_data));
     } else {
       return StringReplaceGlobalAtomRegExpWithString<SeqTwoByteString>(
           isolate, subject, regexp, replacement, last_match_info,
-          TrustedCast<AtomRegExpData>(regexp_data));
+          Cast<AtomRegExpData>(regexp_data));
     }
   }
 
@@ -735,7 +735,7 @@ StringReplaceGlobalRegExpWithString(
 }
 
 template <typename ResultSeqString>
-V8_WARN_UNUSED_RESULT static Tagged<UnionOf<ExceptionHole, String>>
+V8_WARN_UNUSED_RESULT static Tagged<Object>
 StringReplaceGlobalRegExpWithEmptyString(
     Isolate* isolate, DirectHandle<String> subject,
     DirectHandle<JSRegExp> regexp, DirectHandle<RegExpData> regexp_data,
@@ -748,11 +748,11 @@ StringReplaceGlobalRegExpWithEmptyString(
     if (subject->IsOneByteRepresentation()) {
       return StringReplaceGlobalAtomRegExpWithString<SeqOneByteString>(
           isolate, subject, regexp, empty_string, last_match_info,
-          TrustedCast<AtomRegExpData>(regexp_data));
+          Cast<AtomRegExpData>(regexp_data));
     } else {
       return StringReplaceGlobalAtomRegExpWithString<SeqTwoByteString>(
           isolate, subject, regexp, empty_string, last_match_info,
-          TrustedCast<AtomRegExpData>(regexp_data));
+          Cast<AtomRegExpData>(regexp_data));
     }
   }
 
@@ -832,7 +832,7 @@ StringReplaceGlobalRegExpWithEmptyString(
   // needed.
   // TODO(hpayer): We should shrink the large object page if the size
   // of the object changed significantly.
-  if (!HeapLayout::InAnyLargeSpace(*answer)) {
+  if (!heap->IsLargeObject(*answer)) {
     heap->CreateFillerObjectAt(end_of_string, delta);
   }
   return *answer;
@@ -898,13 +898,13 @@ RUNTIME_FUNCTION(Runtime_StringSplit) {
     elements->set(0, *subject);
   } else {
     int part_start = 0;
-    FOR_WITH_HANDLE_SCOPE(isolate, int i = 0, i, i < part_count, i++) {
+    FOR_WITH_HANDLE_SCOPE(isolate, int, i = 0, i, i < part_count, i++, {
       int part_end = indices->at(i);
       DirectHandle<String> substring =
           isolate->factory()->NewProperSubString(subject, part_start, part_end);
       elements->set(i, *substring);
       part_start = part_end + pattern_length;
-    }
+    });
   }
 
   if (limit == 0xFFFFFFFFu) {
@@ -1045,8 +1045,7 @@ class MatchInfoBackedMatch : public String::Match {
 
     if (RegExpData::TypeSupportsCaptures(regexp_data->type_tag())) {
       DCHECK(Is<IrRegExpData>(*regexp_data));
-      Tagged<Object> o =
-          TrustedCast<IrRegExpData>(regexp_data)->capture_name_map();
+      Tagged<Object> o = Cast<IrRegExpData>(regexp_data)->capture_name_map();
       has_named_captures_ = IsFixedArray(o);
       if (has_named_captures_) {
         capture_name_map_ = direct_handle(Cast<FixedArray>(o), isolate);
@@ -1254,7 +1253,7 @@ DirectHandle<JSObject> ConstructNamedCaptureGroupsObject(
 // Only called from Runtime_RegExpExecMultiple so it doesn't need to maintain
 // separate last match info.  See comment on that function.
 template <bool has_capture>
-static Tagged<UnionOf<ExceptionHole, Null, FixedArray>> SearchRegExpMultiple(
+static Tagged<Object> SearchRegExpMultiple(
     Isolate* isolate, DirectHandle<String> subject,
     DirectHandle<JSRegExp> regexp, DirectHandle<RegExpData> regexp_data,
     DirectHandle<RegExpMatchInfo> last_match_array) {
@@ -1270,7 +1269,7 @@ static Tagged<UnionOf<ExceptionHole, Null, FixedArray>> SearchRegExpMultiple(
   // start.
   if (v8_flags.regexp_tier_up &&
       regexp_data->type_tag() == RegExpData::Type::IRREGEXP) {
-    TrustedCast<IrRegExpData>(regexp_data)->MarkTierUpForNextExec();
+    Cast<IrRegExpData>(regexp_data)->MarkTierUpForNextExec();
     if (v8_flags.trace_regexp_tier_up) {
       PrintF("Forcing tier-up of JSRegExp object %p in SearchRegExpMultiple\n",
              reinterpret_cast<void*>(regexp->ptr()));
@@ -1349,7 +1348,7 @@ static Tagged<UnionOf<ExceptionHole, Null, FixedArray>> SearchRegExpMultiple(
         // named captures, they are also passed as the last argument.
 
         // has_capture can only be true for IrRegExp.
-        Tagged<IrRegExpData> re_data = TrustedCast<IrRegExpData>(*regexp_data);
+        Tagged<IrRegExpData> re_data = Cast<IrRegExpData>(*regexp_data);
         DirectHandle<Object> maybe_capture_map(re_data->capture_name_map(),
                                                isolate);
         const bool has_named_captures = IsFixedArray(*maybe_capture_map);
@@ -1518,7 +1517,7 @@ V8_WARN_UNUSED_RESULT MaybeDirectHandle<String> RegExpReplace(
     // start.
     if (v8_flags.regexp_tier_up &&
         data->type_tag() == RegExpData::Type::IRREGEXP) {
-      TrustedCast<IrRegExpData>(data)->MarkTierUpForNextExec();
+      Cast<IrRegExpData>(data)->MarkTierUpForNextExec();
       if (v8_flags.trace_regexp_tier_up) {
         PrintF("Forcing tier-up of JSRegExp object %p in RegExpReplace\n",
                reinterpret_cast<void*>(regexp->ptr()));
@@ -1527,25 +1526,24 @@ V8_WARN_UNUSED_RESULT MaybeDirectHandle<String> RegExpReplace(
 
     if (replace->length() == 0) {
       if (string->IsOneByteRepresentation()) {
-        Tagged<UnionOf<ExceptionHole, String>> result =
+        Tagged<Object> result =
             StringReplaceGlobalRegExpWithEmptyString<SeqOneByteString>(
                 isolate, string, regexp, data, last_match_info);
         return direct_handle(Cast<String>(result), isolate);
       } else {
-        Tagged<UnionOf<ExceptionHole, String>> result =
+        Tagged<Object> result =
             StringReplaceGlobalRegExpWithEmptyString<SeqTwoByteString>(
                 isolate, string, regexp, data, last_match_info);
         return direct_handle(Cast<String>(result), isolate);
       }
     }
 
-    Tagged<UnionOf<ExceptionHole, String>> result =
-        StringReplaceGlobalRegExpWithString(isolate, string, regexp, data,
-                                            replace, last_match_info);
-    if (IsExceptionHole(result)) {
-      return MaybeDirectHandle<String>();
-    } else {
+    Tagged<Object> result = StringReplaceGlobalRegExpWithString(
+        isolate, string, regexp, data, replace, last_match_info);
+    if (IsString(result)) {
       return direct_handle(Cast<String>(result), isolate);
+    } else {
+      return MaybeDirectHandle<String>();
     }
   }
 
@@ -1569,7 +1567,7 @@ RUNTIME_FUNCTION(Runtime_RegExpExecMultiple) {
   subject = String::Flatten(isolate, subject);
   CHECK(regexp->flags() & JSRegExp::kGlobal);
 
-  Tagged<UnionOf<ExceptionHole, Null, FixedArray>> result;
+  Tagged<Object> result;
   if (regexp_data->capture_count() == 0) {
     result = SearchRegExpMultiple<false>(isolate, subject, regexp, regexp_data,
                                          last_match_info);
@@ -1649,8 +1647,10 @@ RUNTIME_FUNCTION(Runtime_StringReplaceNonGlobalRegExpWithFunction) {
   bool has_named_captures = false;
   DirectHandle<FixedArray> capture_map;
   if (m > 1) {
+    SBXCHECK(Is<IrRegExpData>(*data));
+
     Tagged<Object> maybe_capture_map =
-        SbxCast<IrRegExpData>(data)->capture_name_map();
+        Cast<IrRegExpData>(data)->capture_name_map();
     if (IsFixedArray(maybe_capture_map)) {
       has_named_captures = true;
       capture_map = direct_handle(Cast<FixedArray>(maybe_capture_map), isolate);
@@ -2238,8 +2238,7 @@ inline void RegExpMatchGlobalAtom_OneCharPattern(
   // last_match_block already contains the last match position, so use a special
   // vector with lane 0 set to extract the last_match_index later.
   const auto scalar_last_match_vec = hw::FirstN(tag, 1);
-  for (; block < end; ++block) {
-    SChar c = *block;
+  for (SChar c = *block; block < end; c = *(++block)) {
     if (c != static_cast<const SChar>(pattern)) continue;
     matches++;
     last_match_block = block;
@@ -2363,8 +2362,7 @@ RUNTIME_FUNCTION(Runtime_RegExpMatchGlobalAtom) {
   DirectHandle<JSRegExp> regexp_handle = args.at<JSRegExp>(0);
   DirectHandle<String> subject_handle =
       String::Flatten(isolate, args.at<String>(1));
-  DirectHandle<AtomRegExpData> data_handle =
-      SbxCast<AtomRegExpData>(args.at<Object>(2));
+  DirectHandle<AtomRegExpData> data_handle = args.at<AtomRegExpData>(2);
 
   DCHECK(RegExpUtils::IsUnmodifiedRegExp(isolate, regexp_handle));
   DCHECK(regexp_handle->flags() & JSRegExp::kGlobal);

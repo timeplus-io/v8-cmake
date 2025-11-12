@@ -168,6 +168,8 @@ void CompileOptimized(DirectHandle<JSFunction> function, ConcurrencyMode mode,
 
   if (mode == ConcurrencyMode::kConcurrent) {
     // No need to start another compile job.
+    // Also, various fuzzing flags like --always-turbofan might already compile
+    // this function in the above Compiler::Compile function.
     if (function->tiering_in_progress() ||
         function->GetActiveTier(isolate) >= target_kind) {
       static_assert(kTieringStateInProgressBlocksTierup);
@@ -489,9 +491,13 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   // the arguments object, but only to get to its map.
   isolate->set_context(deoptimizer->function()->native_context());
 
+  // When this is called from WasmGC code, clear the "thread in wasm" flag,
+  // which is important in case any GC needs to happen.
+  // TODO(40192807): Find a better fix, likely by replacing the global flag.
+  SaveAndClearThreadInWasmFlag clear_wasm_flag(isolate);
+
   // Make sure to materialize objects before causing any allocation.
   deoptimizer->MaterializeHeapObjects();
-  deoptimizer->ProcessDeoptReason(deopt_reason);
   const BytecodeOffset deopt_exit_offset =
       deoptimizer->bytecode_offset_in_outermost_frame();
   delete deoptimizer;
@@ -618,7 +624,7 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
           ? ConcurrencyMode::kConcurrent
           : ConcurrencyMode::kSynchronous;
 
-  if (V8_UNLIKELY(isolate->EfficiencyModeEnabled() &&
+  if (V8_UNLIKELY(isolate->EfficiencyModeEnabledForTiering() &&
                   min_opt_level == CodeKind::MAGLEV)) {
     mode = ConcurrencyMode::kSynchronous;
   }
@@ -649,7 +655,8 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
   DCHECK(CodeKindIsOptimizedJSFunction(result->kind()));
 
 #ifdef DEBUG
-  Tagged<DeoptimizationData> data = result->deoptimization_data();
+  Tagged<DeoptimizationData> data =
+      Cast<DeoptimizationData>(result->deoptimization_data());
   DCHECK_EQ(BytecodeOffset(data->OsrBytecodeOffset().value()), osr_offset);
   DCHECK_GE(data->OsrPcOffset().value(), 0);
 #endif  // DEBUG
@@ -705,7 +712,7 @@ Tagged<Object> CompileOptimizedOSRFromMaglev(Isolate* isolate,
     return Smi::zero();
   }
 
-  if (V8_UNLIKELY(isolate->EfficiencyModeEnabled() ||
+  if (V8_UNLIKELY(isolate->EfficiencyModeEnabledForTiering() ||
                   isolate->BatterySaverModeEnabled())) {
     function->feedback_vector()->reset_osr_urgency();
     function->SetInterruptBudget(isolate, BudgetModification::kRaise);

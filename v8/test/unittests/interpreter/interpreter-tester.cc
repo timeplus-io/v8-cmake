@@ -25,6 +25,7 @@ InterpreterTester::InterpreterTester(
       source_(source),
       bytecode_(bytecode),
       feedback_metadata_(feedback_metadata) {
+  i::v8_flags.always_turbofan = false;
 }
 
 InterpreterTester::InterpreterTester(

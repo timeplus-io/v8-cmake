@@ -6,7 +6,6 @@
 #define INCLUDE_CPPGC_TAGGED_MEMBER_H_
 
 #include <atomic>
-#include <concepts>
 #include <cstddef>
 #include <type_traits>
 

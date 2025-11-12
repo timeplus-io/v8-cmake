@@ -7,6 +7,7 @@ from pathlib import Path
 
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -16,7 +17,7 @@ import time
 from ..local.android import (Driver, CommandFailedException, TimeoutException)
 from ..local.pool import AbortException
 from ..objects import output
-from .process_utils import EMPTY_PROCESS_LOGGER, PROCESS_LOGGER
+from .process_utils import ProcessStats, EMPTY_PROCESS_LOGGER, PROCESS_LOGGER
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -179,7 +180,7 @@ class BaseCommand(object):
 
   def _abort(self, process, abort_called):
     abort_called[0] = True
-    started_as = self.to_string()
+    started_as = self.to_string(relative=True)
     process_text = 'process %d started as:\n  %s\n' % (process.pid, started_as)
     try:
       logging.warning('Attempting to kill %s', process_text)
@@ -190,7 +191,7 @@ class BaseCommand(object):
   def __str__(self):
     return self.to_string()
 
-  def to_string(self):
+  def to_string(self, relative=False):
     def escape(part):
       # Escape spaces. We may need to escape more characters for this to work
       # properly.
@@ -199,7 +200,10 @@ class BaseCommand(object):
       return part
 
     parts = map(escape, self._to_args_list())
-    return ' '.join(parts)
+    cmd = ' '.join(parts)
+    if relative:
+      cmd = cmd.replace(os.getcwd() + os.sep, '')
+    return cmd
 
   def _to_args_list(self):
     return list(map(str, self.cmd_prefix + [self.shell])) + self.args
@@ -360,10 +364,11 @@ class AndroidCommand(BaseCommand):
         verbose=verbose, handle_sigterm=handle_sigterm,
         log_process_stats=log_process_stats)
 
-    self.args = [str(arg) for arg in args]
+    rel_args, files_from_args = args_with_relative_paths(args)
+
+    self.args = rel_args
 
     test_case_resources = test_case.get_android_resources() if test_case else []
-    files_from_args = files_from_relative_args(args)
     self.files_to_push = test_case_resources + files_from_args
 
   def execute(self, **additional_popen_kwargs):
@@ -414,12 +419,17 @@ class AndroidCommand(BaseCommand):
       self.driver.push_file(abs_dir, file_name, rel_dir)
 
 
-def files_from_relative_args(args):
+def args_with_relative_paths(args):
+  base_dir_str = re.escape(BASE_DIR.as_posix())
+  rel_args = []
   files_to_push = []
-  for f in ([Path(arg) for arg in args] or []):
-    if f.exists():
-      files_to_push.append(f.absolute())
-  return files_to_push
+  find_path_re = re.compile(r'.*(%s/[^\'"]+).*' % base_dir_str)
+  for arg in (args or []):
+    match = find_path_re.match(str(arg))
+    if match:
+      files_to_push.append(Path(match.group(1)).resolve())
+    rel_args.append(re.sub(r'(.*)%s/(.*)' % base_dir_str, r'\1\2', str(arg)))
+  return rel_args, files_to_push
 
 
 Command = None

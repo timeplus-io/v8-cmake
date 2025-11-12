@@ -2,4 +2,4 @@ danilchap@chromium.org
 mbonadei@chromium.org
 
 # For .def files updates:
-per-file *.def=file://tools/clang/scripts/OWNERS
+hans@chromium.org

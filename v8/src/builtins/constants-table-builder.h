@@ -32,7 +32,6 @@ class BuiltinsConstantsTableBuilder final {
   // Returns the index within the builtins constants table for the given
   // object, possibly adding the object to the table. Objects are deduplicated.
   uint32_t AddObject(Handle<Object> object);
-  bool HasObject(Handle<Object> object) const;
 
   // Self-references during code generation start out by referencing a handle
   // with a temporary dummy object. Once the final InstructionStream object
@@ -58,7 +57,7 @@ class BuiltinsConstantsTableBuilder final {
 
   // Protects accesses to map_, which is concurrently accessed when generating
   // builtins off-main-thread.
-  mutable base::Mutex mutex_;
+  base::Mutex mutex_;
 };
 
 }  // namespace internal

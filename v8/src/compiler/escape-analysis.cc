@@ -10,7 +10,6 @@
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/state-values-utils.h"
-#include "src/deoptimizer/translated-state.h"
 #include "src/handles/handles-inl.h"
 #include "src/objects/map-inl.h"
 
@@ -883,8 +882,8 @@ void ReduceNode(const Operator* op, EscapeAnalysisTracker::Scope* current,
       current->SetValueChanged();
       break;
     case IrOpcode::kFrameState: {
-      // We mark the receiver and closure as escaping due to the non-standard
-      // `.getThis` API.
+      // We mark the receiver as escaping due to the non-standard `.getThis`
+      // API.
       FrameState frame_state{current->CurrentNode()};
       FrameStateType type = frame_state.frame_state_info().type();
       // This needs to be kept in sync with the frame types supported in
@@ -901,7 +900,6 @@ void ReduceNode(const Operator* op, EscapeAnalysisTracker::Scope* current,
       StateValuesAccess::iterator it =
           StateValuesAccess(frame_state.parameters()).begin();
       if (!it.done()) {
-        static_assert(TranslatedFrame::kReceiverIsFirstParameterInJSFrames);
         if (Node* receiver = it.node()) {
           current->SetEscaped(receiver);
         }

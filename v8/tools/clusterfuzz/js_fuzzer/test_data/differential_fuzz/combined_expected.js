@@ -17,6 +17,7 @@ print("I'm a resource.");
 // Original: differential_fuzz/fake_resource.js
 print("I'm a resource.");
 
+/* DifferentialFuzzMutator: Print variables and exceptions from section */
 try {
   print("Hash: " + __hash);
   print("Caught: " + __caught);
@@ -27,8 +28,9 @@ try {
   var __v_0 = 0;
 } catch (e) {}
 try {
-  __prettyPrintExtra(__v_0);
+  /* DifferentialFuzzMutator: Pretty printing */__prettyPrintExtra(__v_0);
 } catch (e) {}
+/* DifferentialFuzzMutator: Print variables and exceptions from section */
 try {
   print("Hash: " + __hash);
   print("Caught: " + __caught);
@@ -37,6 +39,7 @@ try {
 print("v8-foozzie source: v8/differential_fuzz/input2.js");
 // Original: v8/differential_fuzz/input2.js
 let __v_1 = 1;
+/* DifferentialFuzzMutator: Print variables and exceptions from section */
 try {
   print("Hash: " + __hash);
   print("Caught: " + __caught);

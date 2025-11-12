@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --no-lazy-feedback-allocation --invocation-count-for-turbofan=1
+// Flags: --always-turbofan
 
 class C1 {
   constructor() {

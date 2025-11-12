@@ -12,12 +12,14 @@
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
 #include "src/flags/flags.h"
+#include "src/heap/gc-tracer-inl.h"
+#include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
 #include "src/heap/large-page-metadata.h"
 #include "src/heap/memory-chunk-metadata.h"
-#include "src/heap/memory-pool.h"
 #include "src/heap/mutable-page-metadata.h"
+#include "src/heap/page-pool.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/heap/zapping.h"
 #include "src/logging/log.h"
@@ -37,23 +39,20 @@ size_t MemoryAllocator::commit_page_size_bits_ = 0;
 MemoryAllocator::MemoryAllocator(Isolate* isolate,
                                  v8::PageAllocator* code_page_allocator,
                                  v8::PageAllocator* trusted_page_allocator,
-                                 MemoryPool* page_pool, size_t capacity)
+                                 size_t capacity)
     : isolate_(isolate),
       data_page_allocator_(isolate->page_allocator()),
       code_page_allocator_(code_page_allocator),
       trusted_page_allocator_(trusted_page_allocator),
-      capacity_(RoundUp(capacity, PageMetadata::kPageSize)),
-      pool_(page_pool) {
+      capacity_(RoundUp(capacity, PageMetadata::kPageSize)) {
   DCHECK_NOT_NULL(data_page_allocator_);
   DCHECK_NOT_NULL(code_page_allocator_);
   DCHECK_NOT_NULL(trusted_page_allocator_);
+  pool_ = isolate_->isolate_group()->page_pool();
 }
 
 void MemoryAllocator::TearDown() {
-  if (auto* pool = memory_pool()) {
-    pool->ReleaseOnTearDown(isolate_);
-    DCHECK_EQ(pool->GetCount(isolate_), 0);
-  }
+  DCHECK_EQ(pool()->GetCount(isolate_), 0);
 
   // Check that spaces were torn down before MemoryAllocator.
   DCHECK_EQ(size_, 0u);
@@ -71,41 +70,25 @@ void MemoryAllocator::TearDown() {
 }
 
 size_t MemoryAllocator::GetPooledChunksCount() {
-  return memory_pool() ? memory_pool()->GetCount(isolate_) : 0;
+  return pool()->GetCount(isolate_);
 }
 
 size_t MemoryAllocator::GetSharedPooledChunksCount() {
-  return memory_pool() ? memory_pool()->GetSharedCount() : 0;
+  return pool()->GetSharedCount();
 }
 
 size_t MemoryAllocator::GetTotalPooledChunksCount() {
-  return memory_pool() ? memory_pool()->GetTotalCount() : 0;
+  return pool()->GetTotalCount();
 }
 
 void MemoryAllocator::ReleasePooledChunksImmediately() {
-  if (auto* pool = memory_pool()) {
-    pool->ReleaseImmediately(isolate_);
-  }
+  pool()->ReleaseImmediately(isolate_);
 }
 
 void MemoryAllocator::FreeMemoryRegion(v8::PageAllocator* page_allocator,
                                        Address base, size_t size) {
   FreePages(page_allocator, reinterpret_cast<void*>(base), size);
 }
-
-namespace {
-
-Address HandleAllocationFailure(Heap* heap, Executability executable) {
-  if (!heap->deserialization_complete()) {
-    heap->FatalProcessOutOfMemory(
-        executable == EXECUTABLE
-            ? "Executable MemoryChunk allocation failed during deserialization."
-            : "MemoryChunk allocation failed during deserialization.");
-  }
-  return kNullAddress;
-}
-
-}  // namespace
 
 Address MemoryAllocator::AllocateAlignedMemory(
     size_t chunk_size, size_t area_size, size_t alignment,
@@ -128,9 +111,7 @@ Address MemoryAllocator::AllocateAlignedMemory(
   }
   VirtualMemory reservation(page_allocator, chunk_size, page_allocation_hint,
                             alignment, permissions);
-  if (!reservation.IsReserved()) {
-    return HandleAllocationFailure(isolate_->heap(), executable);
-  }
+  if (!reservation.IsReserved()) return HandleAllocationFailure(executable);
 
   // We cannot use the last chunk in the address space because we would
   // overflow when comparing top and limit if this chunk is used for a
@@ -143,9 +124,7 @@ Address MemoryAllocator::AllocateAlignedMemory(
     // Retry reserve virtual memory.
     reservation = VirtualMemory(page_allocator, chunk_size,
                                 page_allocation_hint, alignment, permissions);
-    if (!reservation.IsReserved()) {
-      return HandleAllocationFailure(isolate_->heap(), executable);
-    }
+    if (!reservation.IsReserved()) return HandleAllocationFailure(executable);
   }
 
   Address base = reservation.address();
@@ -158,6 +137,17 @@ Address MemoryAllocator::AllocateAlignedMemory(
 
   *controller = std::move(reservation);
   return base;
+}
+
+Address MemoryAllocator::HandleAllocationFailure(Executability executable) {
+  Heap* heap = isolate_->heap();
+  if (!heap->deserialization_complete()) {
+    heap->FatalProcessOutOfMemory(
+        executable == EXECUTABLE
+            ? "Executable MemoryChunk allocation failed during deserialization."
+            : "MemoryChunk allocation failed during deserialization.");
+  }
+  return kNullAddress;
 }
 
 size_t MemoryAllocator::ComputeChunkSize(size_t area_size,
@@ -245,7 +235,7 @@ void MemoryAllocator::PartialFreeMemory(MemoryChunkMetadata* chunk,
   DCHECK(reservation->IsReserved());
   chunk->set_size(chunk->size() - bytes_to_free);
   chunk->set_area_end(new_area_end);
-  if (chunk->is_executable()) {
+  if (chunk->Chunk()->IsFlagSet(MemoryChunk::IS_EXECUTABLE)) {
     // Add guard page at the end.
     size_t page_size = GetCommitPageSize();
     DCHECK_EQ(0, chunk->area_end() % static_cast<Address>(page_size));
@@ -278,17 +268,17 @@ void MemoryAllocator::UnregisterSharedMemoryChunk(MemoryChunkMetadata* chunk) {
   size_ -= size;
 }
 
-void MemoryAllocator::UnregisterMemoryChunk(
-    MemoryChunkMetadata* chunk_metadata) {
+void MemoryAllocator::UnregisterMemoryChunk(MemoryChunkMetadata* chunk_metadata,
+                                            Executability executable) {
   MemoryChunk* chunk = chunk_metadata->Chunk();
-  DCHECK(!chunk_metadata->is_unregistered());
+  DCHECK(!chunk->IsFlagSet(MemoryChunk::UNREGISTERED));
   VirtualMemory* reservation = chunk_metadata->reserved_memory();
   const size_t size =
       reservation->IsReserved() ? reservation->size() : chunk_metadata->size();
   DCHECK_GE(size_, static_cast<size_t>(size));
 
   size_ -= size;
-  if (chunk_metadata->is_executable()) {
+  if (executable == EXECUTABLE) {
     DCHECK_GE(size_executable_, size);
     size_executable_ -= size;
 #ifdef DEBUG
@@ -299,27 +289,20 @@ void MemoryAllocator::UnregisterMemoryChunk(
     ThreadIsolation::UnregisterJitPage(chunk->address(),
                                        chunk_metadata->size());
   }
-  // For non-RO pages we want to set them as UNREGISTERED to allow actually
-  // freeing them.
-  if (!chunk->InReadOnlySpace()) {
-    // Cannot use MutablePageMetadata::cast() because that relies on having an
-    // owner() which is unsed at this point.
-    reinterpret_cast<MutablePageMetadata*>(chunk_metadata)
-        ->set_is_unregistered();
-  }
+  chunk->SetFlagSlow(MemoryChunk::UNREGISTERED);
 }
 
-void MemoryAllocator::UnregisterMutableMemoryChunk(MutablePageMetadata* page) {
-  UnregisterMemoryChunk(page);
+void MemoryAllocator::UnregisterMutableMemoryChunk(MutablePageMetadata* chunk) {
+  UnregisterMemoryChunk(chunk, chunk->Chunk()->executable());
 }
 
 void MemoryAllocator::UnregisterReadOnlyPage(ReadOnlyPageMetadata* page) {
-  DCHECK(!page->is_executable());
-  UnregisterMemoryChunk(page);
+  DCHECK(!page->Chunk()->executable());
+  UnregisterMemoryChunk(page, NOT_EXECUTABLE);
 }
 
 void MemoryAllocator::FreeReadOnlyPage(ReadOnlyPageMetadata* chunk) {
-  DCHECK(!chunk->is_pre_freed());
+  DCHECK(!chunk->Chunk()->IsFlagSet(MemoryChunk::PRE_FREED));
   LOG(isolate_, DeleteEvent("MemoryChunk", chunk));
 
   UnregisterSharedMemoryChunk(chunk);
@@ -341,85 +324,48 @@ void MemoryAllocator::FreeReadOnlyPage(ReadOnlyPageMetadata* chunk) {
 
 void MemoryAllocator::PreFreeMemory(MutablePageMetadata* chunk_metadata) {
   MemoryChunk* chunk = chunk_metadata->Chunk();
-  DCHECK(!chunk_metadata->is_pre_freed());
+  DCHECK(!chunk->IsFlagSet(MemoryChunk::PRE_FREED));
   LOG(isolate_, DeleteEvent("MemoryChunk", chunk_metadata));
-  RecordMemoryChunkDestroyed(chunk_metadata);
   UnregisterMutableMemoryChunk(chunk_metadata);
   isolate_->heap()->RememberUnmappedPage(
       reinterpret_cast<Address>(chunk_metadata),
       chunk->IsEvacuationCandidate());
-  chunk_metadata->ReleaseAllAllocatedMemory();
-  chunk_metadata->set_is_pre_freed();
+  chunk->SetFlagSlow(MemoryChunk::PRE_FREED);
 }
 
 void MemoryAllocator::PerformFreeMemory(MutablePageMetadata* chunk_metadata) {
-  DCHECK(chunk_metadata->is_unregistered());
-  DCHECK(chunk_metadata->is_pre_freed());
+  DCHECK(chunk_metadata->Chunk()->IsFlagSet(MemoryChunk::UNREGISTERED));
+  DCHECK(chunk_metadata->Chunk()->IsFlagSet(MemoryChunk::PRE_FREED));
   DCHECK(!chunk_metadata->Chunk()->InReadOnlySpace());
+
+  chunk_metadata->ReleaseAllAllocatedMemory();
 
   DeleteMemoryChunk(chunk_metadata);
 }
 
 void MemoryAllocator::Free(MemoryAllocator::FreeMode mode,
-                           MutablePageMetadata* page_metadata) {
-  PreFreeMemory(page_metadata);
+                           MutablePageMetadata* chunk_metadata) {
+  MemoryChunk* chunk = chunk_metadata->Chunk();
+  RecordMemoryChunkDestroyed(chunk);
+  PreFreeMemory(chunk_metadata);
+
   switch (mode) {
     case FreeMode::kImmediately:
-      PerformFreeMemory(page_metadata);
-      break;
-    case FreeMode::kDelayThenRelease:
-      delayed_then_released_pages_.push_back(page_metadata);
-      break;
-    case FreeMode::kDelayThenPool:
-      if (page_metadata->is_large()) {
-        delayed_then_pooled_large_pages_.push_back(
-            static_cast<LargePageMetadata*>(page_metadata));
-      } else {
-        delayed_then_pooled_pages_.push_back(page_metadata);
-      }
+      PerformFreeMemory(chunk_metadata);
       break;
     case FreeMode::kPool:
-#ifdef DEBUG
       // Ensure that we only ever put pages with their markbits cleared into the
       // pool. This is necessary because `PreFreeMemory` doesn't clear the
       // marking bitmap and the marking bitmap is reused when this page is taken
       // out of the pool again.
-      DCHECK(page_metadata->IsLivenessClear());
-      DCHECK_EQ(page_metadata->size(),
+      DCHECK(chunk_metadata->IsLivenessClear());
+      DCHECK_EQ(chunk_metadata->size(),
                 static_cast<size_t>(MutablePageMetadata::kPageSize));
-      DCHECK(!page_metadata->is_executable());
-#endif  // DEBUG
-      if (auto* pool = memory_pool()) {
-        pool->Add(isolate_, page_metadata);
-      } else {
-        PerformFreeMemory(page_metadata);
-      }
+      DCHECK_EQ(chunk->executable(), NOT_EXECUTABLE);
+      // The chunks added to this queue will be cached until memory reducing GC.
+      pool()->Add(isolate_, chunk_metadata);
       break;
   }
-}
-
-void MemoryAllocator::ReleaseDelayedPages() {
-  for (auto* delayed_page : delayed_then_pooled_pages_) {
-    if (auto* pool = memory_pool()) {
-      pool->Add(isolate_, delayed_page);
-    } else {
-      PerformFreeMemory(delayed_page);
-    }
-  }
-  delayed_then_pooled_pages_.clear();
-  if (auto* pool = memory_pool()) {
-    pool->AddLarge(isolate_, delayed_then_pooled_large_pages_);
-  }
-  // AddLarge() leaves pages that couldn't be pooled in the vector to be
-  // released afterwards.
-  for (auto* delayed_page : delayed_then_pooled_large_pages_) {
-    PerformFreeMemory(delayed_page);
-  }
-  delayed_then_pooled_large_pages_.clear();
-  for (auto* delayed_page : delayed_then_released_pages_) {
-    PerformFreeMemory(delayed_page);
-  }
-  delayed_then_released_pages_.clear();
 }
 
 PageMetadata* MemoryAllocator::AllocatePage(
@@ -428,44 +374,58 @@ PageMetadata* MemoryAllocator::AllocatePage(
   const size_t size =
       MemoryChunkLayout::AllocatableMemoryInMemoryChunk(space->identity());
   std::optional<MemoryChunkAllocationResult> chunk_info;
-  if (alloc_mode == AllocationMode::kTryDelayedAndPooled) {
+  if (alloc_mode == AllocationMode::kUsePool) {
     DCHECK_EQ(executable, NOT_EXECUTABLE);
-    chunk_info = AllocateUninitializedPageFromDelayedOrPool(space);
+    chunk_info = AllocateUninitializedPageFromPool(space);
   }
+
   if (!chunk_info) {
     chunk_info = AllocateUninitializedChunk(
         space, size, executable, PageSize::kRegular, AllocationHint());
   }
-  if (!chunk_info) {
-    return nullptr;
-  }
+
+  if (!chunk_info) return nullptr;
 
   PageMetadata* metadata;
-  MemoryChunk::MainThreadFlags trusted_flags;
   if (chunk_info->optional_metadata) {
     metadata = new (chunk_info->optional_metadata) PageMetadata(
         isolate_->heap(), space, chunk_info->size, chunk_info->area_start,
-        chunk_info->area_end, std::move(chunk_info->reservation), executable,
-        &trusted_flags);
+        chunk_info->area_end, std::move(chunk_info->reservation));
   } else {
     metadata = new PageMetadata(isolate_->heap(), space, chunk_info->size,
                                 chunk_info->area_start, chunk_info->area_end,
-                                std::move(chunk_info->reservation), executable,
-                                &trusted_flags);
+                                std::move(chunk_info->reservation));
+  }
+  MemoryChunk* chunk;
+  MemoryChunk::MainThreadFlags flags = metadata->InitialFlags(executable);
+  if (v8_flags.black_allocated_pages && space->identity() != NEW_SPACE &&
+      space->identity() != NEW_LO_SPACE &&
+      isolate_->heap()->incremental_marking()->black_allocation()) {
+    // Disable the write barrier for objects pointing to this page. We don't
+    // need to trigger the barrier for pointers to old black-allocated pages,
+    // since those are never considered for evacuation. However, we have to
+    // keep the old->shared remembered set across multiple GCs, so those
+    // pointers still need to be recorded.
+    if (!IsAnySharedSpace(space->identity())) {
+      flags &= ~MemoryChunk::POINTERS_TO_HERE_ARE_INTERESTING;
+    }
+    // And mark the page as black allocated.
+    flags |= MemoryChunk::BLACK_ALLOCATED;
   }
   if (executable) {
     RwxMemoryWriteScope scope("Initialize a new MemoryChunk.");
-    new (chunk_info->chunk) MemoryChunk(trusted_flags, metadata);
-#ifdef DEBUG
-    RegisterExecutableMemoryChunk(metadata);
-#endif  // DEBUG
+    chunk = new (chunk_info->chunk) MemoryChunk(flags, metadata);
   } else {
-    new (chunk_info->chunk) MemoryChunk(trusted_flags, metadata);
+    chunk = new (chunk_info->chunk) MemoryChunk(flags, metadata);
   }
+
+#ifdef DEBUG
+  if (chunk->executable()) RegisterExecutableMemoryChunk(metadata);
+#endif  // DEBUG
 
   DCHECK(metadata->IsLivenessClear());
   space->InitializePage(metadata);
-  RecordMemoryChunkCreated(metadata);
+  RecordMemoryChunkCreated(chunk);
   return metadata;
 }
 
@@ -487,8 +447,9 @@ ReadOnlyPageMetadata* MemoryAllocator::AllocateReadOnlyPage(
   new (chunk_info->chunk) MemoryChunk(metadata->InitialFlags(), metadata);
 
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  SandboxHardwareSupport::RegisterReadOnlyMemoryInsideSandbox(
-      metadata->ChunkAddress(), metadata->size(), PagePermissions::kReadWrite);
+  SandboxHardwareSupport::NotifyReadOnlyPageCreated(
+      metadata->ChunkAddress(), metadata->size(),
+      PageAllocator::Permission::kReadWrite);
 #endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 
   return metadata;
@@ -500,56 +461,40 @@ MemoryAllocator::RemapSharedPage(
   return shared_memory->RemapTo(reinterpret_cast<void*>(new_address));
 }
 
-namespace {
-bool IsPagePoolSupportedForLargeSpace(LargeObjectSpace* space) {
-  const AllocationSpace identity = space->identity();
-  return identity == NEW_LO_SPACE || identity == LO_SPACE;
-}
-}  // namespace
-
 LargePageMetadata* MemoryAllocator::AllocateLargePage(LargeObjectSpace* space,
                                                       size_t object_size,
                                                       Executability executable,
                                                       AllocationHint hint) {
-  std::optional<MemoryChunkAllocationResult> chunk_info;
+  std::optional<MemoryChunkAllocationResult> chunk_info =
+      AllocateUninitializedChunk(space, object_size, executable,
+                                 PageSize::kLarge, hint);
 
-  if (IsPagePoolSupportedForLargeSpace(space)) {
-    chunk_info = TryAllocateUninitializedLargePageFromPool(space, object_size);
-  }
-
-  if (!chunk_info) {
-    chunk_info = AllocateUninitializedChunk(space, object_size, executable,
-                                            PageSize::kLarge, hint);
-  }
-
-  if (!chunk_info) {
-    return nullptr;
-  }
+  if (!chunk_info) return nullptr;
 
   LargePageMetadata* metadata;
-  MemoryChunk::MainThreadFlags trusted_flags;
   if (chunk_info->optional_metadata) {
     metadata = new (chunk_info->optional_metadata) LargePageMetadata(
         isolate_->heap(), space, chunk_info->size, chunk_info->area_start,
-        chunk_info->area_end, std::move(chunk_info->reservation), executable,
-        &trusted_flags);
+        chunk_info->area_end, std::move(chunk_info->reservation), executable);
   } else {
     metadata = new LargePageMetadata(
         isolate_->heap(), space, chunk_info->size, chunk_info->area_start,
-        chunk_info->area_end, std::move(chunk_info->reservation), executable,
-        &trusted_flags);
+        chunk_info->area_end, std::move(chunk_info->reservation), executable);
   }
+  MemoryChunk* chunk;
+  MemoryChunk::MainThreadFlags flags = metadata->InitialFlags(executable);
   if (executable) {
     RwxMemoryWriteScope scope("Initialize a new MemoryChunk.");
-    new (chunk_info->chunk) MemoryChunk(trusted_flags, metadata);
-#ifdef DEBUG
-    RegisterExecutableMemoryChunk(metadata);
-#endif  // DEBUG
+    chunk = new (chunk_info->chunk) MemoryChunk(flags, metadata);
   } else {
-    new (chunk_info->chunk) MemoryChunk(trusted_flags, metadata);
+    chunk = new (chunk_info->chunk) MemoryChunk(flags, metadata);
   }
 
-  RecordMemoryChunkCreated(metadata);
+#ifdef DEBUG
+  if (chunk->executable()) RegisterExecutableMemoryChunk(metadata);
+#endif  // DEBUG
+
+  RecordMemoryChunkCreated(chunk);
   return metadata;
 }
 
@@ -594,62 +539,18 @@ bool MemoryAllocator::ResizeLargePage(LargePageMetadata* page,
 }
 
 std::optional<MemoryAllocator::MemoryChunkAllocationResult>
-MemoryAllocator::AllocateUninitializedPageFromDelayedOrPool(Space* space) {
-  MemoryChunkMetadata* chunk_metadata = nullptr;
-  {
-    base::MutexGuard guard(chunks_mutex_);
-    if (!delayed_then_pooled_pages_.empty()) {
-      chunk_metadata = delayed_then_pooled_pages_.back();
-      delayed_then_pooled_pages_.pop_back();
-    }
-  }
-  if (chunk_metadata == nullptr && memory_pool()) {
-    chunk_metadata = memory_pool()->Remove(isolate_);
-  }
-  if (chunk_metadata == nullptr) {
-    return {};
-  }
+MemoryAllocator::AllocateUninitializedPageFromPool(Space* space) {
+  MemoryChunkMetadata* chunk_metadata = pool()->Remove(isolate_);
+  if (chunk_metadata == nullptr) return {};
   const int size = MutablePageMetadata::kPageSize;
   const Address start = chunk_metadata->ChunkAddress();
-  // Pooled pages are always regular data pages.
-  DCHECK_NE(CODE_SPACE, space->identity());
-  DCHECK_NE(TRUSTED_SPACE, space->identity());
-  VirtualMemory reservation(data_page_allocator(), start, size);
-  if (heap::ShouldZapGarbage()) {
-    heap::ZapBlock(start, size, kZapValue);
-  }
-  size_ += size;
-  UpdateAllocatedSpaceLimits(start, start + size,
-                             Executability::NOT_EXECUTABLE);
   const Address area_start =
       start +
       MemoryChunkLayout::ObjectStartOffsetInMemoryChunk(space->identity());
   const Address area_end = start + size;
-  return MemoryChunkAllocationResult{
-      chunk_metadata->Chunk(), chunk_metadata, size, area_start, area_end,
-      std::move(reservation),
-  };
-}
-
-std::optional<MemoryAllocator::MemoryChunkAllocationResult>
-MemoryAllocator::TryAllocateUninitializedLargePageFromPool(Space* space,
-                                                           size_t object_size) {
-  if (!memory_pool()) {
-    return {};
-  }
-  const size_t object_start_offset =
-      MemoryChunkLayout::ObjectStartOffsetInMemoryChunk(space->identity());
-  // Select a pooled large page which can store |object_size| bytes. In case the
-  // page is larger than necessary, the next full GC will trim down its size.
-  MemoryChunkMetadata* chunk_metadata =
-      memory_pool()->RemoveLarge(isolate_, object_start_offset + object_size);
-  if (chunk_metadata == nullptr) {
-    return {};
-  }
-  const Address start = chunk_metadata->ChunkAddress();
-  const size_t size = chunk_metadata->size();
-  const Address area_start = start + object_start_offset;
-  const Address area_end = start + size;
+  // Pooled pages are always regular data pages.
+  DCHECK_NE(CODE_SPACE, space->identity());
+  DCHECK_NE(TRUSTED_SPACE, space->identity());
   VirtualMemory reservation(data_page_allocator(), start, size);
   if (heap::ShouldZapGarbage()) {
     heap::ZapBlock(start, size, kZapValue);
@@ -710,9 +611,7 @@ const MemoryChunk* MemoryAllocator::LookupChunkContainingAddressInSafepoint(
     // The chunk is a normal page.
     // auto* normal_page = PageMetadata::cast(chunk);
     DCHECK_LE((*normal_page_it)->address(), addr);
-    // This code can run from the shared heap isolate and the slot may point
-    // into a client heap isolate, so ignore the isolate check.
-    if (chunk->MetadataNoIsolateCheck()->Contains(addr)) return chunk;
+    if (chunk->Metadata()->Contains(addr)) return chunk;
   } else if (auto large_page_it = large_pages_.upper_bound(chunk);
              large_page_it != large_pages_.begin()) {
     // The chunk could be inside a large page.
@@ -721,38 +620,33 @@ const MemoryChunk* MemoryAllocator::LookupChunkContainingAddressInSafepoint(
     auto* large_page_chunk = *std::next(large_page_it, -1);
     DCHECK_NOT_NULL(large_page_chunk);
     DCHECK_LE(large_page_chunk->address(), addr);
-    // This code can run from the shared heap isolate and the slot may point
-    // into a client heap isolate, so ignore the isolate check.
-    if (large_page_chunk->MetadataNoIsolateCheck()->Contains(addr))
-      return large_page_chunk;
+    if (large_page_chunk->Metadata()->Contains(addr)) return large_page_chunk;
   }
   // Not found in any page.
   return nullptr;
 }
 
-void MemoryAllocator::RecordMemoryChunkCreated(
-    const MemoryChunkMetadata* metadata) {
+void MemoryAllocator::RecordMemoryChunkCreated(const MemoryChunk* chunk) {
   base::MutexGuard guard(&chunks_mutex_);
-  if (metadata->is_large()) {
-    auto result = large_pages_.insert(metadata->Chunk());
+  if (chunk->IsLargePage()) {
+    auto result = large_pages_.insert(chunk);
     USE(result);
     DCHECK(result.second);
   } else {
-    auto result = normal_pages_.insert(metadata->Chunk());
+    auto result = normal_pages_.insert(chunk);
     USE(result);
     DCHECK(result.second);
   }
 }
 
-void MemoryAllocator::RecordMemoryChunkDestroyed(
-    const MemoryChunkMetadata* metadata) {
+void MemoryAllocator::RecordMemoryChunkDestroyed(const MemoryChunk* chunk) {
   base::MutexGuard guard(&chunks_mutex_);
-  if (metadata->is_large()) {
-    auto size = large_pages_.erase(metadata->Chunk());
+  if (chunk->IsLargePage()) {
+    auto size = large_pages_.erase(chunk);
     USE(size);
     DCHECK_EQ(1u, size);
   } else {
-    auto size = normal_pages_.erase(metadata->Chunk());
+    auto size = normal_pages_.erase(chunk);
     USE(size);
     DCHECK_EQ(1u, size);
   }
@@ -761,68 +655,16 @@ void MemoryAllocator::RecordMemoryChunkDestroyed(
 // static
 void MemoryAllocator::DeleteMemoryChunk(MutablePageMetadata* metadata) {
   DCHECK(metadata->reserved_memory()->IsReserved());
+  DCHECK(!metadata->Chunk()->InReadOnlySpace());
   // The Metadata contains a VirtualMemory reservation and the destructor will
   // release the MemoryChunk.
   DiscardSealedMemoryScope discard_scope("Deleting a memory chunk");
-  if (metadata->is_large()) {
+  if (metadata->IsLargePage()) {
     delete reinterpret_cast<LargePageMetadata*>(metadata);
   } else {
     delete reinterpret_cast<PageMetadata*>(metadata);
   }
 }
-
-void MemoryAllocator::UpdateAllocatedSpaceLimits(Address low, Address high,
-                                                 Executability executable) {
-  // The use of atomic primitives does not guarantee correctness (wrt.
-  // desired semantics) by default. The loop here ensures that we update the
-  // values only if they did not change in between.
-  Address ptr;
-  switch (executable) {
-    case NOT_EXECUTABLE:
-      ptr =
-          lowest_not_executable_ever_allocated_.load(std::memory_order_relaxed);
-      while ((low < ptr) &&
-             !lowest_not_executable_ever_allocated_.compare_exchange_weak(
-                 ptr, low, std::memory_order_acq_rel)) {
-      }
-      ptr = highest_not_executable_ever_allocated_.load(
-          std::memory_order_relaxed);
-      while ((high > ptr) &&
-             !highest_not_executable_ever_allocated_.compare_exchange_weak(
-                 ptr, high, std::memory_order_acq_rel)) {
-      }
-      break;
-    case EXECUTABLE:
-      ptr = lowest_executable_ever_allocated_.load(std::memory_order_relaxed);
-      while ((low < ptr) &&
-             !lowest_executable_ever_allocated_.compare_exchange_weak(
-                 ptr, low, std::memory_order_acq_rel)) {
-      }
-      ptr = highest_executable_ever_allocated_.load(std::memory_order_relaxed);
-      while ((high > ptr) &&
-             !highest_executable_ever_allocated_.compare_exchange_weak(
-                 ptr, high, std::memory_order_acq_rel)) {
-      }
-      break;
-  }
-}
-
-#ifdef DEBUG
-void MemoryAllocator::RegisterExecutableMemoryChunk(
-    MutablePageMetadata* chunk) {
-  base::MutexGuard guard(&executable_memory_mutex_);
-  DCHECK(chunk->is_executable());
-  DCHECK_EQ(executable_memory_.find(chunk), executable_memory_.end());
-  executable_memory_.insert(chunk);
-}
-
-void MemoryAllocator::UnregisterExecutableMemoryChunk(
-    MutablePageMetadata* chunk) {
-  base::MutexGuard guard(&executable_memory_mutex_);
-  DCHECK_NE(executable_memory_.find(chunk), executable_memory_.end());
-  executable_memory_.erase(chunk);
-}
-#endif  // DEBUG
 
 }  // namespace internal
 }  // namespace v8

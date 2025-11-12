@@ -8,7 +8,6 @@
 #include "src/baseline/baseline.h"
 #include "src/builtins/builtins-inl.h"
 #include "src/builtins/builtins-utils-gen.h"
-#include "src/builtins/js-trampoline-assembler.h"
 #include "src/codegen/code-stub-assembler-inl.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/macro-assembler-inl.h"
@@ -110,10 +109,9 @@ TF_BUILTIN(DebugBreakTrampoline, CodeStubAssembler) {
 
   BIND(&tailcall_to_shared);
   // Tail call into code object on the SharedFunctionInfo.
+  // TODO(saelo): this is not safe. We either need to validate the parameter
+  // count here or obtain the code from the dispatch table.
   TNode<Code> code = GetSharedFunctionInfoCode(shared);
-
-  // TailCallJSCode will take care of parameter count validation between the
-  // code and dispatch handle.
   TailCallJSCode(code, context, function, new_target, arg_count,
                  dispatch_handle);
 }
@@ -163,7 +161,7 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
                                SaveFPRegsMode fp_mode) {
     Label slow_path(this), next(this);
     TNode<IntPtrT> chunk = MemoryChunkFromAddress(object);
-    TNode<IntPtrT> page = MemoryChunkMetadataFromMemoryChunk(chunk);
+    TNode<IntPtrT> page = PageMetadataFromMemoryChunk(chunk);
 
     // Load address of SlotSet
     TNode<IntPtrT> slot_set = LoadSlotSet(page, &slow_path);
@@ -382,8 +380,7 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
 
   void InYoungGeneration(TNode<IntPtrT> object, Label* true_label,
                          Label* false_label) {
-    if constexpr (v8_flags.sticky_mark_bits.value()) {
-#if V8_ENABLE_STICKY_MARK_BITS_BOOL
+    if (v8_flags.sticky_mark_bits) {
       // This method is currently only used when marking is disabled. Checking
       // markbits while marking is active may result in unexpected results.
       CSA_DCHECK(this, Word32Equal(IsMarking(), BoolConstant(false)));
@@ -396,7 +393,6 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
 
       BIND(&not_read_only);
       Branch(IsUnmarked(object), true_label, false_label);
-#endif
     } else {
       TNode<BoolT> object_is_young =
           IsPageFlagSet(object, MemoryChunk::kIsInYoungGenerationMask);
@@ -1647,10 +1643,11 @@ TF_BUILTIN(CreateDataProperty, CodeStubAssembler) {
                                                  key, value);
 }
 
-TF_BUILTIN(InstantiateAsmJs, JSTrampolineAssembler) {
+TF_BUILTIN(InstantiateAsmJs, CodeStubAssembler) {
   Label tailcall_to_function(this);
   auto function = Parameter<JSFunction>(Descriptor::kTarget);
   auto context = Parameter<Context>(Descriptor::kContext);
+  auto new_target = Parameter<Object>(Descriptor::kNewTarget);
   auto arg_count =
       UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
@@ -1683,7 +1680,10 @@ TF_BUILTIN(InstantiateAsmJs, JSTrampolineAssembler) {
   BIND(&tailcall_to_function);
   // On failure, tail call back to regular JavaScript by re-calling the given
   // function which has been reset to the compile lazy builtin.
-  TailCallJSFunction(function);
+
+  TNode<Code> code = LoadJSFunctionCode(function);
+  TailCallJSCode(code, context, function, new_target, arg_count,
+                 dispatch_handle);
 }
 
 TF_BUILTIN(FindNonDefaultConstructorOrConstruct, CodeStubAssembler) {

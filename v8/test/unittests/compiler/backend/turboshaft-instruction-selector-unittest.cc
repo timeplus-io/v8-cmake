@@ -19,7 +19,8 @@
 namespace v8::internal::compiler::turboshaft {
 
 TurboshaftInstructionSelectorTest::TurboshaftInstructionSelectorTest()
-    : rng_(v8_flags.random_seed) {}
+    : TestWithNativeContextAndZone(kCompressGraphZone),
+      rng_(v8_flags.random_seed) {}
 
 TurboshaftInstructionSelectorTest::~TurboshaftInstructionSelectorTest() =
     default;
@@ -61,9 +62,7 @@ TurboshaftInstructionSelectorTest::StreamBuilder::Build(
       InstructionSelector::kEnableSwitchJumpTable, &tick_counter, nullptr,
       &max_unoptimized_frame_height, &max_pushed_argument_count,
       source_position_mode, features, InstructionSelector::kDisableScheduling,
-      InstructionSelector::kEnableRootsRelativeAddressing,
-      InstructionSelector::kDisableTraceTurboJson,
-      InstructionSelector::kNoDeterministicNan);
+      InstructionSelector::kEnableRootsRelativeAddressing);
 
   selector.SelectInstructions();
 

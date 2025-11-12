@@ -4,7 +4,8 @@
 
 // The test needs --no-liftoff because we can't serialize and deserialize
 // Liftoff code.
-// Flags: --wasm-lazy-compilation --expose-gc --no-liftoff
+// Flags: --wasm-lazy-compilation --allow-natives-syntax --expose-gc
+// Flags: --no-liftoff
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -25,12 +26,12 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
     // Run one function so that serialization happens.
     let instance = new WebAssembly.Instance(module);
     instance.exports.f3();
-    const buff = d8.wasm.serializeModule(module);
+    const buff = %SerializeWasmModule(module);
     return [wire_bytes, instance, buff];
   })();
 
   gc();
-  const module = d8.wasm.deserializeModule(buff, wire_bytes);
+  const module = %DeserializeWasmModule(buff, wire_bytes);
 
   const i2 = new WebAssembly.Instance(module);
 
@@ -55,7 +56,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
     const i1 = new WebAssembly.Instance(module);
     // Run one function so that serialization happens.
     i1.exports.f3();
-    const buff = d8.wasm.serializeModule(module);
+    const buff = %SerializeWasmModule(module);
 
     assertEquals(2, i1.exports.f2());
     assertEquals(11, i1.exports.f11());
@@ -64,7 +65,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   })();
 
   gc();
-  const module = d8.wasm.deserializeModule(buff, wire_bytes);
+  const module = %DeserializeWasmModule(buff, wire_bytes);
 
   const i2 = new WebAssembly.Instance(module);
 

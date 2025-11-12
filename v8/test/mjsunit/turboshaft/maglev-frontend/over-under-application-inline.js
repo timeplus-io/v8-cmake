@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --allow-natives-syntax --turbolev --turbofan
+// Flags: --no-always-turbofan
 
 // Testing function over- and under-application, where the callee is inlined.
 

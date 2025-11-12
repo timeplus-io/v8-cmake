@@ -16,7 +16,10 @@
 namespace v8 {
 namespace internal {
 
-constexpr const char* ToString(StateTag state) {
+// VMState class implementation. A simple stack of VM states held by the logger
+// and partially threaded through the call stack. States are pushed by VMState
+// construction and popped by destruction.
+inline const char* StateToString(StateTag state) {
   switch (state) {
     case JS:
       return "JS";
@@ -36,15 +39,9 @@ constexpr const char* ToString(StateTag state) {
       return "ATOMICS_WAIT";
     case IDLE:
       return "IDLE";
-    case IDLE_EXTERNAL:
-      return "IDLE_EXTERNAL";
     case LOGGING:
       return "LOGGING";
   }
-}
-
-inline std::ostream& operator<<(std::ostream& os, StateTag kind) {
-  return os << ToString(kind);
 }
 
 template <StateTag Tag>

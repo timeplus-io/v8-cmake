@@ -4,7 +4,6 @@
 
 #include "src/codegen/flush-instruction-cache.h"
 #include "src/codegen/macro-assembler.h"
-#include "src/common/code-memory-access-inl.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/isolate-data.h"
 
@@ -27,13 +26,7 @@ const int Deoptimizer::kLazyDeoptExitSize = 3 * kInstrSize;
 const int Deoptimizer::kAdaptShadowStackOffsetToSubtract = 0;
 
 // static
-void Deoptimizer::ZapCode(Address start, Address end, RelocIterator& it) {
-  // TODO(422364570): Support this platform.
-}
-
-// static
 void Deoptimizer::PatchToJump(Address pc, Address new_pc) {
-  RwxMemoryWriteScope rwx_write_scope("Patch jump to deopt trampoline");
   // Give enough space not to try to grow the buffer.
   constexpr int kSize = 64;
 

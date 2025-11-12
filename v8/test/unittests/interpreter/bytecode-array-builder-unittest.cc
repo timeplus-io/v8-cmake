@@ -243,7 +243,6 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
 
   // Emit Iterator-protocol operations
   builder.GetIterator(reg, load_slot.ToInt(), call_slot.ToInt());
-  builder.ForOfNext(reg, reg, pair);
 
   // Emit load / store lookup slots.
   builder.LoadLookupSlot(name, TypeofMode::kNotInside)
@@ -310,9 +309,7 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .BinaryOperation(Token::kMod, reg, 5)
       .BinaryOperation(Token::kExp, reg, 6);
 
-  using ASVariant = AddStringConstantAndInternalizeVariant;
-  builder.Add_StringConstant_Internalize(Token::kAdd, reg, 1,
-                                         ASVariant::kLhsIsStringConstant);
+  builder.Add_LhsIsStringConstant_Internalize(Token::kAdd, reg, 1);
 
   // Emit bitwise operator invocations
   builder.BinaryOperation(Token::kBitOr, reg, 6)
@@ -531,9 +528,6 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
 
   // Emit debugger bytecode.
   builder.Debugger();
-
-  // Emit SetPrototypeProperties bytecode.
-  builder.SetPrototypeProperties(0);
 
   // Emit abort bytecode.
   BytecodeLabel after_abort;

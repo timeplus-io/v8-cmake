@@ -21,7 +21,7 @@ class MaglevCompilationInfo;
 class MaglevPrintingVisitor;
 class MergePointRegisterState;
 
-struct RegallocBlockInfo {
+struct RegallocInfo {
   struct RegallocLoopInfo {
     // Hints about which nodes should be in registers or spilled when entering
     // a loop.
@@ -94,7 +94,7 @@ class RegisterFrameState {
   void AddToFree(RegTList list) { free_ |= list; }
 
   void FreeRegistersUsedBy(ValueNode* node) {
-    RegTList list = node->regalloc_info()->ClearRegisters<RegisterT>();
+    RegTList list = node->ClearRegisters<RegisterT>();
     DCHECK_EQ(free_ & list, kEmptyRegList);
     free_ |= list;
   }
@@ -104,13 +104,13 @@ class RegisterFrameState {
     DCHECK(!blocked_.has(reg));
     values_[reg.code()] = node;
     block(reg);
-    node->regalloc_info()->AddRegister(reg);
+    node->AddRegister(reg);
   }
   void SetValueWithoutBlocking(RegisterT reg, ValueNode* node) {
     DCHECK(!free_.has(reg));
     DCHECK(!blocked_.has(reg));
     values_[reg.code()] = node;
-    node->regalloc_info()->AddRegister(reg);
+    node->AddRegister(reg);
   }
   ValueNode* GetValue(RegisterT reg) const {
     DCHECK(!free_.has(reg));
@@ -154,8 +154,7 @@ class RegisterFrameState {
 class StraightForwardRegisterAllocator {
  public:
   StraightForwardRegisterAllocator(MaglevCompilationInfo* compilation_info,
-                                   Graph* graph,
-                                   RegallocBlockInfo* regalloc_info);
+                                   Graph* graph, RegallocInfo* regalloc_info);
   ~StraightForwardRegisterAllocator();
 
  private:
@@ -186,9 +185,7 @@ class StraightForwardRegisterAllocator {
 
   void PrintLiveRegs() const;
 
-  void UpdateUse(Input input) {
-    return UpdateUse(input.node(), input.location());
-  }
+  void UpdateUse(Input* input) { return UpdateUse(input->node(), input); }
   void UpdateUse(ValueNode* node, InputLocation* input_location);
 
   void MarkAsClobbered(ValueNode* node,
@@ -199,9 +196,9 @@ class StraightForwardRegisterAllocator {
   void AllocateNodeResult(ValueNode* node);
   void AllocateEagerDeopt(const EagerDeoptInfo& deopt_info);
   void AllocateLazyDeopt(const LazyDeoptInfo& deopt_info);
-  void AssignFixedInput(Input input);
-  void AssignArbitraryRegisterInput(NodeBase* result_node, Input input);
-  void AssignAnyInput(Input input);
+  void AssignFixedInput(Input& input);
+  void AssignArbitraryRegisterInput(NodeBase* result_node, Input& input);
+  void AssignAnyInput(Input& input);
   void AssignInputs(NodeBase* node);
   template <typename RegisterT>
   void AssignFixedTemporaries(RegisterFrameState<RegisterT>& registers,
@@ -271,7 +268,7 @@ class StraightForwardRegisterAllocator {
       RegisterFrameState<RegisterT>& registers, RegisterT reg, ValueNode* node);
   compiler::AllocatedOperand ForceAllocate(Register reg, ValueNode* node);
   compiler::AllocatedOperand ForceAllocate(DoubleRegister reg, ValueNode* node);
-  compiler::AllocatedOperand ForceAllocate(ConstInput input, ValueNode* node);
+  compiler::AllocatedOperand ForceAllocate(const Input& input, ValueNode* node);
 
   template <typename Function>
   void ForEachMergePointRegisterState(
@@ -304,12 +301,8 @@ class StraightForwardRegisterAllocator {
 
   void ApplyPatches(BasicBlock* block);
 
-  ProcessingState GetCurrentState();
-
-  bool has_graph_labeller() const { return graph_->has_graph_labeller(); }
-
   MaglevGraphLabeller* graph_labeller() const {
-    return graph_->graph_labeller();
+    return compilation_info_->graph_labeller();
   }
 
   MaglevCompilationInfo* compilation_info_;
@@ -325,7 +318,7 @@ class StraightForwardRegisterAllocator {
   NodeIterator node_it_;
   // The current node, whether a Node in the body or the ControlNode.
   NodeBase* current_node_;
-  RegallocBlockInfo* regalloc_info_;
+  RegallocInfo* regalloc_info_;
 };
 
 }  // namespace maglev

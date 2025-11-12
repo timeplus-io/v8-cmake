@@ -30,14 +30,8 @@ constexpr uint32_t kMaxUtf16CodeUnitU = 0xffff;
 // -------------------------------------------------------------------
 // Tree to graph conversion
 
-RegExpNode* RegExpTree::ToNode(RegExpCompiler* compiler,
+RegExpNode* RegExpAtom::ToNode(RegExpCompiler* compiler,
                                RegExpNode* on_success) {
-  compiler->ToNodeMaybeCheckForStackOverflow();
-  return ToNodeImpl(compiler, on_success);
-}
-
-RegExpNode* RegExpAtom::ToNodeImpl(RegExpCompiler* compiler,
-                                   RegExpNode* on_success) {
   ZoneList<TextElement>* elms =
       compiler->zone()->New<ZoneList<TextElement>>(1, compiler->zone());
   elms->Add(TextElement::Atom(this), compiler->zone());
@@ -45,8 +39,8 @@ RegExpNode* RegExpAtom::ToNodeImpl(RegExpCompiler* compiler,
                                          on_success);
 }
 
-RegExpNode* RegExpText::ToNodeImpl(RegExpCompiler* compiler,
-                                   RegExpNode* on_success) {
+RegExpNode* RegExpText::ToNode(RegExpCompiler* compiler,
+                               RegExpNode* on_success) {
   return compiler->zone()->New<TextNode>(elements(), compiler->read_backward(),
                                          on_success);
 }
@@ -459,8 +453,8 @@ void CharacterRange::AddUnicodeCaseEquivalents(ZoneList<CharacterRange>* ranges,
 #endif  // V8_INTL_SUPPORT
 }
 
-RegExpNode* RegExpClassRanges::ToNodeImpl(RegExpCompiler* compiler,
-                                          RegExpNode* on_success) {
+RegExpNode* RegExpClassRanges::ToNode(RegExpCompiler* compiler,
+                                      RegExpNode* on_success) {
   set_.Canonicalize();
   Zone* const zone = compiler->zone();
   ZoneList<CharacterRange>* ranges = this->ranges(zone);
@@ -519,15 +513,11 @@ RegExpNode* RegExpClassRanges::ToNodeImpl(RegExpCompiler* compiler,
   static constexpr int kMaxRangesToInline = 32;  // Arbitrary.
   if (ranges->length() > kMaxRangesToInline) result->SetDoNotInline();
 
-  if (result->alternatives()->length() == 1) {
-    return result->alternatives()->at(0).node();
-  }
-
   return result;
 }
 
-RegExpNode* RegExpClassSetOperand::ToNodeImpl(RegExpCompiler* compiler,
-                                              RegExpNode* on_success) {
+RegExpNode* RegExpClassSetOperand::ToNode(RegExpCompiler* compiler,
+                                          RegExpNode* on_success) {
   Zone* zone = compiler->zone();
   const int size = (has_strings() ? static_cast<int>(strings()->size()) : 0) +
                    (ranges()->is_empty() ? 0 : 1);
@@ -577,8 +567,8 @@ RegExpNode* RegExpClassSetOperand::ToNodeImpl(RegExpCompiler* compiler,
   return node->ToNode(compiler, on_success);
 }
 
-RegExpNode* RegExpClassSetExpression::ToNodeImpl(RegExpCompiler* compiler,
-                                                 RegExpNode* on_success) {
+RegExpNode* RegExpClassSetExpression::ToNode(RegExpCompiler* compiler,
+                                             RegExpNode* on_success) {
   Zone* zone = compiler->zone();
   ZoneList<CharacterRange>* temp_ranges =
       zone->template New<ZoneList<CharacterRange>>(4, zone);
@@ -688,19 +678,9 @@ RegExpClassSetOperand* RegExpClassSetExpression::ComputeExpression(
 
 namespace {
 
-bool StartsWithAtom(RegExpTree* tree) {
-  if (tree->IsAtom()) return true;
-  return tree->IsText() && tree->AsText()->StartsWithAtom();
-}
-
-RegExpAtom* FirstAtom(RegExpTree* tree) {
-  if (tree->IsAtom()) return tree->AsAtom();
-  return tree->AsText()->FirstAtom();
-}
-
 int CompareFirstChar(RegExpTree* const* a, RegExpTree* const* b) {
-  RegExpAtom* atom1 = FirstAtom(*a);
-  RegExpAtom* atom2 = FirstAtom(*b);
+  RegExpAtom* atom1 = (*a)->AsAtom();
+  RegExpAtom* atom2 = (*b)->AsAtom();
   base::uc16 character1 = atom1->data().at(0);
   base::uc16 character2 = atom2->data().at(0);
   if (character1 < character2) return -1;
@@ -717,8 +697,8 @@ int CompareCaseInsensitive(const icu::UnicodeString& a,
 
 int CompareFirstCharCaseInsensitive(RegExpTree* const* a,
                                     RegExpTree* const* b) {
-  RegExpAtom* atom1 = FirstAtom(*a);
-  RegExpAtom* atom2 = FirstAtom(*b);
+  RegExpAtom* atom1 = (*a)->AsAtom();
+  RegExpAtom* atom2 = (*b)->AsAtom();
   return CompareCaseInsensitive(icu::UnicodeString{atom1->data().at(0)},
                                 icu::UnicodeString{atom2->data().at(0)});
 }
@@ -762,8 +742,8 @@ int CompareCaseInsensitive(
 int CompareFirstCharCaseInsensitive(
     unibrow::Mapping<unibrow::Ecma262Canonicalize>* canonicalize,
     RegExpTree* const* a, RegExpTree* const* b) {
-  RegExpAtom* atom1 = FirstAtom(*a);
-  RegExpAtom* atom2 = FirstAtom(*b);
+  RegExpAtom* atom1 = (*a)->AsAtom();
+  RegExpAtom* atom2 = (*b)->AsAtom();
   return CompareCaseInsensitive(canonicalize, atom1->data().at(0),
                                 atom2->data().at(0));
 }
@@ -799,7 +779,7 @@ bool RegExpDisjunction::SortConsecutiveAtoms(RegExpCompiler* compiler) {
   for (int i = 0; i < length; i++) {
     while (i < length) {
       RegExpTree* alternative = alternatives->at(i);
-      if (StartsWithAtom(alternative)) break;
+      if (alternative->IsAtom()) break;
       i++;
     }
     // i is length or it is the index of an atom.
@@ -808,7 +788,7 @@ bool RegExpDisjunction::SortConsecutiveAtoms(RegExpCompiler* compiler) {
     i++;
     while (i < length) {
       RegExpTree* alternative = alternatives->at(i);
-      if (!StartsWithAtom(alternative)) break;
+      if (!alternative->IsAtom()) break;
       i++;
     }
     // Sort atoms to get ones with common prefixes together.
@@ -852,13 +832,12 @@ void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
   int i = 0;
   while (i < length) {
     RegExpTree* alternative = alternatives->at(i);
-    if (!StartsWithAtom(alternative)) {
+    if (!alternative->IsAtom()) {
       alternatives->at(write_posn++) = alternatives->at(i);
       i++;
       continue;
     }
-    RegExpAtom* const atom = FirstAtom(alternative);
-
+    RegExpAtom* const atom = alternative->AsAtom();
 #ifdef V8_INTL_SUPPORT
     icu::UnicodeString common_prefix(atom->data().at(0));
 #else
@@ -874,8 +853,8 @@ void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
     i++;
     while (i < length) {
       alternative = alternatives->at(i);
-      if (!StartsWithAtom(alternative)) break;
-      RegExpAtom* const alt_atom = FirstAtom(alternative);
+      if (!alternative->IsAtom()) break;
+      RegExpAtom* const alt_atom = alternative->AsAtom();
 #ifdef V8_INTL_SUPPORT
       icu::UnicodeString new_prefix(alt_atom->data().at(0));
       if (!Equals(ignore_case, new_prefix, common_prefix)) break;
@@ -894,11 +873,10 @@ void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
       // Find out how long the common prefix is.
       int run_length = i - first_with_prefix;
       RegExpAtom* const alt_atom =
-          FirstAtom(alternatives->at(first_with_prefix));
-      alternatives->at(first_with_prefix)->AsAtom();
+          alternatives->at(first_with_prefix)->AsAtom();
       for (int j = 1; j < run_length && prefix_length > 1; j++) {
         RegExpAtom* old_atom =
-            FirstAtom(alternatives->at(j + first_with_prefix));
+            alternatives->at(j + first_with_prefix)->AsAtom();
         for (int k = 1; k < prefix_length; k++) {
 #ifdef V8_INTL_SUPPORT
           if (!CharAtEquals(ignore_case, k, alt_atom, old_atom)) {
@@ -917,36 +895,15 @@ void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
       ZoneList<RegExpTree*>* suffixes =
           zone->New<ZoneList<RegExpTree*>>(run_length, zone);
       for (int j = 0; j < run_length; j++) {
-        if (alternatives->at(j + first_with_prefix)->IsAtom()) {
-          RegExpAtom* old_atom =
-              alternatives->at(j + first_with_prefix)->AsAtom();
-          int len = old_atom->length();
-          if (len == prefix_length) {
-            suffixes->Add(zone->New<RegExpEmpty>(), zone);
-          } else {
-            RegExpTree* suffix = zone->New<RegExpAtom>(
-                old_atom->data().SubVector(prefix_length, len));
-            suffixes->Add(suffix, zone);
-          }
+        RegExpAtom* old_atom =
+            alternatives->at(j + first_with_prefix)->AsAtom();
+        int len = old_atom->length();
+        if (len == prefix_length) {
+          suffixes->Add(zone->New<RegExpEmpty>(), zone);
         } else {
-          RegExpText* new_text = zone->New<RegExpText>(zone);
-          RegExpText* old_text =
-              alternatives->at(j + first_with_prefix)->AsText();
-          RegExpAtom* old_atom = old_text->FirstAtom();
-          int len = old_atom->length();
-          if (len != prefix_length) {
-            RegExpAtom* suffix = zone->New<RegExpAtom>(
-                old_atom->data().SubVector(prefix_length, len));
-            new_text->AddElement(TextElement::Atom(suffix), zone);
-          }
-          for (int k = 1; k < old_text->elements()->length(); k++) {
-            new_text->AddElement(old_text->elements()->at(k), zone);
-          }
-          if (new_text->elements()->length() != 0) {
-            suffixes->Add(new_text, zone);
-          } else {
-            suffixes->Add(zone->New<RegExpEmpty>(), zone);
-          }
+          RegExpTree* suffix = zone->New<RegExpAtom>(
+              old_atom->data().SubVector(prefix_length, old_atom->length()));
+          suffixes->Add(suffix, zone);
         }
       }
       pair->Add(zone->New<RegExpDisjunction>(suffixes), zone);
@@ -1029,8 +986,10 @@ void RegExpDisjunction::FixSingleCharacterDisjunctions(
   alternatives->Rewind(write_posn);  // Trim end of array.
 }
 
-RegExpNode* RegExpDisjunction::ToNodeImpl(RegExpCompiler* compiler,
-                                          RegExpNode* on_success) {
+RegExpNode* RegExpDisjunction::ToNode(RegExpCompiler* compiler,
+                                      RegExpNode* on_success) {
+  compiler->ToNodeMaybeCheckForStackOverflow();
+
   ZoneList<RegExpTree*>* alternatives = this->alternatives();
 
   if (alternatives->length() > 2) {
@@ -1054,8 +1013,8 @@ RegExpNode* RegExpDisjunction::ToNodeImpl(RegExpCompiler* compiler,
   return result;
 }
 
-RegExpNode* RegExpQuantifier::ToNodeImpl(RegExpCompiler* compiler,
-                                         RegExpNode* on_success) {
+RegExpNode* RegExpQuantifier::ToNode(RegExpCompiler* compiler,
+                                     RegExpNode* on_success) {
   return ToNode(min(), max(), is_greedy(), body(), compiler, on_success);
 }
 
@@ -1097,8 +1056,8 @@ RegExpNode* BoundaryAssertionAsLookaround(RegExpCompiler* compiler,
 }
 }  // anonymous namespace
 
-RegExpNode* RegExpAssertion::ToNodeImpl(RegExpCompiler* compiler,
-                                        RegExpNode* on_success) {
+RegExpNode* RegExpAssertion::ToNode(RegExpCompiler* compiler,
+                                    RegExpNode* on_success) {
   NodeInfo info;
   Zone* zone = compiler->zone();
 
@@ -1157,8 +1116,8 @@ RegExpNode* RegExpAssertion::ToNodeImpl(RegExpCompiler* compiler,
   }
 }
 
-RegExpNode* RegExpBackReference::ToNodeImpl(RegExpCompiler* compiler,
-                                            RegExpNode* on_success) {
+RegExpNode* RegExpBackReference::ToNode(RegExpCompiler* compiler,
+                                        RegExpNode* on_success) {
   RegExpNode* backref_node = on_success;
   // Only one of the captures in the list can actually match. Since
   // back-references to unmatched captures are treated as empty, we can simply
@@ -1172,8 +1131,8 @@ RegExpNode* RegExpBackReference::ToNodeImpl(RegExpCompiler* compiler,
   return backref_node;
 }
 
-RegExpNode* RegExpEmpty::ToNodeImpl(RegExpCompiler* compiler,
-                                    RegExpNode* on_success) {
+RegExpNode* RegExpEmpty::ToNode(RegExpCompiler* compiler,
+                                RegExpNode* on_success) {
   return on_success;
 }
 
@@ -1194,8 +1153,8 @@ class V8_NODISCARD ModifiersScope {
 
 }  // namespace
 
-RegExpNode* RegExpGroup::ToNodeImpl(RegExpCompiler* compiler,
-                                    RegExpNode* on_success) {
+RegExpNode* RegExpGroup::ToNode(RegExpCompiler* compiler,
+                                RegExpNode* on_success) {
   // If no flags are modified, simply convert and return the body.
   if (flags() == compiler->flags()) {
     return body_->ToNode(compiler, on_success);
@@ -1253,8 +1212,10 @@ RegExpNode* RegExpLookaround::Builder::ForMatch(RegExpNode* match) {
   }
 }
 
-RegExpNode* RegExpLookaround::ToNodeImpl(RegExpCompiler* compiler,
-                                         RegExpNode* on_success) {
+RegExpNode* RegExpLookaround::ToNode(RegExpCompiler* compiler,
+                                     RegExpNode* on_success) {
+  compiler->ToNodeMaybeCheckForStackOverflow();
+
   int stack_pointer_register = compiler->AllocateRegister();
   int position_register = compiler->AllocateRegister();
 
@@ -1275,8 +1236,8 @@ RegExpNode* RegExpLookaround::ToNodeImpl(RegExpCompiler* compiler,
   return result;
 }
 
-RegExpNode* RegExpCapture::ToNodeImpl(RegExpCompiler* compiler,
-                                      RegExpNode* on_success) {
+RegExpNode* RegExpCapture::ToNode(RegExpCompiler* compiler,
+                                  RegExpNode* on_success) {
   return ToNode(body(), index(), compiler, on_success);
 }
 
@@ -1378,8 +1339,10 @@ class AssertionSequenceRewriter final {
 
 }  // namespace
 
-RegExpNode* RegExpAlternative::ToNodeImpl(RegExpCompiler* compiler,
-                                          RegExpNode* on_success) {
+RegExpNode* RegExpAlternative::ToNode(RegExpCompiler* compiler,
+                                      RegExpNode* on_success) {
+  compiler->ToNodeMaybeCheckForStackOverflow();
+
   ZoneList<RegExpTree*>* children = nodes();
 
   AssertionSequenceRewriter::MaybeRewrite(children, compiler->zone());

@@ -695,8 +695,8 @@ void ArrayLiteralBoilerplateBuilder::BuildBoilerplateDescription(
         Cast<FixedDoubleArray>(*elements)->set(array_index,
                                                literal->AsNumber());
       } else {
-        DCHECK(IsUninitializedHole(*GetBoilerplateValue(element, isolate),
-                                   isolate));
+        DCHECK(
+            IsUninitialized(*GetBoilerplateValue(element, isolate), isolate));
         Cast<FixedDoubleArray>(*elements)->set(array_index, 0);
       }
 
@@ -718,7 +718,7 @@ void ArrayLiteralBoilerplateBuilder::BuildBoilerplateDescription(
         continue;
       }
 
-      if (IsUninitializedHole(boilerplate_value, isolate)) {
+      if (IsUninitialized(boilerplate_value, isolate)) {
         boilerplate_value = Smi::zero();
       }
 

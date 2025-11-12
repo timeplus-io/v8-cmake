@@ -90,13 +90,10 @@
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-engine.h"
-#include "test/cctest/wasm/wasm-runner.h"
+#include "test/cctest/wasm/wasm-run-utils.h"
 #include "test/common/wasm/test-signatures.h"
 #include "test/common/wasm/wasm-macro-gen.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
-
-static const v8::EmbedderDataTypeTag kTestTypeTagA = 1;
-static const v8::EmbedderDataTypeTag kTestTypeTagB = 2;
 
 static const bool kLogThreading = false;
 
@@ -2102,59 +2099,6 @@ THREADED_TEST(Number) {
   CHECK_EQ(PI, pi_obj->NumberValue(env.local()).FromJust());
 }
 
-THREADED_TEST(Ints) {
-  LocalContext env;
-  v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope scope(isolate);
-
-  Local<v8::Number> zero8u = v8::Number::New(isolate, uint8_t{0});
-  CHECK_EQ(0, zero8u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> zero8 = v8::Number::New(isolate, int8_t{0});
-  CHECK_EQ(0, zero8->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max8u = v8::Number::New(isolate, uint8_t{0xff});
-  CHECK_EQ(0xff, max8u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max8 = v8::Number::New(isolate, int8_t{0x7f});
-  CHECK_EQ(0x7f, max8->NumberValue(env.local()).FromJust());
-
-  Local<v8::Number> zero16u = v8::Number::New(isolate, uint16_t{0});
-  CHECK_EQ(0, zero16u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> zero16 = v8::Number::New(isolate, int16_t{0});
-  CHECK_EQ(0, zero16->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max16u = v8::Number::New(isolate, uint16_t{0xffff});
-  CHECK_EQ(0xffff, max16u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max16 = v8::Number::New(isolate, int16_t{0x7fff});
-  CHECK_EQ(0x7fff, max16->NumberValue(env.local()).FromJust());
-
-  Local<v8::Number> zero32u = v8::Number::New(isolate, uint32_t{0});
-  CHECK_EQ(0, zero32u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> zero32 = v8::Number::New(isolate, int32_t{0});
-  CHECK_EQ(0, zero32->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max32u = v8::Number::New(isolate, uint32_t{0xffffffff});
-  CHECK_EQ(0xffffffff, max32u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> max32 = v8::Number::New(isolate, int32_t{0x7fffffff});
-  CHECK_EQ(0x7fffffff, max32->NumberValue(env.local()).FromJust());
-
-  Local<v8::Number> zero64u = v8::Number::New(isolate, uint64_t{0});
-  CHECK_EQ(0, zero64u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> zero64 = v8::Number::New(isolate, int64_t{0});
-  CHECK_EQ(0, zero64->NumberValue(env.local()).FromJust());
-  // This works only because the double round-trip is lossless for this
-  // 40 bit number.
-  Local<v8::Number> big64u = v8::Number::New(isolate, uint64_t{0xffffffffffLL});
-  CHECK_EQ(0xffffffffffLL, big64u->NumberValue(env.local()).FromJust());
-  Local<v8::Number> big64 = v8::Number::New(isolate, int64_t{0x7fffffffffLL});
-  CHECK_EQ(0x7fffffffffLL, big64->NumberValue(env.local()).FromJust());
-
-  Local<v8::Number> zero_double = v8::Number::New(isolate, double{0});
-  CHECK_EQ(0.0, zero_double->NumberValue(env.local()).FromJust());
-  Local<v8::Number> pi_double = v8::Number::New(isolate, double{3.14});
-  CHECK_EQ(double{3.14}, pi_double->NumberValue(env.local()).FromJust());
-
-  Local<v8::Number> zero_float = v8::Number::New(isolate, float{0});
-  CHECK_EQ(0.0, zero_float->NumberValue(env.local()).FromJust());
-  Local<v8::Number> pi_float = v8::Number::New(isolate, float{3.14});
-  CHECK_EQ(float{3.14}, pi_float->NumberValue(env.local()).FromJust());
-}
 
 THREADED_TEST(ToNumber) {
   LocalContext env;
@@ -3309,7 +3253,7 @@ THREADED_TEST(GlobalObjectHasRealIndexedProperty) {
 static void CheckAlignedPointerInInternalField(Local<v8::Object> obj,
                                                void* value) {
   CHECK(HAS_SMI_TAG(reinterpret_cast<i::Address>(value)));
-  obj->SetAlignedPointerInInternalField(0, value, kTestTypeTagA);
+  obj->SetAlignedPointerInInternalField(0, value);
   i::heap::InvokeMajorGC(CcTest::heap());
   CHECK_EQ(value, obj->GetAlignedPointerFromInternalField(0));
   CHECK_EQ(value,
@@ -3349,7 +3293,6 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
   CHECK_EQ(huge, Object::GetAlignedPointerFromInternalField(persistent, 0));
 }
 
-START_ALLOW_USE_DEPRECATED()
 THREADED_TEST(SetAlignedPointerInInternalFields) {
   LocalContext env;
   v8::Isolate* isolate = env.isolate();
@@ -3397,13 +3340,12 @@ THREADED_TEST(SetAlignedPointerInInternalFields) {
   delete[] heap_allocated_1;
   delete[] heap_allocated_2;
 }
-END_ALLOW_USE_DEPRECATED()
 
 static void CheckAlignedPointerInEmbedderData(LocalContext* env,
                                               v8::Local<v8::Object> some_obj,
                                               int index, void* value) {
   CHECK_EQ(0, static_cast<int>(reinterpret_cast<uintptr_t>(value) & 0x1));
-  (*env)->SetAlignedPointerInEmbedderData(index, value, kTestTypeTagA);
+  (*env)->SetAlignedPointerInEmbedderData(index, value);
   i::heap::InvokeMajorGC(CcTest::heap());
   CHECK_EQ(value, (*env)->GetAlignedPointerFromEmbedderData(index));
   CHECK_EQ(value,
@@ -3444,42 +3386,13 @@ THREADED_TEST(EmbedderDataAlignedPointers) {
 
   // Test growing of the embedder data's backing store.
   for (int i = 0; i < 100; i++) {
-    env->SetAlignedPointerInEmbedderData(i, AlignedTestPointer(i),
-                                         i % V8_EMBEDDER_DATA_TAG_COUNT);
+    env->SetAlignedPointerInEmbedderData(i, AlignedTestPointer(i));
   }
   i::heap::InvokeMajorGC(CcTest::heap());
   for (int i = 0; i < 100; i++) {
     v8::SealHandleScope no_handle_leak(env.isolate());
     CHECK_EQ(AlignedTestPointer(i), env->GetAlignedPointerFromEmbedderData(i));
   }
-}
-
-THREADED_TEST(EmbedderDataAlignedPointersViaDetachedGlobal) {
-  LocalContext env;
-  v8::Isolate* isolate = env.isolate();
-  v8::HandleScope scope(isolate);
-
-  v8::Local<v8::Object> obj = env->Global();
-
-  CheckAlignedPointerInEmbedderData(&env, obj, 0, nullptr);
-  CHECK_EQ(1, (*env)->GetNumberOfEmbedderDataFields());
-
-  int stack_allocated[100];
-  CheckAlignedPointerInEmbedderData(&env, obj, 1, stack_allocated);
-  CHECK_EQ(2, (*env)->GetNumberOfEmbedderDataFields());
-
-  i::heap::InvokeMajorGC(CcTest::heap());
-
-  CHECK_EQ(stack_allocated,
-           obj->GetAlignedPointerFromEmbedderDataInCreationContext(isolate, 1));
-
-  env->DetachGlobal();
-
-  // In case the global object is detached the embedder data can be read
-  // directly from current native context as long as its global object IS the
-  // detached global object.
-  CHECK_EQ(stack_allocated,
-           obj->GetAlignedPointerFromEmbedderDataInCreationContext(isolate, 1));
 }
 
 static void CheckEmbedderData(LocalContext* env, int index,
@@ -4618,8 +4531,7 @@ Local<v8::Object> NewObjectForIntKey(
     int key) {
   auto local = Local<v8::ObjectTemplate>::New(isolate, templ);
   auto obj = local->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
-  obj->SetAlignedPointerInInternalField(0, IntKeyToVoidPointer(key),
-                                        kTestTypeTagA);
+  obj->SetAlignedPointerInInternalField(0, IntKeyToVoidPointer(key));
   return obj;
 }
 
@@ -7918,28 +7830,21 @@ static const char* kNativeCallInExtensionSource =
     "  return %StringLastIndexOf(x, 'bob');"
     "}";
 
-// Test that natives syntax is not allowed in extensions.
+static const char* kNativeCallTest =
+    "call_runtime_last_index_of('bobbobboellebobboellebobbob');";
+
+// Test that a native runtime calls are supported in extensions.
 TEST(NativeCallInExtensions) {
-  i::v8_flags.allow_natives_syntax = false;
   v8::HandleScope handle_scope(CcTest::isolate());
   v8::RegisterExtension(
       std::make_unique<Extension>("nativecall", kNativeCallInExtensionSource));
   const char* extension_names[] = {"nativecall"};
   v8::ExtensionConfiguration extensions(1, extension_names);
-  v8::Local<Context> context = Context::New(CcTest::isolate());
-  v8::Context::Scope context_scope(context);
-  {
-    TryCatch try_catch(CcTest::isolate());
-
-    v8::Local<Context> ext_context =
-        Context::New(CcTest::isolate(), &extensions);
-    CHECK(ext_context.IsEmpty());
-    CHECK(try_catch.HasCaught());
-
-    v8::String::Utf8Value str(CcTest::isolate(), try_catch.Exception());
-    CHECK_NOT_NULL(*str);
-    CHECK_EQ(0, strcmp(*str, "SyntaxError: Unexpected token '%'"));
-  }
+  v8::Local<Context> context = Context::New(CcTest::isolate(), &extensions);
+  Context::Scope lock(context);
+  v8::Local<Value> result = CompileRun(kNativeCallTest);
+  CHECK(result->Equals(context, v8::Integer::New(CcTest::isolate(), 24))
+            .FromJust());
 }
 
 
@@ -8373,11 +8278,11 @@ void InternalFieldCallback(bool global_gc) {
     t1 = new Trivial(42);
     t2 = new Trivial2(103, 9);
 
-    obj->SetAlignedPointerInInternalField(0, t1, kTestTypeTagA);
+    obj->SetAlignedPointerInInternalField(0, t1);
     t1 = reinterpret_cast<Trivial*>(obj->GetAlignedPointerFromInternalField(0));
     CHECK_EQ(42, t1->x());
 
-    obj->SetAlignedPointerInInternalField(1, t2, kTestTypeTagB);
+    obj->SetAlignedPointerInInternalField(1, t2);
     t2 =
         reinterpret_cast<Trivial2*>(obj->GetAlignedPointerFromInternalField(1));
     CHECK_EQ(103, t2->x());
@@ -10150,11 +10055,8 @@ TEST(DetachGlobal) {
 
 void GetThisX(const v8::FunctionCallbackInfo<v8::Value>& info) {
   v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
-  Local<Value> result;
-  if (!context->Global()->Get(context, v8_str("x")).ToLocal(&result)) {
-    return;
-  }
-  info.GetReturnValue().Set(result);
+  info.GetReturnValue().Set(
+      context->Global()->Get(context, v8_str("x")).ToLocalChecked());
 }
 
 
@@ -10204,10 +10106,6 @@ TEST(DetachedAccesses) {
 
   Local<Object> env2_global = env2->Global();
   env2->DetachGlobal();
-  // Explicitly allow accessing cross-context globals from native contexts
-  // with the same security token. Otherwise `env1.get_x()` or `env1.this_x()`
-  // would throw access check failure exception.
-  env2->SetSecurityToken(foo);
 
   Local<Value> result;
   result = CompileRun("bound_x()");
@@ -10217,7 +10115,7 @@ TEST(DetachedAccesses) {
   result = CompileRun("get_x_w()");
   CHECK(result.IsEmpty());
   result = CompileRun("this_x()");
-  CHECK(result.IsEmpty());
+  CHECK(v8_str("env2_x")->Equals(env1.local(), result).FromJust());
 
   // Reattach env2's proxy
   env2 = Context::New(env1.isolate(), nullptr, v8::Local<v8::ObjectTemplate>(),
@@ -10248,9 +10146,7 @@ TEST(DetachedAccesses) {
       CHECK(v8_str("env3_x")
                 ->Equals(env2, results->Get(env2, i + 2).ToLocalChecked())
                 .FromJust());
-      // |this_x| is an Api function from detached |env2| context but it loads
-      // property "x" from |env2_global|. See GetThisX.
-      CHECK(v8_str("env3_x")
+      CHECK(v8_str("env2_x")
                 ->Equals(env2, results->Get(env2, i + 3).ToLocalChecked())
                 .FromJust());
     }
@@ -10280,7 +10176,7 @@ TEST(DetachedAccesses) {
               ->Equals(env1.local(),
                        results->Get(env1.local(), i + 2).ToLocalChecked())
               .FromJust());
-    CHECK(v8_str("env3_x")
+    CHECK(v8_str("env2_x")
               ->Equals(env1.local(),
                        results->Get(env1.local(), i + 3).ToLocalChecked())
               .FromJust());
@@ -10310,7 +10206,7 @@ TEST(DetachedAccesses) {
               ->Equals(env1.local(),
                        results->Get(env1.local(), i + 2).ToLocalChecked())
               .FromJust());
-    CHECK(v8_str("env3_x")
+    CHECK(v8_str("env2_x")
               ->Equals(env1.local(),
                        results->Get(env1.local(), i + 3).ToLocalChecked())
               .FromJust());
@@ -13790,8 +13686,6 @@ bool ApiTestFuzzer::NextThread() {
 }
 
 void ApiTestFuzzer::Run() {
-  v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
-
   // Wait until it is our turn.
   gate_.Wait();
   {
@@ -14651,7 +14545,7 @@ TEST(WasmSetJitCodeEventHandler) {
   jitcode_line_info = &lineinfo;
 
   WasmRunner<int32_t, int32_t, int32_t> r(TestExecutionTier::kTurbofan);
-  i::Isolate* isolate = r.isolate();
+  i::Isolate* isolate = r.main_isolate();
 
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
   v8_isolate->SetJitCodeEventHandler(v8::kJitCodeEventDefault,
@@ -17560,8 +17454,6 @@ class StackOverflowThread : public v8::base::Thread {
         result_(false) {}
 
   void Run() override {
-    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
-
     uintptr_t stack_top = v8::base::Stack::GetStackStart();
     // Compute isolate stack limit by js stack size.
     uintptr_t stack_base = stack_top - js_stack_size_;
@@ -19246,7 +19138,6 @@ class IsolateThread : public v8::base::Thread {
       : Thread(Options("IsolateThread")), fib_limit_(fib_limit), result_(0) {}
 
   void Run() override {
-    v8::SandboxHardwareSupport::PrepareCurrentThreadForHardwareSandboxing();
     v8::Isolate::CreateParams create_params = CreateTestParams();
     v8::Isolate* isolate = v8::Isolate::New(create_params);
     result_ = CalcFibonacci(isolate, fib_limit_);
@@ -21668,7 +21559,6 @@ class ThreadInterruptTest {
       // Setup signal handler
       memset(&action, 0, sizeof(action));
       action.sa_handler = SignalHandler;
-      action.sa_flags = SA_ONSTACK;
       sigaction(SIGCHLD, &action, nullptr);
 
       // Send signal
@@ -24781,6 +24671,9 @@ TEST(ModuleCodeCache) {
 
   // Test that the cache is consumed and execution still works.
   {
+    // Disable --always_turbofan, otherwise we try to optimize during module
+    // instantiation, violating the DisallowCompilation scope.
+    i::v8_flags.always_turbofan = false;
     v8::Isolate* isolate = v8::Isolate::New(create_params);
     {
       v8::Isolate::Scope iscope(isolate);
@@ -26751,27 +26644,6 @@ TEST(DeterministicRandomNumberGeneration) {
   i::v8_flags.random_seed = previous_seed;
 }
 
-UNINITIALIZED_TEST(ResizableArrayBuffer_OutlivesScope) {
-  std::shared_ptr<v8::BackingStore> backing_store;
-  v8::Isolate::CreateParams create_params = CreateTestParams();
-  v8::Isolate* isolate = v8::Isolate::New(create_params);
-  {
-    v8::Isolate::Scope isolate_scope(isolate);
-    v8::HandleScope handle_scope(isolate);
-    v8::Local<v8::Context> context = v8::Context::New(isolate);
-    v8::Context::Scope context_scope(context);
-    backing_store = v8::ArrayBuffer::NewResizableBackingStore(32, 1024);
-    Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, backing_store);
-    CHECK_EQ(backing_store.get(), ab->GetBackingStore().get());
-  }
-  isolate->Dispose();
-  v8::V8::Dispose();
-  v8::V8::DisposePlatform();
-  backing_store.reset();
-
-  CcTest::disable_dispose_in_test();
-}
-
 UNINITIALIZED_TEST(AllowAtomicsWait) {
   v8::Isolate::CreateParams create_params = CreateTestParams();
   create_params.allow_atomics_wait = false;
@@ -28548,8 +28420,8 @@ bool SetupTest(v8::Local<v8::Value> initial_value, LocalContext* env,
 
   v8::Local<v8::Object> object =
       object_template->NewInstance(env->local()).ToLocalChecked();
-  object->SetAlignedPointerInInternalField(
-      kV8WrapperObjectIndex, reinterpret_cast<void*>(checker), kTestTypeTagA);
+  object->SetAlignedPointerInInternalField(kV8WrapperObjectIndex,
+                                           reinterpret_cast<void*>(checker));
 
   CHECK((*env)
             ->Global()
@@ -28740,8 +28612,7 @@ void CheckApiObjectArg() {
   v8::Local<v8::Object> api_obj =
       api_obj_template->NewInstance(env.local()).ToLocalChecked();
   api_obj->SetAlignedPointerInInternalField(
-      kV8WrapperObjectIndex, reinterpret_cast<void*>(&embedder_obj),
-      kTestTypeTagA);
+      kV8WrapperObjectIndex, reinterpret_cast<void*>(&embedder_obj));
   CHECK(env->Global()
             ->Set(env.local(), v8_str("api_object"), api_obj)
             .FromJust());
@@ -29033,6 +28904,9 @@ void FastApiCallWithAllocationAndGC(AllocationChecker::GCLocation gc_location) {
   i::v8_flags.turbofan = true;
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::v8_flags.allow_allocation_in_fast_api_call = true;
   i::v8_flags.expose_gc = true;
   i::FlagList::EnforceFlagImplications();
@@ -29041,6 +28915,8 @@ void FastApiCallWithAllocationAndGC(AllocationChecker::GCLocation gc_location) {
   v8::Isolate* isolate = CcTest::isolate();
 
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
 
@@ -29076,6 +28952,9 @@ TEST(FastApiCallWithThrowInReentrantCode) {
   i::v8_flags.turbofan = true;
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::v8_flags.allow_allocation_in_fast_api_call = true;
   i::FlagList::EnforceFlagImplications();
 
@@ -29083,6 +28962,8 @@ TEST(FastApiCallWithThrowInReentrantCode) {
   v8::Isolate* isolate = CcTest::isolate();
 
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
 
@@ -29181,6 +29062,9 @@ void FastApiCallRecursion(bool inner_most_throws) {
   i::v8_flags.turbofan = true;
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::v8_flags.allow_allocation_in_fast_api_call = true;
   i::FlagList::EnforceFlagImplications();
 
@@ -29188,6 +29072,8 @@ void FastApiCallRecursion(bool inner_most_throws) {
   v8::Isolate* isolate = CcTest::isolate();
 
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
 
@@ -29274,9 +29160,15 @@ TEST(FastApiStackSlot) {
   i::v8_flags.turbofan = true;
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::FlagList::EnforceFlagImplications();
 
   v8::Isolate* isolate = CcTest::isolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
   LocalContext env;
@@ -29323,10 +29215,16 @@ TEST(FastApiCalls) {
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
   i::v8_flags.fast_api_allow_float_in_sim = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::FlagList::EnforceFlagImplications();
 
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
   LocalContext env;
@@ -29795,8 +29693,7 @@ struct SeqOneByteStringChecker {
     v8::Local<v8::Object> object =
         object_template->NewInstance(env.local()).ToLocalChecked();
     object->SetAlignedPointerInInternalField(kV8WrapperObjectIndex,
-                                             reinterpret_cast<void*>(&checker),
-                                             kTestTypeTagA);
+                                             reinterpret_cast<void*>(&checker));
     CHECK((*env)
               ->Global()
               ->Set(env.local(), v8_str("receiver"), object)
@@ -29896,10 +29793,16 @@ TEST(FastApiCallsString) {
   i::v8_flags.turbo_fast_api_calls = true;
   i::v8_flags.allow_natives_syntax = true;
   i::v8_flags.fast_api_allow_float_in_sim = true;
+  // Disable --always_turbofan, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  i::v8_flags.always_turbofan = false;
   i::FlagList::EnforceFlagImplications();
 
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
   LocalContext env;
@@ -30021,6 +29924,9 @@ TEST(FastApiCallsFromWasm) {
 
   CcTest::InitializeVM();
   v8::Isolate* isolate = CcTest::isolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i_isolate->set_embedder_wrapper_type_index(kV8WrapperTypeIndex);
+  i_isolate->set_embedder_wrapper_object_index(kV8WrapperObjectIndex);
 
   v8::HandleScope scope(isolate);
   LocalContext env;

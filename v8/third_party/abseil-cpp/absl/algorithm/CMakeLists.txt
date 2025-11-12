@@ -49,6 +49,7 @@ absl_cc_library(
   DEPS
     absl::algorithm
     absl::config
+    absl::core_headers
     absl::meta
     absl::nullability
   PUBLIC

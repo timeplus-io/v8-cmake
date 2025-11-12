@@ -210,9 +210,8 @@ using F5 = void*(void* p0, void* p1, int p2, int p3, int p4);
                                                                      \
     CcTest::InitializeVM();                                          \
     auto fn = [](MacroAssembler& assm) {                             \
-      __ csrrwi(t0, csr_frm, rounding_mode);                         \
+      __ csrwi(csr_frm, rounding_mode);                              \
       __ instr_name(a0, fa0, DYN);                                   \
-      __ csrw(csr_frm, t0);                                          \
     };                                                               \
     auto res = GenAndRunTest<output_type, input_type>(rs1_fval, fn); \
     CHECK_EQ(expected_res, res);                                     \
@@ -235,7 +234,6 @@ using F5 = void*(void* p0, void* p1, int p2, int p3, int p4);
     int64_t expected_res = 111;                                             \
     Label exit, error;                                                      \
     auto fn = [&exit, &error, expected_res](MacroAssembler& assm) {         \
-      __ csrr(t1, csr_reg);                                                 \
       /* test csr-write and csr-read */                                     \
       __ csrwi(csr_reg, csr_write_val);                                     \
       __ csrr(a0, csr_reg);                                                 \
@@ -260,7 +258,6 @@ using F5 = void*(void* p0, void* p1, int p2, int p3, int p4);
       __ RV_li(a0, 666);                                                    \
                                                                             \
       __ bind(&exit);                                                       \
-      __ csrw(csr_reg, t1);                                                 \
     };                                                                      \
     auto res = GenAndRunTest(fn);                                           \
     CHECK_EQ(expected_res, res);                                            \
@@ -271,7 +268,6 @@ using F5 = void*(void* p0, void* p1, int p2, int p3, int p4);
     Label exit, error;                                              \
     int64_t expected_res = 111;                                     \
     auto fn = [&exit, &error, expected_res](MacroAssembler& assm) { \
-      __ csrr(t1, csr_reg);                                         \
       /* test csr-write and csr-read */                             \
       __ RV_li(t0, csr_write_val);                                  \
       __ csrw(csr_reg, t0);                                         \
@@ -299,7 +295,6 @@ using F5 = void*(void* p0, void* p1, int p2, int p3, int p4);
       __ RV_li(a0, 666);                                            \
                                                                     \
       __ bind(&exit);                                               \
-      __ csrw(csr_reg, t1);                                         \
     };                                                              \
                                                                     \
     auto res = GenAndRunTest(fn);                                   \
@@ -524,8 +519,8 @@ UTEST_R2_FORM_WITH_RES(orn, int64_t, LARGE_INT_EXCEED_32_BIT,
 
 UTEST_R2_FORM_WITH_RES(xnor, int64_t, LARGE_INT_EXCEED_32_BIT,
                        LARGE_UINT_EXCEED_32_BIT,
-                       int64_t(~(LARGE_INT_EXCEED_32_BIT ^
-                                 LARGE_UINT_EXCEED_32_BIT)))
+                       int64_t((~LARGE_INT_EXCEED_32_BIT) ^
+                               (~LARGE_UINT_EXCEED_32_BIT)))
 
 UTEST_R1_FORM_WITH_RES(clz, int64_t, int64_t, 0b000011000100000000000, 47)
 UTEST_R1_FORM_WITH_RES(ctz, int64_t, int64_t, 0b000011000100000000000, 11)
@@ -2012,33 +2007,26 @@ TEST(jump_tables1) {
   const int kNumCases = 128;
   int values[kNumCases];
   isolate->random_number_generator()->NextBytes(values, sizeof(values));
+  Label labels[kNumCases], done;
 
-  auto fn = [values](MacroAssembler& assm) {
+  auto fn = [&labels, &done, values](MacroAssembler& assm) {
     __ addi(sp, sp, -8);
     __ Sd(ra, MemOperand(sp));
     __ Align(8);
-
-    Label labels[kNumCases];
     {
-      int pc_offset_before = assm.pc_offset();
-      MacroAssembler::BlockTrampolinePoolScope block(
-          &assm, (kNumCases * 2 + 6) * kInstrSize);
-      // Blocking the trampoline scope shouldn't generate code,
-      // because that may interfere with the alignment.
-      CHECK_EQ(pc_offset_before, assm.pc_offset());
+      __ BlockTrampolinePoolFor(kNumCases * 2 + 6);
 
       __ auipc(ra, 0);
       __ slli(t3, a0, 3);
       __ add(t3, t3, ra);
       __ Ld(t3, MemOperand(t3, 6 * kInstrSize));
       __ jr(t3);
-      __ nop();  // For 8 byte alignment.
+      __ nop();  // For 16-byte alignment
       for (int i = 0; i < kNumCases; ++i) {
-        __ dq(&labels[i]);
+        __ dd(&labels[i]);
       }
     }
 
-    Label done;
     for (int i = 0; i < kNumCases; ++i) {
       __ bind(&labels[i]);
       __ RV_li(a0, values[i]);
@@ -2051,7 +2039,6 @@ TEST(jump_tables1) {
 
     CHECK_EQ(0, assm.UnboundLabelsCount());
   };
-
   auto f = AssembleCode<F1>(isolate, fn);
 
   for (int i = 0; i < kNumCases; ++i) {
@@ -2069,43 +2056,39 @@ TEST(jump_tables2) {
   const int kNumCases = 128;
   int values[kNumCases];
   isolate->random_number_generator()->NextBytes(values, sizeof(values));
+  Label labels[kNumCases], done, dispatch;
 
-  auto fn = [values](MacroAssembler& assm) {
-    Label dispatch;
+  auto fn = [&labels, &done, &dispatch, values](MacroAssembler& assm) {
     __ addi(sp, sp, -8);
     __ Sd(ra, MemOperand(sp));
     __ j(&dispatch);
 
-    Label labels[kNumCases];
-    Label done;
     for (int i = 0; i < kNumCases; ++i) {
       __ bind(&labels[i]);
       __ RV_li(a0, values[i]);
       __ j(&done);
     }
 
+    __ Align(8);
+    __ bind(&dispatch);
+
     {
-      const int kAlignment = 8;
-      const int kMargin = (kAlignment - 1) + (kNumCases * 2 + 6) * kInstrSize;
-      MacroAssembler::BlockTrampolinePoolScope block(&assm, kMargin);
-      __ Align(kAlignment);  // This can emit up to (kAlignment - 1) bytes.
-      __ bind(&dispatch);
+      __ BlockTrampolinePoolFor(kNumCases * 2 + 6);
+
       __ auipc(ra, 0);
       __ slli(t3, a0, 3);
       __ add(t3, t3, ra);
       __ Ld(t3, MemOperand(t3, 6 * kInstrSize));
       __ jr(t3);
-      __ nop();  // For 8 byte alignment.
+      __ nop();  // For 16-byte alignment
       for (int i = 0; i < kNumCases; ++i) {
-        __ dq(&labels[i]);
+        __ dd(&labels[i]);
       }
     }
-
     __ bind(&done);
     __ Ld(ra, MemOperand(sp));
     __ addi(sp, sp, 8);
   };
-
   auto f = AssembleCode<F1>(isolate, fn);
 
   for (int i = 0; i < kNumCases; ++i) {
@@ -2126,37 +2109,39 @@ TEST(jump_tables3) {
     double value = isolate->random_number_generator()->NextDouble();
     values[i] = isolate->factory()->NewHeapNumber<AllocationType::kOld>(value);
   }
+  Label labels[kNumCases], done, dispatch;
+  Tagged<Object> obj;
+  int64_t imm64;
 
-  auto fn = [values](MacroAssembler& assm) {
-    Label dispatch;
+  auto fn = [&labels, &done, &dispatch, values, &obj,
+             &imm64](MacroAssembler& assm) {
     __ addi(sp, sp, -8);
     __ Sd(ra, MemOperand(sp));
+
     __ j(&dispatch);
 
-    Label labels[kNumCases];
-    Label done;
     for (int i = 0; i < kNumCases; ++i) {
       __ bind(&labels[i]);
-      Tagged<Object> obj = *values[i];
-      int64_t imm64 = obj.ptr();
+      obj = *values[i];
+      imm64 = obj.ptr();
+      __ nop();  // For 8 byte alignment
       __ RV_li(a0, imm64);
+      __ nop();  // For 8 byte alignment
       __ j(&done);
     }
 
+    __ bind(&dispatch);
     {
-      const int kAlignment = 8;
-      const int kMargin = (kAlignment - 1) + (kNumCases * 2 + 6) * kInstrSize;
-      MacroAssembler::BlockTrampolinePoolScope block(&assm, kMargin);
-      __ Align(kAlignment);  // This can emit up to (kAlignment - 1) bytes.
-      __ bind(&dispatch);
+      __ BlockTrampolinePoolFor(kNumCases * 2 + 6);
+      __ Align(8);
       __ auipc(ra, 0);
       __ slli(t3, a0, 3);
       __ add(t3, t3, ra);
       __ Ld(t3, MemOperand(t3, 6 * kInstrSize));
       __ jr(t3);
-      __ nop();  // For 8 byte alignment.
+      __ nop();  // For 16-byte alignment
       for (int i = 0; i < kNumCases; ++i) {
-        __ dq(&labels[i]);
+        __ dd(&labels[i]);
       }
     }
 
@@ -2164,7 +2149,6 @@ TEST(jump_tables3) {
     __ Ld(ra, MemOperand(sp));
     __ addi(sp, sp, 8);
   };
-
   auto f = AssembleCode<F1>(isolate, fn);
 
   for (int i = 0; i < kNumCases; ++i) {

@@ -54,16 +54,16 @@ describe('Differential fuzzing library', () => {
 
   it('cuts off long strings', () => {
     const long = new Array(66).join('a');
-    const head = new Array(54).join('a');
-    const tail = new Array(9).join('a');
+    const head = new Array(55).join('a');
+    const tail = new Array(10).join('a');
     testLibrary(
         `__prettyPrint("${long}"); result;`,
-        `"${head}[...]${tail}"`);
+        `${head}[...]${tail}`);
     // If the string gets longer, the cut-off version is still the same.
     const veryLong = new Array(100).join('a');
     testLibrary(
         `__prettyPrint("${veryLong}"); result;`,
-        `"${head}[...]${tail}"`);
+        `${head}[...]${tail}`);
   });
 
   it('tracks hash difference', () => {
@@ -71,16 +71,16 @@ describe('Differential fuzzing library', () => {
     const long = new Array(66).join('a');
     testLibrary(
         `__prettyPrint("${long}"); __hash;`,
-        -1345637657);
+        2097980794);
     // Test that the hash value differs, also when the cut-off result doesn't.
     const veryLong = new Array(100).join('a');
     testLibrary(
         `__prettyPrint("${veryLong}"); __hash;`,
-        -1440225551);
+        -428472866);
     // Test that repeated calls update the hash.
     testLibrary(
         `__prettyPrint("${long}");__prettyPrint("${long}"); __hash;`,
-        -1396032059);
+        -909224493);
   });
 
   it('limits extra printing', () => {
@@ -102,12 +102,12 @@ describe('Differential fuzzing library', () => {
     // hash is still updated.
     testLibrary(
         'for (let i = 0; i < 20; i++) __prettyPrintExtra(i); __hash;',
-        492695719);
+        -945753644);
     testLibrary(
         'for (let i = 0; i < 101; i++) __prettyPrintExtra(i); __hash;',
-        -1101628999);
+        1907055979);
     testLibrary(
         'for (let i = 0; i < 102; i++) __prettyPrintExtra(i); __hash;',
-        -1675711435);
+        -590842070);
   });
 });

@@ -30,11 +30,7 @@
   V(typed_funcref)                       \
   V(multi_memory)                        \
   V(multi_value)                         \
-  V(memory64)                            \
-  V(bulk_memory)                         \
-  V(mutable_globals)                     \
-  V(non_trapping_float_to_int)           \
-  V(sign_extension_ops)
+  V(memory64)
 
 // All features, including features that do not have flags.
 #define FOREACH_WASM_FEATURE(V) \
@@ -89,15 +85,13 @@ class WasmEnabledFeatures : public base::EnumSet<WasmEnabledFeature> {
 
 // Set of detected features. This includes features that have a flag plus
 // features in FOREACH_WASM_NON_FLAG_FEATURE.
-class WasmDetectedFeatures
-    : public base::EnumSet<WasmDetectedFeature, uint64_t> {
+class WasmDetectedFeatures : public base::EnumSet<WasmDetectedFeature> {
  public:
   constexpr WasmDetectedFeatures() = default;
   // Construct from an enum set.
   // NOLINTNEXTLINE(runtime/explicit)
-  constexpr WasmDetectedFeatures(
-      base::EnumSet<WasmDetectedFeature, uint64_t> features)
-      : base::EnumSet<WasmDetectedFeature, uint64_t>(features) {}
+  constexpr WasmDetectedFeatures(base::EnumSet<WasmDetectedFeature> features)
+      : base::EnumSet<WasmDetectedFeature>(features) {}
 
   // Simplified getters and setters. Use {add_foo()} and {has_foo()} instead of
   // {Add(WasmDetectedFeature::foo)} or {contains(WasmDetectedFeature::foo)}.
@@ -143,7 +137,6 @@ enum class CompileTimeImport {
   kStringConstants,
   kTextEncoder,
   kTextDecoder,
-  kJsPrototypes,
   // Not really an import, but needs the same handling as compile-time imports.
   kDisableDenormalFloats,
 };

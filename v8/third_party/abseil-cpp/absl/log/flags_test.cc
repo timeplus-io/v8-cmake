@@ -93,7 +93,6 @@ TEST_F(LogFlagsTest, PrependLogPrefix) {
 TEST_F(LogFlagsTest, EmptyBacktraceAtFlag) {
   absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -105,7 +104,6 @@ TEST_F(LogFlagsTest, EmptyBacktraceAtFlag) {
 TEST_F(LogFlagsTest, BacktraceAtNonsense) {
   absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -119,7 +117,6 @@ TEST_F(LogFlagsTest, BacktraceAtWrongFile) {
   const int log_line = __LINE__ + 1;
   auto do_log = [] { LOG(INFO) << "hello world"; };
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -134,7 +131,6 @@ TEST_F(LogFlagsTest, BacktraceAtWrongLine) {
   const int log_line = __LINE__ + 1;
   auto do_log = [] { LOG(INFO) << "hello world"; };
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -149,7 +145,6 @@ TEST_F(LogFlagsTest, BacktraceAtWholeFilename) {
   const int log_line = __LINE__ + 1;
   auto do_log = [] { LOG(INFO) << "hello world"; };
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -163,7 +158,6 @@ TEST_F(LogFlagsTest, BacktraceAtNonmatchingSuffix) {
   const int log_line = __LINE__ + 1;
   auto do_log = [] { LOG(INFO) << "hello world"; };
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   EXPECT_CALL(test_sink, Send(TextMessage(Not(HasSubstr("(stacktrace:")))));
 
@@ -178,7 +172,6 @@ TEST_F(LogFlagsTest, LogsBacktrace) {
   const int log_line = __LINE__ + 1;
   auto do_log = [] { LOG(INFO) << "hello world"; };
   absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
 
   testing::InSequence seq;
   EXPECT_CALL(test_sink, Send(TextMessage(HasSubstr("(stacktrace:"))));

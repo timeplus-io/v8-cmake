@@ -11,7 +11,6 @@
 namespace v8 {
 namespace internal {
 
-class Isolate;
 namespace compiler {
 class CodeAssemblerState;
 }  // namespace compiler

@@ -1141,8 +1141,7 @@ class Graph {
     for (OpIndex input : op.inputs()) {
       // Tuples should never be used as input, except in other tuples (which is
       // used for instance in Int64Lowering::LowerCall).
-      DCHECK_IMPLIES(Get(input).Is<MakeTupleOp>(),
-                     op.template Is<MakeTupleOp>());
+      DCHECK_IMPLIES(Get(input).Is<TupleOp>(), op.template Is<TupleOp>());
       Get(input).saturated_use_count.Incr();
     }
   }
@@ -1152,8 +1151,7 @@ class Graph {
     for (OpIndex input : op.inputs()) {
       // Tuples should never be used as input, except in other tuples (which is
       // used for instance in Int64Lowering::LowerCall).
-      DCHECK_IMPLIES(Get(input).Is<MakeTupleOp>(),
-                     op.template Is<MakeTupleOp>());
+      DCHECK_IMPLIES(Get(input).Is<TupleOp>(), op.template Is<TupleOp>());
       Get(input).saturated_use_count.Decr();
     }
   }

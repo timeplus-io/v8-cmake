@@ -146,7 +146,7 @@ Local<String> GetFunctionDescription(Local<Function> function) {
   if (IsJSFunction(*receiver)) {
     auto js_function = i::Cast<i::JSFunction>(receiver);
 #if V8_ENABLE_WEBASSEMBLY
-    if (js_function->shared()->HasWasmExportedFunctionData(i_isolate)) {
+    if (js_function->shared()->HasWasmExportedFunctionData()) {
       i::DirectHandle<i::WasmExportedFunctionData> function_data(
           js_function->shared()->wasm_exported_function_data(), i_isolate);
       int func_index = function_data->function_index();
@@ -926,8 +926,7 @@ uint32_t WasmScript::GetFunctionHash(int function_index) {
       wire_bytes.GetFunctionBytes(&func);
   // TODO(herhut): Maybe also take module, name and signature into account.
   return i::StringHasher::HashSequentialString(function_bytes.begin(),
-                                               function_bytes.length(),
-                                               internal::HashSeed::Default());
+                                               function_bytes.length(), 0);
 }
 
 Maybe<v8::MemorySpan<const uint8_t>> WasmScript::GetModuleBuildId() const {
@@ -1388,13 +1387,6 @@ Coverage Coverage::CollectBestEffort(Isolate* isolate) {
       i::Coverage::CollectBestEffort(reinterpret_cast<i::Isolate*>(isolate)));
 }
 
-#if V8_ENABLE_WEBASSEMBLY
-Coverage Coverage::CollectWasmData(Isolate* isolate) {
-  return Coverage(
-      i::Coverage::CollectWasmData(reinterpret_cast<i::Isolate*>(isolate)));
-}
-#endif  // V8_ENABLE_WEBASSEMBLY
-
 void Coverage::SelectMode(Isolate* isolate, CoverageMode mode) {
   i::Coverage::SelectMode(reinterpret_cast<i::Isolate*>(isolate), mode);
 }
@@ -1461,7 +1453,6 @@ MaybeLocal<Message> GetMessageFromPromise(Local<Promise> p) {
   i::DirectHandle<i::Object> maybeMessage =
       i::JSReceiver::GetDataProperty(isolate, promise, key);
 
-  if (IsAnyHole(*maybeMessage)) return MaybeLocal<Message>();
   if (!IsJSMessageObject(*maybeMessage, isolate)) return MaybeLocal<Message>();
   return ToApiHandle<Message>(i::Cast<i::JSMessageObject>(maybeMessage));
 }

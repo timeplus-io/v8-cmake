@@ -40,7 +40,9 @@ DirectHandle<EmbedderDataArray> EmbedderDataArray::EnsureCapacity(
     EmbedderDataSlot dest(*new_array, i);
     ExternalPointerHandle src_handle = LoadExternalPointerHandle(src);
     if (src_handle != kNullExternalPointerHandle) {
-      CHECK(dest.store_handle(isolate, *new_array, src_handle));
+      void* value;
+      CHECK(src.ToAlignedPointer(isolate, &value));
+      CHECK(dest.store_aligned_pointer(isolate, *new_array, value));
     } else {
       StoreTaggedWithoutBarrier(dest, src.load_tagged());
     }

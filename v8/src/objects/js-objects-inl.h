@@ -510,7 +510,7 @@ void JSObject::WriteToField(InternalIndex descriptor, PropertyDetails details,
     uint64_t bits;
     if (IsSmi(value)) {
       bits = base::bit_cast<uint64_t>(static_cast<double>(Smi::ToInt(value)));
-    } else if (IsUninitializedHole(value)) {
+    } else if (IsUninitialized(value)) {
       bits = kHoleNanInt64;
     } else {
       DCHECK(IsHeapNumber(value));
@@ -908,24 +908,12 @@ DEF_GETTER(JSReceiver, property_array, Tagged<PropertyArray>) {
   return Cast<PropertyArray>(prop);
 }
 
-void JSObject::EnsureWritableFastElements(Isolate* isolate,
-                                          DirectHandle<JSObject> object) {
-  DCHECK(object->HasSmiOrObjectElements() ||
-         object->HasFastStringWrapperElements() ||
-         object->HasAnyNonextensibleElements());
-  Tagged<FixedArray> raw_elems = Cast<FixedArray>(object->elements());
-  if (V8_UNLIKELY(raw_elems->map() ==
-                  ReadOnlyRoots(isolate).fixed_cow_array_map())) {
-    MakeElementsWritable(isolate, object);
-  }
-}
-
 std::optional<Tagged<NativeContext>> JSReceiver::GetCreationContext() {
   DisallowGarbageCollection no_gc;
   Tagged<Map> meta_map = map()->map();
   DCHECK(IsMapMap(meta_map));
   Tagged<Object> maybe_native_context = meta_map->native_context_or_null();
-  if (V8_UNLIKELY(IsNull(maybe_native_context))) return {};
+  if (IsNull(maybe_native_context)) return {};
   DCHECK(IsNativeContext(maybe_native_context));
   return Cast<NativeContext>(maybe_native_context);
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --sandbox-testing --allow-natives-syntax --no-verify-heap
+// Flags: --sandbox-fuzzing --allow-natives-syntax
 
 function corrupt(func) {
   const kHeapObjectTagMask = 0x3;

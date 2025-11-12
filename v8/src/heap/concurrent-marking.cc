@@ -391,7 +391,7 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
       }
     }
     PtrComprCageBase cage_base(isolate);
-    const bool is_per_context_mode = local_marking_worklists.IsPerContextMode();
+    bool is_per_context_mode = local_marking_worklists.IsPerContextMode();
     bool done = false;
     while (!done) {
       size_t current_marked_bytes = 0;
@@ -457,8 +457,6 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
         break;
       }
     }
-
-    CHECK(local_weak_objects.current_ephemerons_local.IsLocalEmpty());
 
     local_marking_worklists.Publish();
     local_weak_objects.Publish();
@@ -614,7 +612,8 @@ void ConcurrentMarking::RunMinor(JobDelegate* delegate) {
 }
 
 size_t ConcurrentMarking::GetMajorMaxConcurrency(size_t worker_count) {
-  size_t marking_items = marking_worklists_->default_worklist()->Size();
+  size_t marking_items = marking_worklists_->shared()->Size();
+  marking_items += marking_worklists_->other()->Size();
   for (auto& worklist : marking_worklists_->context_worklists()) {
     marking_items += worklist.worklist->Size();
   }
@@ -629,11 +628,12 @@ size_t ConcurrentMarking::GetMajorMaxConcurrency(size_t worker_count) {
 }
 
 size_t ConcurrentMarking::GetMinorMaxConcurrency(size_t worker_count) {
-  const size_t marking_items = marking_worklists_->default_worklist()->Size() +
+  const size_t marking_items = marking_worklists_->shared()->Size() +
                                heap_->minor_mark_sweep_collector()
                                    ->remembered_sets_marking_handler()
                                    ->RemainingRememberedSetsMarkingIteams();
-  DCHECK(!marking_worklists_->IsPerContextMode());
+  DCHECK(marking_worklists_->other()->IsEmpty());
+  DCHECK(!marking_worklists_->IsUsingContextWorklists());
   size_t jobs = worker_count + marking_items;
   jobs = std::min<size_t>(task_state_.size() - 1, jobs);
   if (heap_->ShouldOptimizeForBattery()) {
@@ -728,11 +728,11 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
 bool ConcurrentMarking::IsWorkLeft() const {
   DCHECK(garbage_collector_.has_value());
   if (garbage_collector_ == GarbageCollector::MARK_COMPACTOR) {
-    return !marking_worklists_->IsEmpty() ||
+    return !marking_worklists_->shared()->IsEmpty() ||
            !weak_objects_->current_ephemerons.IsEmpty();
   }
   DCHECK_EQ(GarbageCollector::MINOR_MARK_SWEEPER, garbage_collector_);
-  return !marking_worklists_->default_worklist()->IsEmpty() ||
+  return !marking_worklists_->shared()->IsEmpty() ||
          (heap_->minor_mark_sweep_collector()
               ->remembered_sets_marking_handler()
               ->RemainingRememberedSetsMarkingIteams() > 0);
