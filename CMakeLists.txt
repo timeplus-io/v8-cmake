@@ -284,7 +284,10 @@ list(APPEND heap-sources
 
 # (moved earlier next to builtin-sources definition)
 if(NOT V8_ENABLE_TEMPORAL)
-  list(REMOVE_ITEM builtin-sources v8/src/builtins/builtins-temporal.cc)
+  list(REMOVE_ITEM builtin-sources
+    v8/src/builtins/builtins-temporal.cc
+    v8/src/builtins/builtins-temporal-gen.cc
+  )
 endif()
 
 list(REMOVE_ITEM diagnostic-sources v8/src/diagnostics/unwinding-info-win64.cc)
