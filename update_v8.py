@@ -49,6 +49,20 @@ def repodir(dep):
 def repodir_exists(dep):
   return exists(join(repodir(dep), 'config'))
 
+def ensure_bare_repo(url, clonedir):
+  if exists(join(clonedir, 'config')):
+    return
+
+  os.makedirs(dirname(clonedir), exist_ok=True)
+  if not exists(clonedir):
+    git('init', '--bare', clonedir, cwd=options.tmpdir, dry_run=dry_run)
+  if not dry_run:
+    try:
+      git('remote', 'add', 'origin', url, cwd=clonedir)
+    except subprocess.CalledProcessError:
+      # Remote already exists (e.g., retry after a partial run).
+      pass
+
 
 def update_one(dep):
   cwd = abspath('.')
@@ -60,13 +74,23 @@ def update_one(dep):
   clonedir = repodir(dep)
 
   if not repodir_exists(dep):
-    git('clone', '--bare', url, clonedir, cwd=options.tmpdir, dry_run=dry_run)
+    if isv8(dep):
+      ensure_bare_repo(url, clonedir)
+    else:
+      git('clone', '--bare', url, clonedir, cwd=options.tmpdir, dry_run=dry_run)
 
   what = commit
   if isv8(dep):
     what = '+refs/{}:refs/{}'.format(branch, branch)
 
-  git('fetch', url, what, cwd=clonedir, dry_run=dry_run)
+  depth = []
+  if options.depth and int(options.depth) > 0:
+    depth = ['--depth', str(options.depth)]
+
+  if isv8(dep):
+    git('fetch', *depth, 'origin', what, cwd=clonedir, dry_run=dry_run)
+  else:
+    git('fetch', *depth, url, what, cwd=clonedir, dry_run=dry_run)
 
 
 def update_all():
@@ -172,6 +196,7 @@ if __name__ == '__main__':
   parser.add_argument('--force', default=False, action='store_true')
   parser.add_argument('--git', default='git')
   parser.add_argument('--tar', default='tar')
+  parser.add_argument('--depth', default=1, type=int)
   parser.add_argument('--tmpdir', default=os.environ.get('TMPDIR', '/tmp'))
   parser.add_argument('--workspace', default=abspath(dirname(__file__)))
   options = parser.parse_args()
