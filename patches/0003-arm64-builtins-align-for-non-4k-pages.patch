@@ -1,0 +1,131 @@
+From 2eee5888c0ca10a5c17a10c394b5d98d5f4e8a3f Mon Sep 17 00:00:00 2001
+From: Pierre Langlois <pierre.langlois@arm.com>
+Date: Thu, 16 Oct 2025 15:26:36 +0100
+Subject: [PATCH] Reland "[arm64][builtins] Ensure remapping works on non-4k
+ linux systems"
+
+This is a reland of commit 772bef674c5a7972f0d33817a6a0de25add8e609
+
+Original change's description:
+> [arm64][builtins] Ensure remapping works on non-4k linux systems
+>
+> This ensures that we align builtins to the largest possible size on
+> Linux (64k) and Android (16k), so that remapping them works regardless
+> of the runtime OS page size.
+>
+> We should note that we cannot rely on the V8_OS_ANDROID macro as
+> targeting Android means we're cross-compiling. We have to rely on the
+> runtime `--target_os=android` flag instead.
+>
+> Change-Id: I093fe8f4371b7e994f0b63a0ee7c6064e8f85747
+> Reviewed-on: https://chromium-review.googlesource.com/c/v8/v8/+/7013751
+> Reviewed-by: Jakob Linke <jgruber@chromium.org>
+> Reviewed-by: Leszek Swirski <leszeks@chromium.org>
+> Commit-Queue: Pierre Langlois <pierre.langlois@arm.com>
+> Cr-Commit-Position: refs/heads/main@{#103157}
+
+Change-Id: I26c7a52da1b7406570fd0be018e885e79be428d9
+Reviewed-on: https://chromium-review.googlesource.com/c/v8/v8/+/7046404
+Reviewed-by: Jakob Linke <jgruber@chromium.org>
+Auto-Submit: Pierre Langlois <pierre.langlois@arm.com>
+Reviewed-by: Leszek Swirski <leszeks@chromium.org>
+Commit-Queue: Pierre Langlois <pierre.langlois@arm.com>
+Commit-Queue: Jakob Linke <jgruber@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#103215}
+---
+ .../platform-embedded-file-writer-base.cc     |  2 ++
+ .../platform-embedded-file-writer-base.h      |  1 +
+ .../platform-embedded-file-writer-generic.cc  | 24 +++++++++++++++----
+ .../platform-embedded-file-writer-generic.h   |  3 ++-
+ 4 files changed, 25 insertions(+), 5 deletions(-)
+
+diff --git a/v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc b/v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
+index a73ac1461f..d0e0d049ee 100644
+--- a/v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
++++ b/v8/src/snapshot/embedded/platform-embedded-file-writer-base.cc
+@@ -136,6 +136,8 @@ EmbeddedTargetOs ToEmbeddedTargetOs(const char* s) {
+   // Python 3.9+ on IBM i returns os400 as sys.platform instead of aix
+   if (string == "aix" || string == "os400") {
+     return EmbeddedTargetOs::kAIX;
++  } else if (string == "android") {
++    return EmbeddedTargetOs::kAndroid;
+   } else if (string == "chromeos") {
+     return EmbeddedTargetOs::kChromeOS;
+   } else if (string == "fuchsia") {
+diff --git a/v8/src/snapshot/embedded/platform-embedded-file-writer-base.h b/v8/src/snapshot/embedded/platform-embedded-file-writer-base.h
+index a2a1f9f0fe..7291bbcde9 100644
+--- a/v8/src/snapshot/embedded/platform-embedded-file-writer-base.h
++++ b/v8/src/snapshot/embedded/platform-embedded-file-writer-base.h
+@@ -30,6 +30,7 @@ int DataDirectiveSize(DataDirective directive);
+ 
+ enum class EmbeddedTargetOs {
+   kAIX,
++  kAndroid,
+   kChromeOS,
+   kFuchsia,
+   kMac,
+diff --git a/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc b/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
+index 096921db62..53e829e5b7 100644
+--- a/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
++++ b/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.cc
+@@ -61,11 +61,20 @@ void PlatformEmbeddedFileWriterGeneric::DeclareSymbolGlobal(const char* name) {
+ }
+ 
+ void PlatformEmbeddedFileWriterGeneric::AlignToCodeAlignment() {
+-#if (V8_OS_ANDROID || V8_OS_LINUX) && \
+-    (V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64)
++#if V8_OS_LINUX && (V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64)
+   // On these architectures and platforms, we remap the builtins, so need these
+   // to be aligned on a page boundary.
++#if V8_TARGET_ARCH_ARM64
++  // 4KB, 16KB and 64KB page sizes are supported. We need to pick the largest
++  // size for compatibility, except on Android where up to 16KB is supported.
++  if (target_os_ == EmbeddedTargetOs::kAndroid) {
++    fprintf(fp_, ".balign 16384\n");
++  } else {
++    fprintf(fp_, ".balign 65536\n");
++  }
++#else
+   fprintf(fp_, ".balign 4096\n");
++#endif
+ #elif V8_TARGET_ARCH_X64
+   // On x64 use 64-bytes code alignment to allow 64-bytes loop header alignment.
+   static_assert(64 >= kCodeAlignment);
+@@ -82,11 +91,18 @@ void PlatformEmbeddedFileWriterGeneric::AlignToCodeAlignment() {
+ }
+ 
+ void PlatformEmbeddedFileWriterGeneric::AlignToPageSizeIfNeeded() {
+-#if (V8_OS_ANDROID || V8_OS_LINUX) && \
+-    (V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64)
++#if V8_OS_LINUX && (V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64)
+   // Since the builtins are remapped, need to pad until the next page boundary.
++#if V8_TARGET_ARCH_ARM64
++  if (target_os_ == EmbeddedTargetOs::kAndroid) {
++    fprintf(fp_, ".balign 16384\n");
++  } else {
++    fprintf(fp_, ".balign 65536\n");
++  }
++#else
+   fprintf(fp_, ".balign 4096\n");
+ #endif
++#endif
+ }
+ 
+ void PlatformEmbeddedFileWriterGeneric::AlignToDataAlignment() {
+diff --git a/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.h b/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.h
+index cc94e3f4de..6b13dda541 100644
+--- a/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.h
++++ b/v8/src/snapshot/embedded/platform-embedded-file-writer-generic.h
+@@ -17,7 +17,8 @@ class PlatformEmbeddedFileWriterGeneric
+   PlatformEmbeddedFileWriterGeneric(EmbeddedTargetArch target_arch,
+                                     EmbeddedTargetOs target_os)
+       : target_arch_(target_arch), target_os_(target_os) {
+-    DCHECK(target_os_ == EmbeddedTargetOs::kChromeOS ||
++    DCHECK(target_os_ == EmbeddedTargetOs::kAndroid ||
++           target_os_ == EmbeddedTargetOs::kChromeOS ||
+            target_os_ == EmbeddedTargetOs::kFuchsia ||
+            target_os_ == EmbeddedTargetOs::kGeneric);
+   }
+-- 
+2.43.0
+
